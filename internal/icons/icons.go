@@ -63,7 +63,8 @@ type Service struct {
 	byKey  map[string]string // normalized name or reference -> reference
 	sorted []string          // references, sorted, for prefix lookups
 
-	fetchMu sync.Mutex
+	fetchMu  sync.Mutex
+	fetching map[string]*sync.Mutex // per icon file, so different icons download in parallel
 }
 
 func New(baseURL, cacheDir string, log *slog.Logger) *Service {
@@ -224,7 +225,18 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, ref, variant str
 
 func (s *Service) fetchIcon(ctx context.Context, ext, name, path string) ([]byte, error) {
 	s.fetchMu.Lock()
-	defer s.fetchMu.Unlock()
+	if s.fetching == nil {
+		s.fetching = map[string]*sync.Mutex{}
+	}
+	m, ok := s.fetching[path]
+	if !ok {
+		m = &sync.Mutex{}
+		s.fetching[path] = m
+	}
+	s.fetchMu.Unlock()
+
+	m.Lock()
+	defer m.Unlock()
 	if data, err := os.ReadFile(path); err == nil {
 		return data, nil // another request fetched it meanwhile
 	}

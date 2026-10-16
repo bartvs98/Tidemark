@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -201,4 +202,42 @@ func TestStartUsesCacheThenRefreshes(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Error("index was not refreshed from the CDN")
+}
+
+func TestServeFetchesDifferentIconsInParallel(t *testing.T) {
+	var inFlight, peak atomic.Int32
+	release := make(chan struct{})
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := inFlight.Add(1)
+		for {
+			p := peak.Load()
+			if n <= p || peak.CompareAndSwap(p, n) {
+				break
+			}
+		}
+		<-release
+		inFlight.Add(-1)
+		_, _ = w.Write([]byte(`<svg xmlns="http://www.w3.org/2000/svg"/>`))
+	}))
+	defer cdn.Close()
+	s := newTestService(t, cdn.URL)
+
+	var wg sync.WaitGroup
+	for _, ref := range []string{"redis", "uptime-kuma", "vaultwarden", "redis"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rec := httptest.NewRecorder()
+			s.Serve(rec, httptest.NewRequest("GET", "/api/icons/"+ref, nil), ref, VariantDefault)
+		}()
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for peak.Load() < 3 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	close(release)
+	wg.Wait()
+	if peak.Load() != 3 {
+		t.Errorf("peak concurrent downloads = %d, want 3 (three different icons; the duplicate waits)", peak.Load())
+	}
 }

@@ -57,9 +57,13 @@ const TONE_CLASS: Record<ToastTone, string> = {
         class="pointer-events-auto flex w-80 items-start gap-2.5 rounded-lg border border-line bg-raised p-3 shadow-overlay"
         [attr.role]="toast.tone === 'breaking' ? 'alert' : 'status'"
       >
-        <tm-icon [name]="icon[toast.tone]" [class]="'mt-0.5 ' + toneClass[toast.tone]" />
-        <p class="flex-1">{{ toast.message }}</p>
-        <button tmButton variant="ghost" size="sm" square icon="x" aria-label="Dismiss" (click)="toasts.dismiss(toast.id)"></button>
+        <!-- Everything aligns to the first text line (20px): the 16px icon is nudged down 2px,
+             the 28px close button is pulled up 4px. Long messages wrap below. -->
+        <tm-icon [name]="icon[toast.tone]" [class]="'mt-0.5 shrink-0 ' + toneClass[toast.tone]" />
+        <p class="min-w-0 flex-1">{{ toast.message }}</p>
+        <span class="-my-1 -mr-1 flex shrink-0">
+          <button tmButton variant="ghost" size="sm" square icon="x" aria-label="Dismiss" (click)="toasts.dismiss(toast.id)"></button>
+        </span>
       </div>
     }
   `,
