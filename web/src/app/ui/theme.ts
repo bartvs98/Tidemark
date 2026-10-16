@@ -1,5 +1,5 @@
 import { Component, DOCUMENT, effect, inject, Injectable, signal } from '@angular/core';
-import { IconName, TmIcon } from './icon';
+import { SegmentOption, TmSegmented } from './segmented';
 
 export type ThemePreference = 'dark' | 'light' | 'system';
 
@@ -38,7 +38,7 @@ export class Theme {
   }
 }
 
-const OPTIONS: { value: ThemePreference; icon: IconName; label: string }[] = [
+const OPTIONS: SegmentOption<ThemePreference>[] = [
   { value: 'system', icon: 'monitor', label: 'System theme' },
   { value: 'light', icon: 'sun', label: 'Light theme' },
   { value: 'dark', icon: 'moon', label: 'Dark theme' },
@@ -46,26 +46,8 @@ const OPTIONS: { value: ThemePreference; icon: IconName; label: string }[] = [
 
 @Component({
   selector: 'tm-theme-switch',
-  imports: [TmIcon],
-  template: `
-    @for (option of options; track option.value) {
-      <button
-        type="button"
-        class="grid size-7 cursor-pointer place-items-center rounded-sm text-fg-muted transition-colors hover:text-fg aria-pressed:bg-hover aria-pressed:text-fg"
-        [attr.aria-pressed]="theme.preference() === option.value"
-        [attr.aria-label]="option.label"
-        [attr.title]="option.label"
-        (click)="theme.preference.set(option.value)"
-      >
-        <tm-icon [name]="option.icon" [size]="14" />
-      </button>
-    }
-  `,
-  host: {
-    class: 'inline-flex gap-0.5 rounded-md border border-line p-0.5',
-    role: 'group',
-    'aria-label': 'Theme',
-  },
+  imports: [TmSegmented],
+  template: `<tm-segmented label="Theme" iconOnly [options]="options" [(value)]="theme.preference" />`,
 })
 export class TmThemeSwitch {
   protected readonly theme = inject(Theme);

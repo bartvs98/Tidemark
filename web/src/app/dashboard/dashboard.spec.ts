@@ -1,3 +1,4 @@
+import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -54,6 +55,7 @@ describe('Dashboard', () => {
   let http: HttpTestingController;
 
   beforeEach(() => {
+    localStorage.clear();
     TestBed.configureTestingModule({
       providers: [provideHttpClient(), provideHttpClientTesting()],
     });
@@ -79,11 +81,32 @@ describe('Dashboard', () => {
     };
     const el = await render((req) => req.flush(body));
 
-    expect(el.querySelector('[data-testid="summary"]')?.textContent).toContain('3 containers · 1 stacks · 1 not running');
-    const groups = [...el.querySelectorAll('tr.tm-group')].map((r) => r.textContent?.replace(/\s+/g, ' ').trim());
-    expect(groups).toEqual(['media 2', 'Ungrouped 1']);
+    expect(el.querySelector('[data-testid="summary"]')?.textContent).toContain('3 containers · 1 stack · 1 not running');
+    const sections = [...el.querySelectorAll('tm-section')];
+    expect(sections.map((s) => s.querySelector('h2')?.textContent?.trim())).toEqual(['media', 'Ungrouped']);
+    expect(sections[0].textContent).toContain('2 containers');
+    expect(sections[1].textContent).toContain('1 container');
+    // Column headers are visible above the first stack only.
+    const heads = [...el.querySelectorAll('thead')];
+    expect(heads.map((h) => h.classList.contains('sr-only'))).toEqual([false, true]);
     expect(el.textContent).toContain('exited');
     expect(el.textContent).toContain('Snapshot');
+  });
+
+  it('switches to tiles and remembers the choice', async () => {
+    const body: ContainerList = {
+      source: { kind: 'docker', location: 'unix:///var/run/docker.sock' },
+      containers: [container('jellyfin', 'media'), container('sonarr', 'media'), container('pihole')],
+    };
+    const el = await render((req) => req.flush(body));
+    expect(el.querySelectorAll('tm-container-tile').length).toBe(0);
+
+    el.querySelector<HTMLButtonElement>('button[aria-label="Tiles"]')!.click();
+    await TestBed.inject(ApplicationRef).whenStable();
+
+    expect(el.querySelectorAll('table').length).toBe(0);
+    expect(el.querySelectorAll('tm-container-tile').length).toBe(3);
+    expect(localStorage.getItem('tidemark.view')).toBe('tiles');
   });
 
   it('shows the API error message', async () => {

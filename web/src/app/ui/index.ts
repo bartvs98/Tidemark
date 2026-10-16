@@ -5,6 +5,8 @@ export * from './button';
 export * from './card';
 export * from './empty-state';
 export * from './icon';
+export * from './section';
+export * from './segmented';
 export * from './skeleton';
 export * from './status';
 export * from './theme';

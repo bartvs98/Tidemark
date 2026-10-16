@@ -100,51 +100,64 @@
     </tm-card>
   </section>
 
-  <!-- ── Table ──────────────────────────────────────────── -->
+  <!-- ── Stacks ─────────────────────────────────────────── -->
   <section>
-    <h2 class="mb-1 text-xl font-semibold">Container table</h2>
-    <p class="mb-4 text-fg-muted">The dashboard pattern for step 1: grouped by Compose stack, sample data.</p>
-    <tm-card heading="Containers" flush>
-      <button tmCardActions tmButton variant="primary" size="sm" icon="refresh-cw" [loading]="loading()" (click)="fakeLoad()">
-        Check now
-      </button>
-      <div class="overflow-x-auto">
-        <table class="tm-table">
-          <thead>
-            <tr>
-              <th scope="col">Container</th>
-              <th scope="col">Version</th>
-              <th scope="col">Update</th>
-              <th scope="col">Risk</th>
-              <th scope="col"><span class="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          @for (stack of stacks; track stack.name) {
-            <tbody>
-              <tr class="tm-group">
-                <th colspan="5" scope="colgroup">{{ stack.name }}</th>
-              </tr>
-              @for (c of stack.containers; track c.name) {
-                <tr>
-                  <td>
-                    <div class="font-medium">{{ c.name }}</div>
-                    <div class="font-mono text-xs text-fg-subtle">{{ c.image }}</div>
-                  </td>
-                  <td><tm-version-diff [from]="c.from" [to]="c.kind === 'none' || c.kind === 'digest' ? null : c.to" /></td>
-                  <td><tm-update-class [kind]="c.kind" /></td>
-                  <td><tm-level [level]="c.level" /></td>
-                  <td class="text-right">
-                    @if (c.kind !== 'none') {
-                      <button tmButton variant="ghost" size="sm">Changes <tm-icon name="arrow-right" [size]="14" /></button>
-                    }
-                  </td>
-                </tr>
-              }
-            </tbody>
+    <h2 class="mb-1 text-xl font-semibold">Stack sections</h2>
+    <p class="mb-4 text-fg-muted">
+      Each Compose stack is a <span class="font-mono text-sm">tm-section</span> with its own card, so it's obvious where a
+      stack starts and ends. Tables use fixed column widths so columns line up across stacks; headers show once.
+    </p>
+    <div class="flex flex-col gap-10">
+      @for (stack of stacks; track stack.name; let first = $first) {
+        <tm-section [heading]="stack.name" [icon]="stack.name === 'Ungrouped' ? 'box' : 'layers'" [meta]="stack.containers.length + ' containers'">
+          @if (first) {
+            <button tmSectionActions tmButton variant="primary" size="sm" icon="refresh-cw" [loading]="loading()" (click)="fakeLoad()">
+              Check now
+            </button>
           }
-        </table>
-      </div>
-    </tm-card>
+          <tm-card flush>
+            <div class="overflow-x-auto">
+              <table class="tm-table min-w-[40rem] table-fixed">
+                <colgroup>
+                  <col class="w-[30%]" />
+                  <col class="w-[28%]" />
+                  <col class="w-[16%]" />
+                  <col class="w-[14%]" />
+                  <col class="w-[12%]" />
+                </colgroup>
+                <thead [class.sr-only]="!first">
+                  <tr>
+                    <th scope="col">Container</th>
+                    <th scope="col">Version</th>
+                    <th scope="col">Update</th>
+                    <th scope="col">Risk</th>
+                    <th scope="col"><span class="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (c of stack.containers; track c.name) {
+                    <tr>
+                      <td>
+                        <div class="truncate font-medium">{{ c.name }}</div>
+                        <div class="truncate font-mono text-xs text-fg-subtle">{{ c.image }}</div>
+                      </td>
+                      <td><tm-version-diff [from]="c.from" [to]="c.kind === 'none' || c.kind === 'digest' ? null : c.to" /></td>
+                      <td><tm-update-class [kind]="c.kind" /></td>
+                      <td><tm-level [level]="c.level" /></td>
+                      <td class="text-right">
+                        @if (c.kind !== 'none') {
+                          <button tmButton variant="ghost" size="sm">Changes <tm-icon name="arrow-right" [size]="14" /></button>
+                        }
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </tm-card>
+        </tm-section>
+      }
+    </div>
   </section>
 
   <!-- ── Buttons ────────────────────────────────────────── -->
@@ -170,6 +183,11 @@
           <button tmButton variant="primary" loading>Checking…</button>
           <button tmButton variant="secondary" disabled>Disabled</button>
           <a tmButton variant="ghost" href="https://github.com" target="_blank" rel="noopener" icon="external-link">As a link</a>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <tm-segmented label="View" [options]="views" [(value)]="view" />
+          <tm-segmented label="View" iconOnly [options]="views" [(value)]="view" />
+          <span class="text-sm text-fg-muted">Segmented control: <span class="font-mono">{{ view() }}</span></span>
         </div>
       </div>
     </tm-card>

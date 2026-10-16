@@ -9,7 +9,10 @@ import {
   TmEmptyState,
   TmIcon,
   TmLevel,
+  TmSection,
+  TmSegmented,
   TmSkeleton,
+  SegmentOption,
   TmUpdateClass,
   TmVersionDiff,
   Toasts,
@@ -35,6 +38,8 @@ interface SampleContainer {
     TmEmptyState,
     TmIcon,
     TmLevel,
+    TmSection,
+    TmSegmented,
     TmSkeleton,
     TmUpdateClass,
     TmVersionDiff,
@@ -46,6 +51,11 @@ export class Styleguide {
   protected readonly toasts = inject(Toasts);
   protected readonly loading = signal(false);
   protected readonly icons = ICON_NAMES;
+  protected readonly view = signal<'list' | 'tiles'>('list');
+  protected readonly views: SegmentOption<'list' | 'tiles'>[] = [
+    { value: 'list', label: 'List', icon: 'list' },
+    { value: 'tiles', label: 'Tiles', icon: 'layout-grid' },
+  ];
 
   protected readonly colors = [
     { group: 'Surfaces', tokens: ['canvas', 'surface', 'raised', 'hover'] },

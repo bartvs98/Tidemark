@@ -33,16 +33,6 @@
   .tm-table tbody tr:hover td {
     background: var(--color-hover);
   }
-  /* Section header row inside a table, e.g. a Compose stack name. */
-  .tm-table tr.tm-group th {
-    padding-top: 1rem;
-    background: var(--color-surface);
-    color: var(--color-fg);
-    text-transform: none;
-    letter-spacing: 0;
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
 
   /* ── Tabs (Angular Aria: ngTabs / ngTabList / ngTab / ngTabPanel) ── */
   .tm-tabs [role='tablist'] {
