@@ -12,12 +12,18 @@ type Config struct {
 	Addr     string     // TIDEMARK_ADDR, HTTP listen address
 	DataDir  string     // TIDEMARK_DATA_DIR, where the SQLite database lives
 	LogLevel slog.Level // TIDEMARK_LOG_LEVEL: debug | info | warn | error
+
+	DockerHost     string // TIDEMARK_DOCKER_HOST: unix:///var/run/docker.sock or tcp://host:2375
+	DockerSnapshot string // TIDEMARK_DOCKER_SNAPSHOT: read containers from a scripts/snapshot.sh file instead
 }
 
 func Load() (Config, error) {
 	c := Config{
 		Addr:    env("TIDEMARK_ADDR", ":8080"),
 		DataDir: env("TIDEMARK_DATA_DIR", "./data"),
+
+		DockerHost:     env("TIDEMARK_DOCKER_HOST", "unix:///var/run/docker.sock"),
+		DockerSnapshot: env("TIDEMARK_DOCKER_SNAPSHOT", ""),
 	}
 	if err := c.LogLevel.UnmarshalText([]byte(env("TIDEMARK_LOG_LEVEL", "info"))); err != nil {
 		return Config{}, fmt.Errorf("TIDEMARK_LOG_LEVEL: %w", err)

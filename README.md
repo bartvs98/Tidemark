@@ -28,6 +28,16 @@ npm start
 
 Open http://localhost:4200.
 
+### Developing without Docker: snapshots
+
+`scripts/snapshot.sh` exports a Docker host's container and image metadata to JSON. It leaves out environment variables, mounts, networks and non-essential labels. Run it on the server, copy the file into `snapshots/` (git-ignored), then:
+
+```sh
+TIDEMARK_DOCKER_SNAPSHOT=snapshots/home.json go run ./cmd/tidemark
+```
+
+In PowerShell: `$env:TIDEMARK_DOCKER_SNAPSHOT="snapshots/home.json"; go run ./cmd/tidemark`
+
 Tests:
 
 ```sh
@@ -58,5 +68,7 @@ Then open http://your-server:8080.
 | `TIDEMARK_ADDR` | `:8080` | Listen address |
 | `TIDEMARK_DATA_DIR` | `./data` (`/data` in Docker) | Database location |
 | `TIDEMARK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `TIDEMARK_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker Engine API, or `tcp://socket-proxy:2375` |
+| `TIDEMARK_DOCKER_SNAPSHOT` | none | Use a snapshot file instead of Docker (see Development) |
 
 More options are added per roadmap step; the full list is in [Architecture → Configuration](docs/ARCHITECTURE.md#configuration).

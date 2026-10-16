@@ -1,41 +1,39 @@
-import { Component } from '@angular/core';
-import { httpResource } from '@angular/common/http';
-import { TmCard, TmEmptyState, TmSkeleton } from '../ui';
+import { Component, computed } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { HttpErrorResponse, httpResource } from '@angular/common/http';
+import { TmBadge, TmButton, TmCard, TmEmptyState, TmSkeleton } from '../ui';
+import { ContainerList, groupByStack, imageName } from './containers';
 
-interface Health {
-  status: string;
-  version: string;
-}
-
-/** Placeholder until step 1 (container inventory). */
 @Component({
   selector: 'tm-dashboard',
-  imports: [TmCard, TmEmptyState, TmSkeleton],
-  template: `
-    <h1 class="mb-6 text-2xl font-semibold tracking-tight">Containers</h1>
-
-    <tm-card>
-      @if (health.hasValue()) {
-        <tm-empty-state
-          heading="No containers yet"
-          [description]="'Connected to Tidemark ' + health.value().version + '. Container discovery arrives in the next step.'"
-        />
-      } @else if (health.error()) {
-        <tm-empty-state
-          icon="triangle-alert"
-          heading="Can't reach the API"
-          description="Is the Go server running on :8080?"
-        />
-      } @else {
-        <div class="flex flex-col gap-3 p-2" aria-label="Loading">
-          <tm-skeleton width="40%" />
-          <tm-skeleton width="70%" />
-          <tm-skeleton width="55%" />
-        </div>
-      }
-    </tm-card>
-  `,
+  imports: [DatePipe, TmBadge, TmButton, TmCard, TmEmptyState, TmSkeleton],
+  templateUrl: './dashboard.html',
 })
 export class Dashboard {
-  protected readonly health = httpResource<Health>(() => '/api/health');
+  protected readonly list = httpResource<ContainerList>(() => '/api/containers');
+
+  // value() throws while the resource is in an error state, so always go through hasValue().
+  private readonly data = computed(() => (this.list.hasValue() ? this.list.value() : undefined));
+
+  protected readonly stacks = computed(() => groupByStack(this.data()?.containers ?? []));
+  protected readonly source = computed(() => this.data()?.source);
+
+  protected readonly summary = computed(() => {
+    const containers = this.data()?.containers ?? [];
+    const running = containers.filter((c) => c.state === 'running').length;
+    const stacks = this.stacks().filter((s) => s.name !== null).length;
+    const parts = [`${containers.length} containers`, `${stacks} stacks`];
+    if (running !== containers.length) parts.push(`${containers.length - running} not running`);
+    return parts.join(' · ');
+  });
+
+  protected readonly errorMessage = computed(() => {
+    const err = this.list.error();
+    if (err instanceof HttpErrorResponse) {
+      return (err.error as { error?: string } | null)?.error ?? `The API answered ${err.status} ${err.statusText}.`;
+    }
+    return err ? String(err) : '';
+  });
+
+  protected readonly imageName = imageName;
 }

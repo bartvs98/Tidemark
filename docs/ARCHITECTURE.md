@@ -36,7 +36,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 | Layer | Choice | Why |
 |---|---|---|
 | Language | **Go 1.26+** | Fast, small static binary, low memory, great Docker ecosystem |
-| Docker | `github.com/docker/docker/client` (official SDK) | Container/image inspect, pull, create |
+| Docker | Own minimal read-only Engine API client (`internal/docker`) | Only 2 GET endpoints needed; avoids the SDK dependency tree; same decoder for live and snapshot mode. Pull/create for one-click updates comes in step 11. |
 | Registry | `github.com/google/go-containerregistry` | Handles token auth for Hub/GHCR/Quay, tag listing, manifest HEAD, multi-arch indexes |
 | Versions | `github.com/Masterminds/semver/v3` + own variant parser | Lenient semver parsing (`v1.2`, `1.2.3-ls45`) |
 | HTTP | stdlib `net/http` (Go 1.22+ pattern routing) | No framework needed |
@@ -57,7 +57,8 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 /cmd/tidemark/main.go        entrypoint: config, wiring, start HTTP + scheduler
 /internal/
   config/                     env + yaml + label parsing
-  docker/                     list containers, inspect images, (later) pull/recreate
+  docker/                     Source interface: live Engine API client + snapshot file reader
+  imageref/                   parse image references (registry, repository, tag, digest)
   registry/                   tags, digests, auth per registry
   version/                    parse tags, variants, compare, classify patch/minor/major
   resolve/                    running-version resolution chain
@@ -72,6 +73,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   api/                        HTTP handlers + embedded SPA serving
 /web/                         Angular workspace
 /docs/                        these documents
+/scripts/snapshot.sh          export a host's container/image metadata (no env vars) for development
 Dockerfile
 compose.example.yaml
 ```
@@ -80,7 +82,7 @@ compose.example.yaml
 
 One check run (scheduled or manual), with containers processed concurrently (bounded worker pool, e.g. 4):
 
-1. **Inventory**: `ContainerList` + `ImageInspect` → name, image ref, local digest(s), labels, compose project.
+1. **Inventory**: `GET /containers/json` + `GET /images/{id}/json` → name, image ref, local digest(s), labels, compose project. Container inspect is never called, because it exposes environment variables.
 2. **Resolve running version**: chain from FEATURES §2. Uses `RepoDigests` from the image, because the local image ID ≠ the registry manifest digest.
 3. **Latest version**: list tags (cached ~1 h per repo), filter by variant + pre-release rules, pick the highest. For floating tags, also `HEAD` the tag's manifest to detect digest-only updates.
 4. **Changelog**: resolve the source repo → fetch releases (cached forever per tag; the list is refreshed per run) → slice the range from running to latest.
@@ -138,6 +140,7 @@ All other paths serve the Angular SPA (with fallback to `index.html`).
 | `TIDEMARK_ADDR` | `:8080` | HTTP listen address |
 | `TIDEMARK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `TIDEMARK_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker endpoint (e.g. `tcp://socket-proxy:2375`) |
+| `TIDEMARK_DOCKER_SNAPSHOT` | none | Read containers from a `scripts/snapshot.sh` file instead of Docker (development) |
 | `TIDEMARK_SCHEDULE` | `0 */6 * * *` | Check schedule (cron) |
 | `TIDEMARK_DATA_DIR` | `/data` | SQLite location |
 | `TIDEMARK_GITHUB_TOKEN` | — | Fine-grained PAT, public repo read only |

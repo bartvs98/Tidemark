@@ -1,0 +1,81 @@
+{
+  "capturedAt": "2026-10-01T08:00:00Z",
+  "version": { "Version": "29.2.0", "ApiVersion": "1.53", "Os": "linux", "Arch": "amd64" },
+  "containers": [
+    {
+      "Id": "c-jelly",
+      "Names": ["/jellyfin"],
+      "Image": "jellyfin/jellyfin:10.9.11",
+      "ImageID": "sha256:aaa",
+      "Created": 1759305600,
+      "State": "running",
+      "Status": "Up 3 days",
+      "Labels": {
+        "com.docker.compose.project": "media",
+        "com.docker.compose.service": "jellyfin",
+        "org.opencontainers.image.version": "10.9.11"
+      }
+    },
+    {
+      "Id": "c-uptime-kuma",
+      "Names": ["/uptime-kuma"],
+      "Image": "louislam/uptime-kuma",
+      "ImageID": "sha256:bbb",
+      "Created": 1759305601,
+      "State": "running",
+      "Status": "Up 2 hours",
+      "Labels": { "com.docker.compose.project": "monitoring", "com.docker.compose.service": "uptime-kuma" }
+    },
+    {
+      "Id": "c-retagged",
+      "Names": ["/retagged"],
+      "Image": "sha256:ccc",
+      "ImageID": "sha256:ccc",
+      "Created": 1759305602,
+      "State": "exited",
+      "Status": "Exited (0) 5 days ago",
+      "Labels": null
+    },
+    {
+      "Id": "c-orphan",
+      "Names": ["/orphan"],
+      "Image": "example/gone:1.0",
+      "ImageID": "sha256:ddd",
+      "Created": 1759305603,
+      "State": "created",
+      "Status": "Created",
+      "Labels": {}
+    }
+  ],
+  "images": [
+    {
+      "Id": "sha256:aaa",
+      "RepoTags": ["jellyfin/jellyfin:10.9.11"],
+      "RepoDigests": ["jellyfin/jellyfin@sha256:111"],
+      "Created": "2024-07-01T12:00:00.123456789Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Variant": null,
+      "Config": { "Labels": { "org.opencontainers.image.source": "https://github.com/jellyfin/jellyfin-packaging" } }
+    },
+    {
+      "Id": "sha256:bbb",
+      "RepoTags": ["louislam/uptime-kuma:latest"],
+      "RepoDigests": ["louislam/uptime-kuma@sha256:222"],
+      "Created": "2025-09-01T00:00:00Z",
+      "Architecture": "arm64",
+      "Os": "linux",
+      "Variant": "v8",
+      "Config": { "Labels": null }
+    },
+    {
+      "Id": "sha256:ccc",
+      "RepoTags": ["example/retagged:2.0"],
+      "RepoDigests": [],
+      "Created": "2025-01-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Config": { "Labels": {} }
+    }
+  ]
+}

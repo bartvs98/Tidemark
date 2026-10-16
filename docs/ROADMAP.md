@@ -10,7 +10,7 @@ Each step ends in something runnable and verifiable. MVP = steps B1–7.
 ## MVP
 
 - [x] **0. Scaffolding**: Go module, Angular 22 workspace (`/web`), dev proxy, embedded SPA serving, `/api/health`, multi-stage Dockerfile, compose example. *Done when:* `docker compose up` serves the empty Angular app with a working health call. ⚠️ Binary + embedded SPA verified locally; the Docker image build is unverified until Docker is available (step 1).
-- [ ] **1. Container inventory**: `internal/docker`, `GET /api/containers`, dashboard listing containers grouped by Compose stack. *Done when:* the dashboard shows your real containers.
+- [x] **1. Container inventory**: `internal/docker`, `GET /api/containers`, dashboard listing containers grouped by Compose stack. *Done when:* the dashboard shows your real containers. ✅ Verified against a snapshot of the home server (24 containers, 10 stacks) from `scripts/snapshot.sh`. Live socket mode is covered by tests against a fake Engine API.
 - [ ] **2. Versions & registries**: `internal/version` (parse, variants, compare, classify) with thorough unit tests on real-world tags. `internal/registry` (tags, digest HEAD, auth for Hub/GHCR/Quay/lscr). `internal/resolve` running-version chain. *Done when:* every container shows running → latest + update class + how the version was found.
 - [ ] **3. Storage & scheduling**: SQLite + migrations, tag cache, check runs, scheduler, `POST /api/checks`, "Check now" button. *Done when:* results survive restarts and refresh on schedule.
 - [ ] **4. Changelogs**: `internal/source` (repo resolution), GitHub + GitLab releases, CHANGELOG.md fallback, compare/release links, detail page with rendered notes. *Done when:* clicking a container shows the releases between running and latest.

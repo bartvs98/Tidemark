@@ -18,6 +18,7 @@ import (
 
 	"github.com/bartvs98/tidemark/internal/api"
 	"github.com/bartvs98/tidemark/internal/config"
+	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/web"
 )
 
@@ -46,9 +47,16 @@ func run(cfg config.Config, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	source, err := dockerSource(cfg)
+	if err != nil {
+		return err
+	}
+	info := source.Info()
+	log.Info("container source", "kind", info.Kind, "location", info.Location)
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.New(version, log).Handler(web.SPA()),
+		Handler:           api.New(version, log, source).Handler(web.SPA()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -71,6 +79,13 @@ func run(cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+func dockerSource(cfg config.Config) (docker.Source, error) {
+	if cfg.DockerSnapshot != "" {
+		return docker.NewSnapshot(cfg.DockerSnapshot), nil
+	}
+	return docker.NewClient(cfg.DockerHost)
 }
 
 func healthcheck(addr string) int {

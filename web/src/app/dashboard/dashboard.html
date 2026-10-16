@@ -1,0 +1,90 @@
+<div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">Containers</h1>
+    <p class="mt-1 h-5 text-fg-muted" data-testid="summary">
+      @if (list.hasValue()) {
+        {{ summary() }}
+      }
+    </p>
+  </div>
+
+  <div class="flex items-center gap-2">
+    @if (source(); as source) {
+      @if (source.kind === 'snapshot') {
+        <tm-badge icon="info" [attr.title]="source.location">
+          Snapshot{{ source.capturedAt ? ' · ' + (source.capturedAt | date: 'd MMM, HH:mm') : '' }}
+        </tm-badge>
+      }
+    }
+    <button tmButton size="sm" icon="refresh-cw" [loading]="list.isLoading()" (click)="list.reload()">Refresh</button>
+  </div>
+</div>
+
+<tm-card flush>
+  @if (list.hasValue()) {
+    @if (stacks().length === 0) {
+      <tm-empty-state heading="No containers found" description="Docker reported no containers on this host." />
+    } @else {
+      <div class="overflow-x-auto">
+        <table class="tm-table">
+          <thead>
+            <tr>
+              <th scope="col">Container</th>
+              <th scope="col">Image</th>
+              <th scope="col">Tag</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          @for (stack of stacks(); track stack.name) {
+            <tbody>
+              <tr class="tm-group">
+                <th colspan="4" scope="colgroup">
+                  {{ stack.name ?? 'Ungrouped' }}
+                  <span class="ml-1 font-normal text-fg-subtle">{{ stack.containers.length }}</span>
+                </th>
+              </tr>
+              @for (c of stack.containers; track c.id) {
+                <tr>
+                  <td>
+                    <div class="font-medium">{{ c.name }}</div>
+                    @if (c.service && c.service !== c.name) {
+                      <div class="text-sm text-fg-subtle">service: {{ c.service }}</div>
+                    }
+                  </td>
+                  <td class="font-mono text-sm text-fg-muted">{{ imageName(c) }}</td>
+                  <td>
+                    <span class="font-mono text-sm">{{ c.image.tag || '—' }}</span>
+                    @if (c.image.missing) {
+                      <tm-badge tone="unknown" class="ml-2">image missing</tm-badge>
+                    }
+                  </td>
+                  <td>
+                    @if (c.state !== 'running') {
+                      <tm-badge class="mr-2">{{ c.state }}</tm-badge>
+                    }
+                    <span class="text-sm text-fg-muted">{{ c.status }}</span>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          }
+        </table>
+      </div>
+    }
+  } @else if (list.error()) {
+    <tm-empty-state icon="triangle-alert" heading="Can't list containers" [description]="errorMessage()">
+      <button tmButton size="sm" icon="refresh-cw" (click)="list.reload()">Try again</button>
+    </tm-empty-state>
+  } @else {
+    <div class="flex flex-col gap-4 p-4" aria-label="Loading containers">
+      @for (row of [1, 2, 3, 4, 5]; track row) {
+        <div class="flex items-center gap-6">
+          <tm-skeleton width="20%" />
+          <tm-skeleton width="35%" />
+          <tm-skeleton width="10%" />
+          <tm-skeleton width="15%" />
+        </div>
+      }
+    </div>
+  }
+</tm-card>

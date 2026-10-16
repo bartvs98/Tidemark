@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/bartvs98/tidemark/internal/docker"
 )
 
 var builtSPA = fstest.MapFS{
@@ -26,7 +28,7 @@ func do(t *testing.T, h http.Handler, target string) *httptest.ResponseRecorder 
 }
 
 func handler(spa fstest.MapFS) http.Handler {
-	return New("1.2.3", slog.New(slog.NewTextHandler(io.Discard, nil))).Handler(spa)
+	return New("1.2.3", slog.New(slog.NewTextHandler(io.Discard, nil)), docker.NewSnapshot("../docker/testdata/snapshot.json")).Handler(spa)
 }
 
 func TestHealth(t *testing.T) {

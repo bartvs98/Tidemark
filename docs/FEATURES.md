@@ -21,7 +21,7 @@ Status legend: **MVP** = first usable version · **Later** = on the roadmap, aft
 Many images run as `:latest` or a floating tag (`:1`, `:1.4`), so the tag alone often isn't the version. Resolution order, first hit wins:
 
 1. Tag is a full version (`1.4.2`, `v1.4.2`, `1.4.2-alpine`) → use it.
-2. Image label `org.opencontainers.image.version`.
+2. Image label `org.opencontainers.image.version`, **only if it's plausible for the tag**. Labels are inherited from base images: `mongo:8.3` reports `24.04` (its Ubuntu base). Reject a label whose version doesn't share the tag's leading numbers, unless the tag is floating (`latest`).
 3. Image label `build_version` (linuxserver.io images: `Linuxserver.io version:- 1.4.2-ls123 ...`).
 4. **Digest match**: list the registry's tags and find a version tag whose digest equals the running image digest.
 5. Unknown → show the digest and still report "update available" if the floating tag's digest moved.

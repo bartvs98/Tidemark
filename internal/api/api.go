@@ -6,21 +6,25 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+
+	"github.com/bartvs98/tidemark/internal/docker"
 )
 
 type Server struct {
 	version string
 	log     *slog.Logger
+	source  docker.Source
 }
 
-func New(version string, log *slog.Logger) *Server {
-	return &Server{version: version, log: log}
+func New(version string, log *slog.Logger, source docker.Source) *Server {
+	return &Server{version: version, log: log, source: source}
 }
 
 // Handler returns the full HTTP handler: API routes plus the SPA served from spa.
 func (s *Server) Handler(spa fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
+	mux.HandleFunc("GET /api/containers", s.containers)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})
