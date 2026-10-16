@@ -11,16 +11,6 @@ Self-hosted dashboard that shows, per running Docker container, the running vers
 
 (`docs/IDEAS.md` may exist locally: the owner's personal notes, git-ignored. Everything decided from it is in the docs above.)
 
-## Handoff: open items (update or remove when done)
-
-Last session ended mid-polish after step 4, before step 5. Check these first:
-
-1. **Skeleton animation (The owner: "still not animated").** `.tm-shimmer` in `web/src/styles/components.css` (14% highlight sweep; `prefers-reduced-motion` → opacity pulse). Headless Chrome/Firefox showed `background-position` changing, yet the owner sees no motion in his browser (Firefox; Chrome unknown). Ask which browser/page, check his OS "show animations" setting (reduced motion → only the subtle pulse), and look at the skeletons in a real, non-headless window. Suspects: shimmer too subtle on small skeletons, or reduced motion making it a faint pulse.
-2. **"<version> in releases" button** (detail page, GitHub only): links to `/releases?page=N#:~:text=<release name>,-Compare`. The `,-Compare` suffix skips GitHub's sticky "Release list" sidebar, which also contains the version. Verified by clicking it in Chrome and Firefox (heading 2026.9.0 in view on page 2) **before** switching the fragment text from tag to release name. The final end-to-end re-run failed to find the button, most likely because the GitHub API rate limit (60/h, used up by test runs) left no releases stored. Re-verify once, with `TIDEMARK_GITHUB_TOKEN` set or after an hour.
-3. **Whole list row opens the detail page** (stretched link + `tr.tm-row-link` with `position: relative`; the "check failed" badge is `relative z-10` so its tooltip still works). Click on a non-name cell verified in Chrome and Firefox. Not yet re-checked in the verify skill screenshots.
-
-Then continue with step 5 (roadmap).
-
 ## Stack in one breath
 
 Go 1.26 single binary (`cmd/tidemark`, `internal/*`) embedding an Angular 22 SPA (`web/`, zoneless, signals, `httpResource`, Tailwind v4, Angular Aria). SQLite via `modernc.org/sqlite` (no CGO). Registry access via go-containerregistry. Own Docker Engine API client (read-only).
@@ -57,6 +47,7 @@ Use the **`verify` skill** (`.claude/skills/verify/SKILL.md`), which runs `node 
 - **`ng serve` must bind `127.0.0.1`** (set in `angular.json`): bound to `[::1]` only, Firefox on Windows waits ~2 s per connection.
 - **GitHub quota:** without `TIDEMARK_GITHUB_TOKEN`, GitHub allows 60 API requests/hour per IP. Each verify run starts with an empty data dir and prefetches ~11 repos, so a few runs an hour are fine; don't loop it.
 - **Bundles:** `ui/markdown` (marked + DOMPurify) is deliberately not in the `ui` barrel; import it directly, from lazy routes only.
+- **CSS build (lightningcss):** a declaration using `color-mix(... var())` gets an `@supports` copy containing only that declaration. With a `background` shorthand that copy resets `background-size`/`-position` (this froze the skeleton shimmer for a whole step). Use longhands (`background-image`).
 - **Angular:** `httpResource.value()` throws in the error state, so go through `hasValue()`. Effects only re-run when a read signal *changes*: depend on objects that change per response, not on a boolean that stays `true` (this broke polling once; there's a regression test).
 - **Privacy rules (don't break):** never call Docker's `GET /containers/{id}/json` (it exposes env vars; a test enforces this). From image env only `*_VERSION` variables are read. `snapshots/` is git-ignored and must never be committed; don't print non-essential labels from it.
 - **Versions:** image labels can be inherited from base images (`mongo:8.3` says `24.04`), so a label only counts if the registry has that exact tag. Official images are rebuilt under the same tags, so old digests stop matching (hence the `*_VERSION` fallback).

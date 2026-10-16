@@ -141,15 +141,18 @@
   /* ── Skeleton shimmer ──────────────────────────────── */
   /* A highlight band sweeps across. With reduced motion, it gently fades instead. */
   .tm-shimmer {
-    background: linear-gradient(
-        100deg,
-        transparent 30%,
-        color-mix(in oklab, var(--color-fg) 14%, transparent) 50%,
-        transparent 70%
-      )
-      var(--color-hover);
-    background-size: 250% 100%;
-    animation: tm-shimmer 1.6s ease-in-out infinite;
+    /* Longhands on purpose: the build adds an @supports(color-mix) copy of the
+       image declaration, and a `background` shorthand there would reset
+       background-size to auto, leaving the animation nothing to move. */
+    background-color: var(--color-hover);
+    background-image: linear-gradient(
+      100deg,
+      transparent 40%,
+      color-mix(in oklab, var(--color-fg) 18%, transparent) 50%,
+      transparent 60%
+    );
+    background-size: 400% 100%;
+    animation: tm-shimmer 1.6s linear infinite;
   }
   @keyframes tm-shimmer {
     from {
@@ -161,7 +164,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .tm-shimmer {
-      background: var(--color-hover);
+      background-image: none;
       animation: tm-pulse 2s ease-in-out infinite;
     }
   }
