@@ -242,3 +242,100 @@ func nullID(id int64) any {
 	}
 	return id
 }
+
+// ── Changelogs ───────────────────────────────────────────
+
+// Release is one entry of a repository's release notes.
+type Release struct {
+	Tag         string
+	Name        string
+	Body        string
+	URL         string
+	PublishedAt time.Time
+	Prerelease  bool
+}
+
+// RepoState records how a repository's release notes were last fetched.
+type RepoState struct {
+	Repo      string
+	Kind      string // releases | changelog | none
+	ETag      string
+	HasMore   bool
+	FetchedAt time.Time
+	Error     string
+}
+
+// SaveReleases upserts releases; with replace, the repo's existing releases are dropped
+// first (a re-parsed CHANGELOG.md replaces the old sections).
+func (s *Store) SaveReleases(ctx context.Context, repo string, rs []Release, replace bool) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if replace {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM releases WHERE repo = ?`, repo); err != nil {
+			return err
+		}
+	}
+	for _, r := range rs {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO releases (repo, tag, name, body, url, published_at, prerelease) VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT (repo, tag) DO UPDATE SET name = excluded.name, body = excluded.body, url = excluded.url,
+				published_at = excluded.published_at, prerelease = excluded.prerelease`,
+			repo, r.Tag, r.Name, r.Body, r.URL, tsOrEmpty(r.PublishedAt), r.Prerelease); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) Releases(ctx context.Context, repo string) ([]Release, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT tag, name, body, url, published_at, prerelease FROM releases WHERE repo = ?`, repo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Release
+	for rows.Next() {
+		var r Release
+		var published string
+		if err := rows.Scan(&r.Tag, &r.Name, &r.Body, &r.URL, &published, &r.Prerelease); err != nil {
+			return nil, err
+		}
+		r.PublishedAt = parseTS(published)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) RepoState(ctx context.Context, repo string) (RepoState, bool, error) {
+	st := RepoState{Repo: repo}
+	var fetched string
+	err := s.db.QueryRowContext(ctx, `SELECT kind, etag, has_more, fetched_at, error FROM repos WHERE repo = ?`, repo).
+		Scan(&st.Kind, &st.ETag, &st.HasMore, &fetched, &st.Error)
+	if errors.Is(err, sql.ErrNoRows) {
+		return st, false, nil
+	}
+	if err != nil {
+		return st, false, err
+	}
+	st.FetchedAt = parseTS(fetched)
+	return st, true, nil
+}
+
+func (s *Store) SaveRepoState(ctx context.Context, st RepoState) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO repos (repo, kind, etag, has_more, fetched_at, error) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (repo) DO UPDATE SET kind = excluded.kind, etag = excluded.etag, has_more = excluded.has_more,
+			fetched_at = excluded.fetched_at, error = excluded.error`,
+		st.Repo, st.Kind, st.ETag, st.HasMore, tsOrEmpty(st.FetchedAt), st.Error)
+	return err
+}
+
+func tsOrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return ts(t)
+}

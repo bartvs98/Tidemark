@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import {
   SegmentOption,
@@ -40,6 +41,7 @@ const VIEWS: SegmentOption<ViewMode>[] = [
   selector: 'tm-dashboard',
   imports: [
     DatePipe,
+    RouterLink,
     ContainerTile,
     ContainerUpdate,
     ContainerVersion,

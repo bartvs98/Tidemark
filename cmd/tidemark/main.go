@@ -18,12 +18,17 @@ import (
 	"time"
 
 	"github.com/bartvs98/tidemark/internal/api"
+	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/config"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/icons"
+	"github.com/bartvs98/tidemark/internal/imageref"
 	"github.com/bartvs98/tidemark/internal/registry"
+	"github.com/bartvs98/tidemark/internal/resolve"
+	reposource "github.com/bartvs98/tidemark/internal/source"
 	"github.com/bartvs98/tidemark/internal/store"
+	tmversion "github.com/bartvs98/tidemark/internal/version"
 	"github.com/bartvs98/tidemark/web"
 )
 
@@ -79,6 +84,30 @@ func run(cfg config.Config, log *slog.Logger) error {
 	if err := checks.Load(ctx); err != nil {
 		return err
 	}
+
+	// Prefetch release notes for containers with an update, so the detail page is instant
+	// and later steps can scan them for breaking changes.
+	changelogs := changelog.New(db, cfg.GitHubToken, log)
+	checks.SetAfterCheck(func(ctx context.Context, c docker.Container, r resolve.Result) {
+		if r.Class == tmversion.None {
+			return
+		}
+		ref, err := imageref.Parse(c.ImageRef)
+		if err != nil {
+			return
+		}
+		repo, _, ok := reposource.Resolve(c, ref)
+		if !ok {
+			return
+		}
+		var need *tmversion.Version
+		if v, ok := tmversion.Parse(r.Running); ok {
+			need = &v
+		}
+		if err := changelogs.Sync(ctx, repo, need); err != nil {
+			log.Debug("changelog prefetch failed", "repo", repo.Key(), "err", err)
+		}
+	})
 	if !strings.EqualFold(cfg.Schedule, "off") {
 		if err := checks.Schedule(ctx, cfg.Schedule); err != nil {
 			return fmt.Errorf("TIDEMARK_SCHEDULE: %w", err)
@@ -100,6 +129,7 @@ func run(cfg config.Config, log *slog.Logger) error {
 			Source:     source,
 			Icons:      iconSvc,
 			Checks:     checks,
+			Changelogs: changelogs,
 			Background: ctx,
 		}).Handler(web.SPA()),
 		ReadHeaderTimeout: 10 * time.Second,

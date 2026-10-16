@@ -1,0 +1,234 @@
+<a routerLink="/" class="mb-6 inline-flex items-center gap-1.5 text-sm text-fg-muted no-underline hover:text-fg hover:no-underline">
+  <tm-icon name="arrow-left" [size]="14" />Containers
+</a>
+
+@if (data(); as d) {
+  <!-- ── Header ─────────────────────────────────────────── -->
+  <header class="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+    <div class="flex min-w-0 items-center gap-4">
+      <tm-app-icon [icon]="d.container.icon" [name]="d.container.name" [size]="40" />
+      <div class="min-w-0">
+        <div class="flex items-center gap-2">
+          <h1 class="truncate text-2xl font-semibold tracking-tight">{{ d.container.name }}</h1>
+          @if (d.container.state !== 'running') {
+            <tm-badge>{{ d.container.state }}</tm-badge>
+          }
+        </div>
+        <p class="truncate font-mono text-sm text-fg-muted" [title]="d.container.image.display">
+          {{ imageName(d.container) }}<span class="text-fg">:{{ d.container.image.tag || '—' }}</span>
+        </p>
+      </div>
+    </div>
+    <div class="flex items-start gap-4">
+      <tm-container-version [container]="d.container" class="text-right" />
+      <tm-container-update [container]="d.container" />
+    </div>
+  </header>
+
+  <!-- ── Links ──────────────────────────────────────────── -->
+  @if (changelog(); as cl) {
+    <div class="mb-6 flex flex-wrap gap-2" data-testid="links">
+      @if (cl.links.compare) {
+        <a tmButton variant="secondary" size="sm" icon="git-compare" [href]="cl.links.compare" target="_blank" rel="noopener noreferrer">
+          Compare {{ update()?.running }} → {{ update()?.latest }}
+        </a>
+      }
+      @if (cl.links.releases) {
+        <a tmButton variant="ghost" size="sm" icon="external-link" [href]="cl.links.releases" target="_blank" rel="noopener noreferrer">
+          {{ cl.kind === 'changelog' ? 'Changelog' : 'All releases' }}
+        </a>
+      }
+      @if (cl.links.running) {
+        <a tmButton variant="ghost" size="sm" icon="external-link" [href]="cl.links.running" target="_blank" rel="noopener noreferrer">
+          Source at {{ update()?.running }}
+        </a>
+      }
+      <a tmButton variant="ghost" size="sm" icon="external-link" [href]="cl.repo.url" target="_blank" rel="noopener noreferrer">
+        {{ cl.repo.name }}
+      </a>
+    </div>
+  }
+
+  <!-- ── Tabs ───────────────────────────────────────────── -->
+  <div ngTabs class="tm-tabs">
+    <div ngTabList selectedTab="changes">
+      <div ngTab value="changes">
+        Changes
+        @if (changelog()?.releases?.length; as n) {
+          <span class="ml-1 text-fg-subtle">{{ n }}</span>
+        }
+      </div>
+      <div ngTab value="details">Details</div>
+    </div>
+
+    <div ngTabPanel value="changes">
+      <ng-template ngTabContent>
+        <div class="flex flex-col gap-3" data-testid="changes">
+          @if (changelog(); as cl) {
+            @if (cl.error) {
+              <tm-callout tone="attention" heading="Couldn't refresh the release notes">
+                {{ cl.error }}. {{ cl.releases.length ? 'Showing what was stored earlier.' : '' }}
+              </tm-callout>
+            }
+            @if (cl.repo.how === 'guess') {
+              <p class="text-sm text-fg-subtle">
+                Repository {{ how[cl.repo.how] }}. Wrong? Set the container label
+                <span class="font-mono">tidemark.repo</span>.
+              </p>
+            }
+
+            @if (cl.kind === 'none') {
+              <tm-callout heading="No release notes found">
+                <span class="font-mono">{{ cl.repo.name }}</span> has no releases and no CHANGELOG.md.
+                Check the <a [href]="cl.repo.url" target="_blank" rel="noopener noreferrer">repository</a> for news.
+              </tm-callout>
+            } @else if (!update()?.running && cl.releases.length) {
+              <tm-callout>The running version is unknown, so this is just the latest release.</tm-callout>
+            }
+
+            @for (r of cl.releases; track r.tag; let first = $first) {
+              <details class="group rounded-lg border border-line bg-surface shadow-raised" [open]="first">
+                <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 select-none [&::-webkit-details-marker]:hidden">
+                  <tm-icon name="chevron-right" [size]="14" class="text-fg-subtle transition-transform group-open:rotate-90" />
+                  <span class="font-mono font-medium">{{ r.tag }}</span>
+                  @if (r.name && r.name !== r.tag) {
+                    <span class="truncate text-fg-muted">{{ r.name }}</span>
+                  }
+                  <span class="ml-auto flex shrink-0 items-center gap-3 text-sm text-fg-subtle">
+                    @if (r.publishedAt) {
+                      <time [attr.datetime]="r.publishedAt">{{ r.publishedAt | date: 'd MMM y' }}</time>
+                    }
+                    @if (r.url) {
+                      <a [href]="r.url" target="_blank" rel="noopener noreferrer" class="text-fg-subtle hover:text-fg" [attr.aria-label]="'Open ' + r.tag + ' on the forge'">
+                        <tm-icon name="external-link" [size]="14" />
+                      </a>
+                    }
+                  </span>
+                </summary>
+                <div class="border-t border-line px-4 py-4">
+                  @if (r.body.trim()) {
+                    <tm-markdown [markdown]="r.body" [githubRepo]="githubRepo()" />
+                  } @else {
+                    <p class="text-fg-subtle">No notes for this release.</p>
+                  }
+                </div>
+              </details>
+            } @empty {
+              @if (cl.kind !== 'none') {
+                <tm-card>
+                  <tm-empty-state
+                    icon="circle-check"
+                    [heading]="update()?.class === 'none' ? 'Up to date' : 'No release notes in this range'"
+                    [description]="
+                      update()?.class === 'none'
+                        ? 'Nothing new since ' + (update()?.running ?? 'your version') + '.'
+                        : 'The repository has no notes between your version and the latest.'
+                    "
+                  />
+                </tm-card>
+              }
+            }
+
+            @if (cl.partial) {
+              <tm-callout>Older releases weren't loaded. The full list is on the releases page.</tm-callout>
+            }
+          } @else {
+            <tm-callout heading="No source repository found">
+              Tidemark couldn't tell where this image's code lives. Add a container label like
+              <span class="font-mono">tidemark.repo=github.com/owner/name</span> to get release notes.
+            </tm-callout>
+          }
+        </div>
+      </ng-template>
+    </div>
+
+    <div ngTabPanel value="details">
+      <ng-template ngTabContent>
+        <tm-card>
+          <dl class="grid gap-x-6 gap-y-3 sm:grid-cols-[12rem_1fr]" data-testid="details">
+            <dt class="text-fg-muted">Image</dt>
+            <dd class="font-mono text-sm break-all">{{ d.container.image.ref }}</dd>
+
+            <dt class="text-fg-muted">Running version</dt>
+            <dd>
+              <span class="font-mono text-sm">{{ update()?.running || 'unknown' }}</span>
+              @if (update(); as u) {
+                <span class="text-sm text-fg-subtle"> · from {{ sourceLabel[u.source] }}</span>
+              }
+            </dd>
+
+            <dt class="text-fg-muted">Latest version</dt>
+            <dd class="font-mono text-sm">{{ update()?.latest || '—' }}</dd>
+
+            @if (update()?.checkedAt; as at) {
+              <dt class="text-fg-muted">Checked</dt>
+              <dd class="text-sm">{{ at | date: 'medium' }}</dd>
+            }
+
+            @if (changelog(); as cl) {
+              <dt class="text-fg-muted">Source repository</dt>
+              <dd class="text-sm">
+                <a [href]="cl.repo.url" target="_blank" rel="noopener noreferrer" class="font-mono">{{ cl.repo.name }}</a>
+                <span class="text-fg-subtle"> · {{ how[cl.repo.how] }}</span>
+              </dd>
+            }
+
+            @if (d.container.stack) {
+              <dt class="text-fg-muted">Compose</dt>
+              <dd class="text-sm">{{ d.container.stack }} / {{ d.container.service }}</dd>
+            }
+
+            <dt class="text-fg-muted">Status</dt>
+            <dd class="text-sm">{{ d.container.status }}</dd>
+
+            @if (d.container.image.platform) {
+              <dt class="text-fg-muted">Platform</dt>
+              <dd class="font-mono text-sm">{{ d.container.image.platform }}</dd>
+            }
+
+            @if (d.container.image.created) {
+              <dt class="text-fg-muted">Image built</dt>
+              <dd class="text-sm">{{ d.container.image.created | date: 'medium' }}</dd>
+            }
+
+            <dt class="text-fg-muted">Image ID</dt>
+            <dd class="font-mono text-xs break-all text-fg-muted">{{ d.container.image.id }}</dd>
+
+            @for (digest of d.image.digests; track digest; let first = $first) {
+              <dt class="text-fg-muted">{{ first ? 'Digest' : '' }}</dt>
+              <dd class="font-mono text-xs break-all text-fg-muted">{{ digest }}</dd>
+            }
+
+            @for (l of labelEntries(d.image.labels); track l[0]) {
+              <dt class="truncate font-mono text-xs text-fg-subtle" [title]="l[0]">{{ l[0].replace('org.opencontainers.image.', '') }}</dt>
+              <dd class="font-mono text-xs break-all text-fg-muted">{{ l[1] }}</dd>
+            }
+          </dl>
+        </tm-card>
+      </ng-template>
+    </div>
+  </div>
+} @else if (notFound()) {
+  <tm-card>
+    <tm-empty-state icon="box" [heading]="'No container named ' + name()" description="It may have been removed or renamed.">
+      <a tmButton size="sm" routerLink="/" icon="arrow-left">Back to containers</a>
+    </tm-empty-state>
+  </tm-card>
+} @else if (detail.error()) {
+  <tm-card>
+    <tm-empty-state icon="triangle-alert" heading="Can't load this container" [description]="errorMessage()">
+      <button tmButton size="sm" icon="refresh-cw" (click)="detail.reload()">Try again</button>
+    </tm-empty-state>
+  </tm-card>
+} @else {
+  <div class="flex flex-col gap-4" aria-label="Loading">
+    <div class="flex items-center gap-4">
+      <tm-skeleton width="40px" height="40px" />
+      <div class="flex flex-1 flex-col gap-2">
+        <tm-skeleton width="30%" height="1.5rem" />
+        <tm-skeleton width="45%" />
+      </div>
+    </div>
+    <tm-skeleton height="10rem" />
+  </div>
+}

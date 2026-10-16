@@ -3,6 +3,7 @@ import { Tab, TabContent, TabList, TabPanel, Tabs } from '@angular/aria/tabs';
 export * from './app-icon';
 export * from './badge';
 export * from './button';
+export * from './callout';
 export * from './card';
 export * from './empty-state';
 export * from './icon';
@@ -12,6 +13,9 @@ export * from './skeleton';
 export * from './status';
 export * from './theme';
 export * from './toast';
+
+// Not re-exported: ./markdown pulls in marked + DOMPurify and registers a sanitiser hook,
+// so it would land in the main bundle. Import it directly (from lazy routes only).
 
 /**
  * Tabs are Angular Aria's headless directives (keyboard nav, roles, focus) styled by the

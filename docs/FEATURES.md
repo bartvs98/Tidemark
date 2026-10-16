@@ -43,15 +43,19 @@ The UI shows *how* the version was determined (tag / label / digest match / unkn
 
 ## 4. Changelog between versions — MVP
 
-- Find the source repository, first hit wins:
-  1. Container label override `tidemark.repo=github.com/owner/repo`.
-  2. Config file mapping (image → repo).
-  3. Image label `org.opencontainers.image.source`.
-  4. Known image registries: `ghcr.io/owner/repo` implies `github.com/owner/repo`.
-- Fetch **GitHub Releases** (and GitLab Releases) and keep the ones between the running and latest version (exclusive / inclusive).
-- Fallback when a repo has no releases: fetch `CHANGELOG.md` and split it by version headings.
-- Render release notes as markdown, newest first, collapsible per release.
-- Cache releases in SQLite; published releases are immutable, so they only need fetching once.
+- Find the source repository (GitHub or GitLab), first hit wins:
+  1. Container label override `tidemark.repo=github.com/owner/repo` (always trusted).
+  2. Image label `org.opencontainers.image.source` (or `org.label-schema.vcs-url`), **only if it plausibly belongs to the image**: same owner as the image namespace, or the repo name shares a word with a part of the image path. Labels are inherited from base images (`plex-meta-manager` claims `linuxserver/docker-baseimage-ubuntu`).
+  3. `ghcr.io/owner/repo` → `github.com/owner/repo`.
+  4. A short list of official Docker Hub images (`redis` → `redis/redis`, `postgres` → `postgres/postgres`, …).
+  5. A guess: `docker.io/namespace/name` → `github.com/namespace/name` (shown as "guessed" in the UI).
+  6. A config-file mapping comes with step 6.
+- linuxserver.io images point at their packaging repo (`linuxserver/docker-<app>`); its releases match the `-ls` tags and include the upstream changes.
+- Fetch **GitHub Releases** (and GitLab Releases), keep the ones after the running version up to and including the latest, newest first; pre-releases and drafts are skipped. With an unknown running version, only the latest release is shown.
+- Fallback when a repo has no releases: `CHANGELOG.md` / `CHANGES.md`, split into sections by version headings.
+- Stored in SQLite and refreshed at most every 6 h; GitHub requests send the ETag, and "304 Not Modified" answers don't count against the rate limit. Pages are fetched only until the running version is covered (max 5 × 100 releases). When GitHub's rate limit is hit, no further GitHub calls are made until it resets, and the stored notes are still shown.
+- **Prefetched** after each check for containers with an update, so the detail page opens instantly.
+- Rendered as sanitised markdown (DOMPurify): `#123` links to the issue/PR, `@user` to the profile; links open in a new tab without a referrer.
 
 ## 5. Breaking change highlighting — MVP
 
@@ -69,6 +73,7 @@ Matching lines are shown highlighted in the changelog view so you can jump strai
 
 - **Compare link**: `https://github.com/owner/repo/compare/v1.4.2...v1.6.0` (tag prefix `v` auto-detected from the repo's actual tag names).
 - Link to the release page of every version in between, and to the repo's tree at your running version.
+- Built in step 4 on the container detail page (`/containers/<name>`), with a Details tab (image, digests, how the version and repo were found, OCI labels).
 
 ## 7. Scheduled checks & caching — MVP
 

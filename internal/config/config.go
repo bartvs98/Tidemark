@@ -18,6 +18,8 @@ type Config struct {
 
 	Schedule string // TIDEMARK_SCHEDULE: cron spec for update checks, "off" to only check on demand
 
+	GitHubToken string // TIDEMARK_GITHUB_TOKEN: raises GitHub's API limit from 60 to 5000 requests/hour
+
 	Icons    bool   // TIDEMARK_ICONS: "off" disables app icons
 	IconsURL string // TIDEMARK_ICONS_URL: selfh.st icons base URL (CDN or a self-hosted mirror)
 }
@@ -31,6 +33,8 @@ func Load() (Config, error) {
 		DockerSnapshot: env("TIDEMARK_DOCKER_SNAPSHOT", ""),
 
 		Schedule: env("TIDEMARK_SCHEDULE", "0 */6 * * *"),
+
+		GitHubToken: env("TIDEMARK_GITHUB_TOKEN", ""),
 
 		Icons:    !strings.EqualFold(env("TIDEMARK_ICONS", "on"), "off"),
 		IconsURL: env("TIDEMARK_ICONS_URL", "https://cdn.jsdelivr.net/gh/selfhst/icons"),

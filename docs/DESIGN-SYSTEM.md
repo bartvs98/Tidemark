@@ -50,6 +50,8 @@ Every colour is written once as `light-dark(<light>, <dark>)`. The theme switch 
 | `tm-skeleton` | `width` and `height`. The shimmer stops when the OS asks for reduced motion. |
 | `Toasts` + `<tm-toaster>` | `inject(Toasts).show(msg, tone, ms)`. Breaking toasts use `role="alert"` and the others `role="status"`. |
 | `tm-icon` | `name`, `size`. A small set of Lucide icons; add new ones in `icon.ts`. |
+| `tm-callout` | `tone` (info, attention, breaking), `heading`, content. Explains what's missing and what to do next, in context. |
+| `tm-markdown` | `markdown`, `githubRepo`. Renders untrusted markdown (release notes) sanitised with DOMPurify, styled by `.tm-prose`. **Import it from `ui/markdown`, not the `ui` barrel**, and only in lazy routes: it pulls in marked + DOMPurify (~28 KB gz). |
 | `tm-app-icon` | `icon` (`{src, light?, dark?}`), `name`, `size`. An app's logo, with a letter avatar as fallback. Swaps to the light/dark variant when the logo would disappear on the current theme. Decorative (`aria-hidden`); always show the name next to it. |
 | `tm-theme-switch` | System, light or dark. Lives in the header. |
 | `tm-section` | `heading`, `icon`, `meta`, and a `[tmSectionActions]` slot. A titled group such as a Compose stack, announced as a named region. |

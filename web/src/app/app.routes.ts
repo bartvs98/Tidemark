@@ -7,6 +7,11 @@ export const routes: Routes = [
     loadComponent: () => import('./dashboard/dashboard').then((m) => m.Dashboard),
   },
   {
+    path: 'containers/:name',
+    title: 'Container · Tidemark',
+    loadComponent: () => import('./detail/detail').then((m) => m.ContainerDetail),
+  },
+  {
     path: 'styleguide',
     title: 'Styleguide · Tidemark',
     loadComponent: () => import('./styleguide/styleguide').then((m) => m.Styleguide),

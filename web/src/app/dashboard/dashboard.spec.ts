@@ -2,6 +2,7 @@ import { ApplicationRef } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { Dashboard } from './dashboard';
 import { ContainerList, ContainerSummary, groupByStack, imageName } from './containers';
 
@@ -57,7 +58,7 @@ describe('Dashboard', () => {
   beforeEach(() => {
     localStorage.clear();
     TestBed.configureTestingModule({
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     });
     http = TestBed.inject(HttpTestingController);
   });
@@ -92,6 +93,7 @@ describe('Dashboard', () => {
     expect(tableHeads.length).toBe(2);
     expect(tableHeads.every((h) => h.classList.contains('sm:sr-only'))).toBe(true);
     expect(el.textContent).toContain('exited');
+    expect(el.querySelector('a[href="/containers/jellyfin"]')).not.toBeNull();
     expect(el.textContent).toContain('Snapshot');
   });
 

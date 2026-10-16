@@ -1,0 +1,410 @@
+// Package changelog fetches release notes for a source repository, keeps them in the
+// store, and selects the ones between a running and a latest version.
+//
+// Sources, per repository: GitHub/GitLab releases, or, for repos without releases,
+// the sections of CHANGELOG.md (or CHANGES.md). Notes are refreshed at most every
+// freshFor; GitHub requests are conditional (ETag), and "304 Not Modified" answers
+// don't count against GitHub's rate limit (60 requests/hour without a token).
+package changelog
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/bartvs98/tidemark/internal/source"
+	"github.com/bartvs98/tidemark/internal/store"
+	"github.com/bartvs98/tidemark/internal/version"
+)
+
+const (
+	KindReleases  = "releases"
+	KindChangelog = "changelog"
+	KindNone      = "none"
+
+	freshFor     = 6 * time.Hour
+	perPage      = 100
+	maxPages     = 5
+	maxBodyBytes = 32 << 20
+)
+
+var changelogFiles = []string{"CHANGELOG.md", "CHANGES.md", "changelog.md"}
+
+// ErrRateLimited means GitHub refused the request until its rate limit resets.
+var ErrRateLimited = errors.New("GitHub rate limit reached (60 requests/hour without a token); set TIDEMARK_GITHUB_TOKEN")
+
+var errNotFound = errors.New("not found")
+
+type Service struct {
+	store *store.Store
+	http  *http.Client
+	token string
+	log   *slog.Logger
+
+	githubAPI string
+	githubRaw string
+	gitlab    string
+
+	mu           sync.Mutex
+	locks        map[string]*sync.Mutex // one sync per repo at a time
+	limitedUntil time.Time              // GitHub rate limit reset; no API calls before it
+}
+
+type Option func(*Service)
+
+// WithBaseURLs points the service at other hosts (tests).
+func WithBaseURLs(githubAPI, githubRaw, gitlab string) Option {
+	return func(s *Service) { s.githubAPI, s.githubRaw, s.gitlab = githubAPI, githubRaw, gitlab }
+}
+
+func New(st *store.Store, githubToken string, log *slog.Logger, opts ...Option) *Service {
+	s := &Service{
+		store:     st,
+		http:      &http.Client{Timeout: 30 * time.Second},
+		token:     githubToken,
+		log:       log,
+		githubAPI: "https://api.github.com",
+		githubRaw: "https://raw.githubusercontent.com",
+		gitlab:    "https://gitlab.com",
+		locks:     map[string]*sync.Mutex{},
+	}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
+
+// Sync makes sure the repo's notes are stored and fresh. need is the oldest version
+// that should be covered (the running version); with nil only the newest are needed.
+func (s *Service) Sync(ctx context.Context, repo source.Repo, need *version.Version) error {
+	key := repo.Key()
+	unlock := s.lock(key)
+	defer unlock()
+
+	st, known, err := s.store.RepoState(ctx, key)
+	if err != nil {
+		return err
+	}
+	if known && time.Since(st.FetchedAt) < freshFor && s.covered(ctx, key, st, need) {
+		return nil
+	}
+	st.Repo = key
+
+	err = s.syncReleases(ctx, repo, &st, need)
+	if errors.Is(err, errNotFound) {
+		st.Kind, st.HasMore, st.ETag, st.Error, st.FetchedAt = KindNone, false, "", "repository not found", time.Now()
+		return s.store.SaveRepoState(ctx, st)
+	}
+	if err != nil {
+		// Keep what we had; record the error without marking the repo fresh.
+		st.Error = err.Error()
+		_ = s.store.SaveRepoState(context.WithoutCancel(ctx), st)
+		return err
+	}
+	if st.Kind == KindNone {
+		if err := s.syncChangelogFile(ctx, repo, &st); err != nil {
+			st.Error = err.Error()
+			_ = s.store.SaveRepoState(context.WithoutCancel(ctx), st)
+			return err
+		}
+	}
+	st.Error, st.FetchedAt = "", time.Now()
+	return s.store.SaveRepoState(ctx, st)
+}
+
+// syncReleases fetches release pages, newest first, until the needed version is
+// covered. It sets st.Kind to none when the repo has no releases at all.
+func (s *Service) syncReleases(ctx context.Context, repo source.Repo, st *store.RepoState, need *version.Version) error {
+	for page := 1; page <= maxPages; page++ {
+		etag := ""
+		if page == 1 && st.Kind == KindReleases {
+			etag = st.ETag
+		}
+		rels, newETag, notModified, err := s.fetchReleases(ctx, repo, page, etag)
+		if err != nil {
+			return err
+		}
+		if !notModified {
+			if page == 1 {
+				st.ETag = newETag
+				if len(rels) == 0 {
+					st.Kind, st.HasMore = KindNone, false
+					return nil
+				}
+			}
+			if err := s.store.SaveReleases(ctx, repo.Key(), rels, false); err != nil {
+				return err
+			}
+			st.HasMore = len(rels) == perPage
+		}
+		st.Kind = KindReleases
+		if !st.HasMore || need == nil || s.covered(ctx, repo.Key(), *st, need) {
+			return nil
+		}
+	}
+	return nil
+}
+
+// covered: the stored notes reach back to the needed version, or there's nothing older.
+func (s *Service) covered(ctx context.Context, key string, st store.RepoState, need *version.Version) bool {
+	if need == nil || st.Kind != KindReleases || !st.HasMore {
+		return true
+	}
+	rels, err := s.store.Releases(ctx, key)
+	if err != nil {
+		return false
+	}
+	for _, r := range rels {
+		if v, ok := parseTag(r.Tag); ok && version.Compare(v, *need) <= 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) syncChangelogFile(ctx context.Context, repo source.Repo, st *store.RepoState) error {
+	for _, file := range changelogFiles {
+		var raw, blob string
+		if repo.IsGitHub() {
+			raw = fmt.Sprintf("%s/%s/HEAD/%s", s.githubRaw, repo.Path, file)
+			blob = fmt.Sprintf("%s/blob/HEAD/%s", repo.URL(), file)
+		} else {
+			raw = fmt.Sprintf("%s/%s/-/raw/HEAD/%s", s.gitlab, repo.Path, file)
+			blob = fmt.Sprintf("%s/-/blob/HEAD/%s", repo.URL(), file)
+		}
+		body, _, status, err := s.get(ctx, raw, "", false)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			continue
+		}
+		sections := parseChangelog(string(body), blob)
+		if len(sections) == 0 {
+			continue
+		}
+		if err := s.store.SaveReleases(ctx, repo.Key(), sections, true); err != nil {
+			return err
+		}
+		st.Kind, st.HasMore = KindChangelog, false
+		return nil
+	}
+	st.Kind = KindNone
+	return nil
+}
+
+// ── fetching ─────────────────────────────────────────────
+
+func (s *Service) fetchReleases(ctx context.Context, repo source.Repo, page int, etag string) (rels []store.Release, newETag string, notModified bool, err error) {
+	var u string
+	if repo.IsGitHub() {
+		u = fmt.Sprintf("%s/repos/%s/releases?per_page=%d&page=%d", s.githubAPI, repo.Path, perPage, page)
+	} else {
+		u = fmt.Sprintf("%s/api/v4/projects/%s/releases?per_page=%d&page=%d", s.gitlab, url.PathEscape(repo.Path), perPage, page)
+	}
+	body, newETag, status, err := s.get(ctx, u, etag, repo.IsGitHub())
+	switch {
+	case err != nil:
+		return nil, "", false, err
+	case status == http.StatusNotModified:
+		return nil, etag, true, nil
+	case status == http.StatusNotFound:
+		return nil, "", false, errNotFound
+	case status != http.StatusOK:
+		return nil, "", false, fmt.Errorf("%s: HTTP %d", repo.Key(), status)
+	}
+
+	if repo.IsGitHub() {
+		var raw []struct {
+			TagName     string    `json:"tag_name"`
+			Name        string    `json:"name"`
+			Body        string    `json:"body"`
+			HTMLURL     string    `json:"html_url"`
+			PublishedAt time.Time `json:"published_at"`
+			Prerelease  bool      `json:"prerelease"`
+			Draft       bool      `json:"draft"`
+		}
+		if err := json.Unmarshal(body, &raw); err != nil {
+			return nil, "", false, fmt.Errorf("%s: %w", repo.Key(), err)
+		}
+		for _, r := range raw {
+			if !r.Draft {
+				rels = append(rels, store.Release{Tag: r.TagName, Name: r.Name, Body: r.Body, URL: r.HTMLURL, PublishedAt: r.PublishedAt, Prerelease: r.Prerelease})
+			}
+		}
+	} else {
+		var raw []struct {
+			TagName     string    `json:"tag_name"`
+			Name        string    `json:"name"`
+			Description string    `json:"description"`
+			ReleasedAt  time.Time `json:"released_at"`
+			Upcoming    bool      `json:"upcoming_release"`
+			Links       struct {
+				Self string `json:"self"`
+			} `json:"_links"`
+		}
+		if err := json.Unmarshal(body, &raw); err != nil {
+			return nil, "", false, fmt.Errorf("%s: %w", repo.Key(), err)
+		}
+		for _, r := range raw {
+			rels = append(rels, store.Release{Tag: r.TagName, Name: r.Name, Body: r.Description, URL: r.Links.Self, PublishedAt: r.ReleasedAt, Prerelease: r.Upcoming})
+		}
+	}
+	return rels, newETag, false, nil
+}
+
+func (s *Service) get(ctx context.Context, u, etag string, githubAPI bool) (body []byte, newETag string, status int, err error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	req.Header.Set("User-Agent", "tidemark")
+	if githubAPI {
+		s.mu.Lock()
+		limited := time.Now().Before(s.limitedUntil)
+		s.mu.Unlock()
+		if limited {
+			return nil, "", 0, ErrRateLimited
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+		if s.token != "" {
+			req.Header.Set("Authorization", "Bearer "+s.token)
+		}
+	}
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return nil, "", 0, err
+	}
+	defer resp.Body.Close()
+	if githubAPI && (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) &&
+		resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		reset := time.Now().Add(15 * time.Minute)
+		if sec, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+			reset = time.Unix(sec, 0)
+		}
+		s.mu.Lock()
+		s.limitedUntil = reset
+		s.mu.Unlock()
+		return nil, "", resp.StatusCode, ErrRateLimited
+	}
+	body, err = io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	return body, resp.Header.Get("ETag"), resp.StatusCode, err
+}
+
+func (s *Service) lock(key string) func() {
+	s.mu.Lock()
+	m, ok := s.locks[key]
+	if !ok {
+		m = &sync.Mutex{}
+		s.locks[key] = m
+	}
+	s.mu.Unlock()
+	m.Lock()
+	return m.Unlock
+}
+
+// ── selecting ────────────────────────────────────────────
+
+// Changes are the release notes between a running and a latest version.
+type Changes struct {
+	Kind      string          // releases | changelog | none ("" if never fetched)
+	Releases  []store.Release // newest first
+	FromTag   string          // repo tag of the running version, if the repo has it
+	ToTag     string          // repo tag of the latest version
+	Partial   bool            // older releases exist that weren't fetched
+	Error     string          // last fetch error
+	FetchedAt time.Time
+}
+
+// Changes returns the stored notes after running, up to and including latest. With an
+// unknown running version, only the newest release up to latest is returned.
+func (s *Service) Changes(ctx context.Context, repo source.Repo, running, latest *version.Version) (Changes, error) {
+	key := repo.Key()
+	st, _, err := s.store.RepoState(ctx, key)
+	if err != nil {
+		return Changes{}, err
+	}
+	all, err := s.store.Releases(ctx, key)
+	if err != nil {
+		return Changes{}, err
+	}
+	out := Changes{Kind: st.Kind, Error: st.Error, FetchedAt: st.FetchedAt}
+
+	type rv struct {
+		r store.Release
+		v version.Version
+	}
+	var picked []rv
+	oldest := (*version.Version)(nil)
+	for _, r := range all {
+		v, ok := parseTag(r.Tag)
+		if !ok {
+			continue
+		}
+		if oldest == nil || version.Compare(v, *oldest) < 0 {
+			vv := v
+			oldest = &vv
+		}
+		if running != nil && sameRelease(v, *running) {
+			out.FromTag = r.Tag
+		}
+		if latest != nil && sameRelease(v, *latest) {
+			out.ToTag = r.Tag
+		}
+		allowPre := running != nil && !running.Stable()
+		if (r.Prerelease || !v.Stable()) && !allowPre {
+			continue
+		}
+		if latest != nil && version.Compare(v, *latest) > 0 {
+			continue
+		}
+		if running != nil && version.Compare(v, *running) <= 0 {
+			continue
+		}
+		picked = append(picked, rv{r, v})
+	}
+	slices.SortFunc(picked, func(a, b rv) int { return version.Compare(b.v, a.v) })
+	if running == nil && len(picked) > 1 {
+		picked = picked[:1]
+	}
+	for _, p := range picked {
+		out.Releases = append(out.Releases, p.r)
+	}
+	out.Partial = st.HasMore && running != nil && oldest != nil && version.Compare(*oldest, *running) > 0
+	return out, nil
+}
+
+// sameRelease: same version numbers, pre-release and build; prefix and variant don't matter
+// ("v10.9.11" is the release of image tag "10.9.11").
+func sameRelease(a, b version.Version) bool {
+	return version.Compare(a, b) == 0 && len(a.Nums) == len(b.Nums)
+}
+
+// parseTag reads a repo tag as a version, also accepting "release-1.2.3" and "app@1.2.3".
+func parseTag(tag string) (version.Version, bool) {
+	if v, ok := version.Parse(tag); ok {
+		return v, true
+	}
+	t := tag
+	if i := strings.LastIndex(t, "@"); i >= 0 {
+		t = t[i+1:]
+	}
+	for _, p := range []string{"release-", "release/", "release_", "version-"} {
+		t = strings.TrimPrefix(t, p)
+	}
+	return version.Parse(t)
+}

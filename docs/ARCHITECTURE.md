@@ -65,8 +65,8 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   version/                    parse tags (prefix, numbers, variant, pre-release, build), compare, classify
   registry/                   tag lists + manifest digests via go-containerregistry, cached, anonymous
   resolve/                    one container: running version, latest in family, update class
-  source/                     image → source repo resolution
-  changelog/                  GitHub / GitLab / CHANGELOG.md providers
+  source/                     image → source repo (label, plausible image label, ghcr, known list, guess)
+  changelog/                  GitHub / GitLab releases + CHANGELOG.md, ETag sync into the store, range selection
   analysis/                   breaking-change heuristics
   ai/                         (later) summary provider interface + Anthropic impl
   notify/                     (later) notifier interface + Telegram impl
@@ -105,7 +105,8 @@ check_runs      id, trigger (startup|schedule|manual), started_at, finished_at, 
 results         container_name (PK), image_ref, image_id, running, source, latest, latest_in_major,
                 class, floating, new_image, error, checked_at, run_id
 tag_cache       repository (PK), tags (JSON), fetched_at
-releases        repo, tag, version, name, body, published_at, url   (PK repo+tag)          (step 4)
+releases        repo, tag, name, body, url, published_at, prerelease   (PK repo+tag)
+repos           repo (PK), kind (releases|changelog|none), etag, has_more, fetched_at, error
 reviews         container_id, reviewed_version, snoozed_until, snoozed_until_version   (later)
 history         container_id, from_version, to_version, detected_at, via (manual|oneclick)  (later)
 ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reasons_json   (later)
@@ -124,7 +125,7 @@ ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reas
 
 ```
 GET  /api/containers                containers + latest check result each + run status
-GET  /api/containers/{id}           detail incl. releases in range + flags + links          (step 4)
+GET  /api/containers/{name}         detail: container + image digests/labels + changelog (repo, releases in range, links)
 POST /api/checks                    start a check run unless one is running (202 + run status)
                                     run status and per-container results are part of GET /api/containers
 GET  /api/health
@@ -142,7 +143,7 @@ All other paths serve the Angular SPA (with fallback to `index.html`).
 ## Frontend
 
 - **Dashboard** (built): Compose stacks as sections, list and tile views, app icons; each container shows running → latest, how the version was determined, and the update class. Step 5 adds the risk badge and filters (updates only, breaking only).
-- **Container detail** (step 4): version info, compare/repo links, release list (markdown, newest first) with breaking/attention lines highlighted. Later: AI summary panel, review/snooze actions, update button with gate status.
+- **Container detail** (built): `/containers/<name>`; version change, compare/releases/source/repo links, Changes tab (sanitised markdown per release, newest first, first one open) and Details tab. Step 5 highlights breaking/attention lines. Later: AI summary panel, review/snooze actions, update button with gate status.
 - **Settings** (later): schedule, tokens set / not set, notification test button.
 - Dev: `ng serve` (bound to 127.0.0.1) with a proxy for `/api` → `localhost:8080`.
 
@@ -158,7 +159,7 @@ All other paths serve the Angular SPA (with fallback to `index.html`).
 | `TIDEMARK_ICONS_URL` | `https://cdn.jsdelivr.net/gh/selfhst/icons` | selfh.st icons base URL, e.g. a self-hosted mirror |
 | `TIDEMARK_SCHEDULE` | `0 */6 * * *` | Check schedule (cron), `off` to only check on demand |
 | `TIDEMARK_DATA_DIR` | `/data` | SQLite location |
-| `TIDEMARK_GITHUB_TOKEN` | — | Fine-grained PAT, public repo read only |
+| `TIDEMARK_GITHUB_TOKEN` | — | Fine-grained PAT, public repositories read-only; raises GitHub's limit from 60 to 5000 requests/hour |
 | `TIDEMARK_REGISTRY_AUTH_FILE` | — | Optional docker `config.json` for private registries |
 | `TIDEMARK_TELEGRAM_BOT_TOKEN` / `_CHAT_ID` | — | Later |
 | `TIDEMARK_AI_PROVIDER` / `_API_KEY` / `_MODEL` | — | Later, opt-in |

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"io/fs"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -27,9 +28,10 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s2.Close()
+	files, _ := fs.Glob(migrations, "migrations/*.sql")
 	var n int
-	if err := s2.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil || n != 1 {
-		t.Errorf("schema_migrations rows = %d (%v)", n, err)
+	if err := s2.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil || n != len(files) {
+		t.Errorf("schema_migrations rows = %d, want %d (%v)", n, len(files), err)
 	}
 }
 
@@ -109,5 +111,42 @@ func TestTagCache(t *testing.T) {
 	tags, fetched, ok := s.LoadTags(ctx, "docker.io/library/redis")
 	if !ok || !slices.Equal(tags, []string{"8.10.1", "latest"}) || !fetched.Equal(at) {
 		t.Errorf("tags=%v fetched=%v ok=%v", tags, fetched, ok)
+	}
+}
+
+func TestReleasesAndRepoState(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	repo := "github.com/home-assistant/core"
+	at := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+
+	if _, ok, _ := s.RepoState(ctx, repo); ok {
+		t.Fatal("no state yet")
+	}
+	if err := s.SaveReleases(ctx, repo, []Release{
+		{Tag: "2026.10.0", Name: "2026.10", Body: "## Breaking", URL: "u1", PublishedAt: at},
+		{Tag: "2026.10.1", Body: "fixes", PublishedAt: at.Add(time.Hour)},
+		{Tag: "2026.11.0b0", Prerelease: true},
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	// Upsert keeps others; replace drops them.
+	_ = s.SaveReleases(ctx, repo, []Release{{Tag: "2026.10.1", Body: "fixes, edited"}}, false)
+	rs, _ := s.Releases(ctx, repo)
+	if len(rs) != 3 {
+		t.Fatalf("got %d releases", len(rs))
+	}
+	_ = s.SaveReleases(ctx, repo, []Release{{Tag: "1.0.0"}}, true)
+	if rs, _ := s.Releases(ctx, repo); len(rs) != 1 || rs[0].Tag != "1.0.0" || !rs[0].PublishedAt.IsZero() {
+		t.Errorf("after replace: %+v", rs)
+	}
+
+	st := RepoState{Repo: repo, Kind: "releases", ETag: `W/"abc"`, HasMore: true, FetchedAt: at}
+	if err := s.SaveRepoState(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.RepoState(ctx, repo)
+	if err != nil || !ok || got != st {
+		t.Errorf("state = %+v ok=%v err=%v", got, ok, err)
 	}
 }

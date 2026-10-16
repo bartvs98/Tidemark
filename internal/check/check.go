@@ -49,11 +49,16 @@ type Status struct {
 	NextRunAt  *time.Time // next scheduled run, nil without a schedule
 }
 
+// AfterCheck runs after a container's image was checked successfully (once per image),
+// e.g. to prefetch release notes. It runs inside the check run's worker.
+type AfterCheck func(ctx context.Context, c docker.Container, r resolve.Result)
+
 type Service struct {
 	source docker.Source
 	reg    resolve.Registry
 	store  *store.Store
 	log    *slog.Logger
+	after  AfterCheck
 
 	mu      sync.RWMutex
 	results map[string]Entry // by container name
@@ -65,6 +70,9 @@ type Service struct {
 func New(source docker.Source, reg resolve.Registry, st *store.Store, log *slog.Logger) *Service {
 	return &Service{source: source, reg: reg, store: st, log: log, results: map[string]Entry{}}
 }
+
+// SetAfterCheck installs a hook that runs after each successfully checked image.
+func (s *Service) SetAfterCheck(fn AfterCheck) { s.after = fn }
 
 // Load restores results and the last run's status from the store.
 func (s *Service) Load(ctx context.Context) error {
@@ -192,6 +200,9 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 			defer wg.Done()
 			for group := range jobs {
 				entry := s.checkOne(ctx, group[0])
+				if entry.Err == "" && s.after != nil {
+					s.after(ctx, group[0], entry.Result)
+				}
 				for _, c := range group {
 					s.save(ctx, c.Name, entry, runID)
 				}

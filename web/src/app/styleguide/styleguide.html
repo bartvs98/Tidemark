@@ -210,6 +210,23 @@
     </tm-card>
   </section>
 
+  <!-- ── Callouts & markdown ───────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Callouts &amp; release notes</h2>
+    <p class="mb-4 text-fg-muted">Callouts explain why something is missing and what to do. Release notes are sanitised markdown.</p>
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="flex flex-col gap-3">
+        <tm-callout heading="No release notes found">The repository has no releases and no CHANGELOG.md.</tm-callout>
+        <tm-callout tone="attention" heading="GitHub rate limit reached">Set <span class="font-mono">TIDEMARK_GITHUB_TOKEN</span> to raise the limit.</tm-callout>
+        <tm-callout tone="breaking" heading="Breaking: config key renamed">DB_URL is now DATABASE_URL.</tm-callout>
+        <tm-callout>A callout without a heading.</tm-callout>
+      </div>
+      <tm-card>
+        <tm-markdown [markdown]="sampleNotes" githubRepo="https://github.com/home-assistant/core" />
+      </tm-card>
+    </div>
+  </section>
+
   <!-- ── Tabs ───────────────────────────────────────────── -->
   <section>
     <h2 class="mb-1 text-xl font-semibold">Tabs</h2>

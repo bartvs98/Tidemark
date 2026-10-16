@@ -6,6 +6,7 @@ import {
   TmAppIcon,
   TmBadge,
   TmButton,
+  TmCallout,
   TmCard,
   TmEmptyState,
   TmIcon,
@@ -19,6 +20,7 @@ import {
   Toasts,
   UpdateClass,
 } from '../ui';
+import { TmMarkdown } from '../ui/markdown';
 
 interface SampleContainer {
   name: string;
@@ -36,7 +38,9 @@ interface SampleContainer {
     TmAppIcon,
     TmBadge,
     TmButton,
+    TmCallout,
     TmCard,
+    TmMarkdown,
     TmEmptyState,
     TmIcon,
     TmLevel,
@@ -87,6 +91,24 @@ export class Styleguide {
     { name: 'mkvtoolnix', icon: undefined },
     { name: 'broken', icon: { src: '/api/icons/does-not-exist' } },
   ];
+
+  protected readonly sampleNotes = [
+    '## Breaking changes',
+    '',
+    '- The `legacy_api` option was removed (#12345), thanks @frenck.',
+    '- Config key `DB_URL` is now `DATABASE_URL`.',
+    '',
+    '### Fixes',
+    '',
+    '1. Faster startup',
+    '2. See [the docs](https://example.com) for details.',
+    '',
+    '> Upgrade notes: back up first.',
+    '',
+    '```yaml',
+    'database_url: postgres://…',
+    '```',
+  ].join('\n');
 
   protected readonly radii = ['rounded-sm', 'rounded-md', 'rounded-lg', 'rounded-xl'];
 
