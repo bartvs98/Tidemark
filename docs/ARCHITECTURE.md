@@ -123,8 +123,8 @@ ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reas
 ## HTTP API (v1)
 
 ```
-GET  /api/containers                list with status, grouped info, level
-GET  /api/containers/{id}           detail incl. releases in range + flags + links
+GET  /api/containers                containers + latest check result each + run status
+GET  /api/containers/{id}           detail incl. releases in range + flags + links          (step 4)
 POST /api/checks                    start a check run unless one is running (202 + run status)
                                     run status and per-container results are part of GET /api/containers
 GET  /api/health
@@ -141,10 +141,10 @@ All other paths serve the Angular SPA (with fallback to `index.html`).
 
 ## Frontend
 
-- **Dashboard**: stacks as sections; each container is a row with name, running → latest, update class badge, level badge (breaking / attention), and how the version was determined. Filters: updates only, breaking only.
-- **Container detail**: version info, compare/repo links, release list (markdown, newest first) with breaking/attention lines highlighted. Later: AI summary panel, review/snooze actions, update button with gate status.
+- **Dashboard** (built): Compose stacks as sections, list and tile views, app icons; each container shows running → latest, how the version was determined, and the update class. Step 5 adds the risk badge and filters (updates only, breaking only).
+- **Container detail** (step 4): version info, compare/repo links, release list (markdown, newest first) with breaking/attention lines highlighted. Later: AI summary panel, review/snooze actions, update button with gate status.
 - **Settings** (later): schedule, tokens set / not set, notification test button.
-- Dev: `ng serve` with a proxy for `/api` → `localhost:8080`.
+- Dev: `ng serve` (bound to 127.0.0.1) with a proxy for `/api` → `localhost:8080`.
 
 ## Configuration
 
