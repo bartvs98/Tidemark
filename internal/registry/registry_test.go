@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
@@ -88,5 +89,41 @@ func TestMissingRepoIsFriendly(t *testing.T) {
 	_, err := c.Digest(context.Background(), ref, "1")
 	if err == nil || !strings.Contains(err.Error(), "not found, or private") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+type memTagCache struct {
+	tags map[string][]string
+	at   map[string]time.Time
+}
+
+func (m *memTagCache) LoadTags(_ context.Context, repo string) ([]string, time.Time, bool) {
+	t, ok := m.tags[repo]
+	return t, m.at[repo], ok
+}
+
+func (m *memTagCache) SaveTags(_ context.Context, repo string, tags []string, at time.Time) error {
+	m.tags[repo], m.at[repo] = tags, at
+	return nil
+}
+
+func TestPersistentTagCache(t *testing.T) {
+	host, _, requests := testRegistry(t)
+	ref, _ := imageref.Parse(host + "/team/app:1.0.0")
+	key := host + "/team/app"
+	ctx := context.Background()
+
+	// A fresh persisted list is used without asking the registry (e.g. after a restart).
+	tc := &memTagCache{tags: map[string][]string{key: {"cached"}}, at: map[string]time.Time{key: time.Now()}}
+	tags, err := New("t", WithTagCache(tc)).Tags(ctx, ref)
+	if err != nil || !slices.Equal(tags, []string{"cached"}) || requests.Load() != 0 {
+		t.Fatalf("fresh cache: tags=%v err=%v requests=%d", tags, err, requests.Load())
+	}
+
+	// A stale one is refreshed from the registry and written back.
+	tc.at[key] = time.Now().Add(-2 * time.Hour)
+	tags, err = New("t", WithTagCache(tc)).Tags(ctx, ref)
+	if err != nil || len(tags) != 3 || requests.Load() == 0 || len(tc.tags[key]) != 3 {
+		t.Errorf("stale cache: tags=%v err=%v requests=%d saved=%v", tags, err, requests.Load(), tc.tags[key])
 	}
 }

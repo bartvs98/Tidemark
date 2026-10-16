@@ -13,6 +13,9 @@ export interface ContainerList {
 
 export interface CheckStatus {
   running: boolean;
+  trigger?: 'startup' | 'schedule' | 'manual';
+  /** Next scheduled run; absent when the schedule is off. */
+  nextRunAt?: string;
   startedAt?: string;
   finishedAt?: string;
   done: number;

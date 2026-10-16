@@ -66,7 +66,8 @@ Then open http://your-server:8080.
 | Env var | Default | |
 |---|---|---|
 | `TIDEMARK_ADDR` | `:8080` | Listen address |
-| `TIDEMARK_DATA_DIR` | `./data` (`/data` in Docker) | Database location |
+| `TIDEMARK_DATA_DIR` | `./data` (`/data` in Docker) | SQLite database and icon cache |
+| `TIDEMARK_SCHEDULE` | `0 */6 * * *` | When to check for updates (cron); `off` to only check on demand |
 | `TIDEMARK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `TIDEMARK_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker Engine API, or `tcp://socket-proxy:2375` |
 | `TIDEMARK_DOCKER_SNAPSHOT` | none | Use a snapshot file instead of Docker (see Development) |

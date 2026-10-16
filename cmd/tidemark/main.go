@@ -23,11 +23,15 @@ import (
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/icons"
 	"github.com/bartvs98/tidemark/internal/registry"
+	"github.com/bartvs98/tidemark/internal/store"
 	"github.com/bartvs98/tidemark/web"
 )
 
 // version is set at build time: -ldflags "-X main.version=1.0.0".
 var version = "dev"
+
+// startupCheckAge: at startup, check only if the last check finished longer ago than this.
+const startupCheckAge = time.Hour
 
 func main() {
 	cfg, err := config.Load()
@@ -64,8 +68,29 @@ func run(cfg config.Config, log *slog.Logger) error {
 		iconSvc.Start(ctx)
 	}
 
-	checks := check.New(source, registry.New("tidemark/"+version), log)
-	checks.Start(ctx) // first check right away; step 3 adds a schedule
+	db, err := store.Open(filepath.Join(cfg.DataDir, "tidemark.db"))
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	reg := registry.New("tidemark/"+version, registry.WithTagCache(db))
+	checks := check.New(source, reg, db, log)
+	if err := checks.Load(ctx); err != nil {
+		return err
+	}
+	if !strings.EqualFold(cfg.Schedule, "off") {
+		if err := checks.Schedule(ctx, cfg.Schedule); err != nil {
+			return fmt.Errorf("TIDEMARK_SCHEDULE: %w", err)
+		}
+		log.Info("check schedule", "spec", cfg.Schedule, "next", checks.Status().NextRunAt)
+	}
+	// Check at startup unless a recent result exists, so restarts don't hammer registries.
+	if last := checks.LastFinished(); time.Since(last) > startupCheckAge {
+		checks.Start(ctx, check.TriggerStartup)
+	} else {
+		log.Info("skipping startup check, last one is recent", "finished", last.Format(time.RFC3339))
+	}
 
 	srv := &http.Server{
 		Addr: cfg.Addr,

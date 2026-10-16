@@ -27,10 +27,17 @@ const (
 	defaultReqTimeout = 60 * time.Second
 )
 
+// TagCache persists tag lists across restarts (the store implements it).
+type TagCache interface {
+	LoadTags(ctx context.Context, repository string) ([]string, time.Time, bool)
+	SaveTags(ctx context.Context, repository string, tags []string, at time.Time) error
+}
+
 type Client struct {
 	ttl       time.Duration
 	transport http.RoundTripper
 	userAgent string
+	tagCache  TagCache
 
 	mu      sync.Mutex
 	tags    map[string]cached[[]string]
@@ -47,6 +54,9 @@ type Option func(*Client)
 
 // WithTransport replaces the HTTP transport (tests).
 func WithTransport(rt http.RoundTripper) Option { return func(c *Client) { c.transport = rt } }
+
+// WithTagCache adds a persistent second-level cache for tag lists.
+func WithTagCache(tc TagCache) Option { return func(c *Client) { c.tagCache = tc } }
 
 // WithTTL sets how long tag lists and digests are cached.
 func WithTTL(d time.Duration) Option { return func(c *Client) { c.ttl = d } }
@@ -72,6 +82,14 @@ func (c *Client) Tags(ctx context.Context, ref imageref.Ref) ([]string, error) {
 	if v, ok := lookup(c, c.tags, key); ok {
 		return v, nil
 	}
+	if c.tagCache != nil {
+		if tags, at, ok := c.tagCache.LoadTags(ctx, key); ok && time.Since(at) < c.ttl {
+			c.mu.Lock()
+			c.tags[key] = cached[[]string]{value: tags, at: at}
+			c.mu.Unlock()
+			return tags, nil
+		}
+	}
 	repo, err := name.NewRepository(key)
 	if err != nil {
 		return nil, err
@@ -89,6 +107,9 @@ func (c *Client) Tags(ctx context.Context, ref imageref.Ref) ([]string, error) {
 		return nil, friendly(err, key)
 	}
 	store(c, c.tags, key, tags)
+	if c.tagCache != nil {
+		_ = c.tagCache.SaveTags(ctx, key, tags, time.Now()) // best effort: the memory cache still works
+	}
 	return tags, nil
 }
 

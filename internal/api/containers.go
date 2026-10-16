@@ -19,6 +19,8 @@ type containerList struct {
 
 type checkJSON struct {
 	Running    bool       `json:"running"`
+	Trigger    string     `json:"trigger,omitempty"` // startup | schedule | manual
+	NextRunAt  *time.Time `json:"nextRunAt,omitempty"`
 	StartedAt  *time.Time `json:"startedAt,omitempty"`
 	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 	Done       int        `json:"done"`
@@ -142,15 +144,15 @@ func (s *Server) toContainerJSON(c docker.Container) containerJSON {
 		Stack:   c.Project,
 		Service: c.Service,
 		Icon:    icon,
-		Update:  s.updateFor(c.ID),
+		Update:  s.updateFor(c),
 	}
 }
 
-func (s *Server) updateFor(containerID string) *updateJSON {
+func (s *Server) updateFor(c docker.Container) *updateJSON {
 	if s.checks == nil {
 		return nil
 	}
-	e, ok := s.checks.Result(containerID)
+	e, ok := s.checks.Result(c)
 	if !ok {
 		return nil
 	}
@@ -169,7 +171,10 @@ func (s *Server) updateFor(containerID string) *updateJSON {
 }
 
 func toCheckJSON(st check.Status) *checkJSON {
-	return &checkJSON{Running: st.Running, StartedAt: st.StartedAt, FinishedAt: st.FinishedAt, Done: st.Done, Total: st.Total, Error: st.Err}
+	return &checkJSON{
+		Running: st.Running, Trigger: st.Trigger, NextRunAt: st.NextRunAt,
+		StartedAt: st.StartedAt, FinishedAt: st.FinishedAt, Done: st.Done, Total: st.Total, Error: st.Err,
+	}
 }
 
 // startCheck starts a check run unless one is running, and answers with the run's status.
@@ -178,6 +183,6 @@ func (s *Server) startCheck(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, "update checks are not enabled")
 		return
 	}
-	s.checks.Start(s.background)
+	s.checks.Start(s.background, check.TriggerManual)
 	writeJSON(w, http.StatusAccepted, toCheckJSON(s.checks.Status()))
 }

@@ -16,6 +16,8 @@ type Config struct {
 	DockerHost     string // TIDEMARK_DOCKER_HOST: unix:///var/run/docker.sock or tcp://host:2375
 	DockerSnapshot string // TIDEMARK_DOCKER_SNAPSHOT: read containers from a scripts/snapshot.sh file instead
 
+	Schedule string // TIDEMARK_SCHEDULE: cron spec for update checks, "off" to only check on demand
+
 	Icons    bool   // TIDEMARK_ICONS: "off" disables app icons
 	IconsURL string // TIDEMARK_ICONS_URL: selfh.st icons base URL (CDN or a self-hosted mirror)
 }
@@ -27,6 +29,8 @@ func Load() (Config, error) {
 
 		DockerHost:     env("TIDEMARK_DOCKER_HOST", "unix:///var/run/docker.sock"),
 		DockerSnapshot: env("TIDEMARK_DOCKER_SNAPSHOT", ""),
+
+		Schedule: env("TIDEMARK_SCHEDULE", "0 */6 * * *"),
 
 		Icons:    !strings.EqualFold(env("TIDEMARK_ICONS", "on"), "off"),
 		IconsURL: env("TIDEMARK_ICONS_URL", "https://cdn.jsdelivr.net/gh/selfhst/icons"),

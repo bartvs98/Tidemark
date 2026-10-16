@@ -98,18 +98,27 @@ Failures are per container and per stage: a GitHub rate-limit hit still shows th
 
 ## Data model (SQLite)
 
+File: `$TIDEMARK_DATA_DIR/tidemark.db` (WAL mode). Migrations live in `internal/store/migrations/NNNN_name.sql`, are embedded in the binary and applied in order on start (`schema_migrations` records the version).
+
 ```
-containers      id (docker name), image_ref, compose_project, compose_service,
-                running_tag, running_digest, running_version, version_source,
-                latest_version, latest_digest, latest_in_major, update_class,
-                level, source_repo, last_checked_at, error
-releases        repo, tag, version, name, body, published_at, url   (PK repo+tag)
-tag_cache       image_repo, tags_json, fetched_at
-check_runs      id, started_at, finished_at, trigger, summary_json
+check_runs      id, trigger (startup|schedule|manual), started_at, finished_at, images, error
+results         container_name (PK), image_ref, image_id, running, source, latest, latest_in_major,
+                class, floating, new_image, error, checked_at, run_id
+tag_cache       repository (PK), tags (JSON), fetched_at
+releases        repo, tag, version, name, body, published_at, url   (PK repo+tag)          (step 4)
 reviews         container_id, reviewed_version, snoozed_until, snoozed_until_version   (later)
 history         container_id, from_version, to_version, detected_at, via (manual|oneclick)  (later)
 ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reasons_json   (later)
 ```
+
+- **Results are keyed by container name**, because Compose gives a recreated container a new ID. Each result records the image ref and image ID it was checked against; once the container runs a different image (after `pull` + `up`), the stored result is ignored until the next check.
+- **Tag lists** are cached in memory and in `tag_cache` for 1 h, so restarts don't re-download repositories with thousands of tags. Digests are only cached in memory: HEAD requests are cheap.
+
+## Scheduling
+
+- `TIDEMARK_SCHEDULE` is a cron spec (`0 */6 * * *` by default, also `@daily`, `@every 3h`; prefix `CRON_TZ=Europe/Amsterdam ` for a time zone other than the server's). `off` disables scheduled checks.
+- At startup a check runs only if the last one finished more than 1 hour ago, so restarts don't hammer registries.
+- One run at a time: a scheduled or manual trigger while a run is in progress is ignored.
 
 ## HTTP API (v1)
 
@@ -147,7 +156,7 @@ All other paths serve the Angular SPA (with fallback to `index.html`).
 | `TIDEMARK_DOCKER_SNAPSHOT` | none | Read containers from a `scripts/snapshot.sh` file instead of Docker (development) |
 | `TIDEMARK_ICONS` | `on` | `off` disables app icons (no requests to the icon CDN) |
 | `TIDEMARK_ICONS_URL` | `https://cdn.jsdelivr.net/gh/selfhst/icons` | selfh.st icons base URL, e.g. a self-hosted mirror |
-| `TIDEMARK_SCHEDULE` | `0 */6 * * *` | Check schedule (cron) |
+| `TIDEMARK_SCHEDULE` | `0 */6 * * *` | Check schedule (cron), `off` to only check on demand |
 | `TIDEMARK_DATA_DIR` | `/data` | SQLite location |
 | `TIDEMARK_GITHUB_TOKEN` | — | Fine-grained PAT, public repo read only |
 | `TIDEMARK_REGISTRY_AUTH_FILE` | — | Optional docker `config.json` for private registries |

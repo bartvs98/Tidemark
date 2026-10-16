@@ -5,7 +5,14 @@
       @if (list.hasValue()) {
         {{ summary() }}
         @if (check()?.finishedAt && !checking()) {
-          <span class="text-fg-subtle"> · checked {{ check()!.finishedAt | date: 'HH:mm' }}</span>
+          <span class="text-fg-subtle" [attr.title]="check()!.finishedAt | date: 'medium'">
+            · checked {{ check()!.finishedAt | date: sameDay(check()!.finishedAt!) ? 'HH:mm' : 'd MMM, HH:mm' }}
+          </span>
+        }
+        @if (check()?.nextRunAt; as next) {
+          <span class="text-fg-subtle" [attr.title]="next | date: 'medium'" data-testid="next-run">
+            · next {{ next | date: sameDay(next) ? 'HH:mm' : 'd MMM, HH:mm' }}
+          </span>
         }
       }
     </p>

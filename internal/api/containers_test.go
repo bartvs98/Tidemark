@@ -8,12 +8,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/imageref"
+	"github.com/bartvs98/tidemark/internal/store"
 
 	"github.com/bartvs98/tidemark/internal/docker"
 )
@@ -86,7 +88,12 @@ func (tagsRegistry) Digest(context.Context, imageref.Ref, string) (string, error
 func TestChecksAndUpdates(t *testing.T) {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	src := docker.NewSnapshot("../docker/testdata/snapshot.json")
-	checks := check.New(src, tagsRegistry{}, log)
+	db, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	checks := check.New(src, tagsRegistry{}, db, log)
 	h := New(Deps{Version: "1.2.3", Log: log, Source: src, Checks: checks}).Handler(fstest.MapFS{})
 
 	rec := httptest.NewRecorder()
@@ -101,7 +108,7 @@ func TestChecksAndUpdates(t *testing.T) {
 
 	var body containerList
 	_ = json.Unmarshal(do(t, h, "/api/containers").Body.Bytes(), &body)
-	if body.Check == nil || body.Check.Running || body.Check.Done != body.Check.Total || body.Check.FinishedAt == nil {
+	if body.Check == nil || body.Check.Running || body.Check.Done != body.Check.Total || body.Check.FinishedAt == nil || body.Check.Trigger != "manual" {
 		t.Errorf("check = %+v", body.Check)
 	}
 	for _, c := range body.Containers {

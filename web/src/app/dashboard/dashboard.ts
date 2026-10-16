@@ -95,6 +95,11 @@ export class Dashboard {
   });
 
   protected readonly imageName = imageName;
+
+  /** Times today show as "15:21"; other days add the date. */
+  protected sameDay(iso: string): boolean {
+    return new Date(iso).toDateString() === new Date().toDateString();
+  }
   protected readonly plural = plural;
 
   constructor() {

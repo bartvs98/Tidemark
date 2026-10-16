@@ -126,7 +126,7 @@ describe('Dashboard', () => {
   it('shows versions, update classes and failures from the last check', async () => {
     const body: ContainerList = {
       source: { kind: 'docker', location: 'unix:///var/run/docker.sock' },
-      check: { running: false, done: 3, total: 3, finishedAt: '2026-10-16T13:00:00Z' },
+      check: { running: false, done: 3, total: 3, finishedAt: '2026-10-16T13:00:00Z', nextRunAt: '2026-10-16T18:00:00Z' },
       containers: [
         container('jellyfin', 'media', {
           update: { running: '10.9.11', source: 'label', latest: '10.10.7', class: 'minor', floating: true, newImage: true, checkedAt: '' },
@@ -147,6 +147,7 @@ describe('Dashboard', () => {
     expect(rows[1]).toContain('check failed'); // rows sort by name: jellyfin, private, sonarr
     expect(rows[2]).toContain('Up to date');
     expect(el.querySelector('[data-testid="summary"]')?.textContent).toContain('1 update');
+    expect(el.querySelector('[data-testid="next-run"]')?.textContent).toContain('next');
   });
 
   it('shows progress while a check runs, and Check now starts one', async () => {
