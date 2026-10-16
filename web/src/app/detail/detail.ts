@@ -3,7 +3,7 @@ import { DatePipe } from '@angular/common';
 import { HttpErrorResponse, httpResource } from '@angular/common/http';
 import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
-import { TM_TABS, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmEmptyState, TmIcon, TmSkeleton } from '../ui';
+import { TM_TABS, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmClamp, TmEmptyState, TmIcon, TmLevel, TmSkeleton } from '../ui';
 import { TmMarkdown } from '../ui/markdown';
 import { imageName } from '../dashboard/containers';
 import { ContainerUpdate, ContainerVersion } from '../dashboard/update-info';
@@ -37,8 +37,10 @@ const SOURCE: Record<string, string> = {
     TmButton,
     TmCallout,
     TmCard,
+    TmClamp,
     TmEmptyState,
     TmIcon,
+    TmLevel,
     TmMarkdown,
     TmSkeleton,
     ...TM_TABS,

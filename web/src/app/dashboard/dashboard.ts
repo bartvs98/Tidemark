@@ -16,20 +16,21 @@ import {
   Toasts,
 } from '../ui';
 import { ContainerTile } from './container-tile';
-import { ContainerList, countUpdates, groupByStack, imageName } from './containers';
+import { ContainerList, countUpdates, Filter, groupByStack, hasUpdate, imageName, matchesFilter } from './containers';
 import { ContainerUpdate, ContainerVersion } from './update-info';
 
 export type ViewMode = 'list' | 'tiles';
 
 const VIEW_KEY = 'tidemark.view';
+const FILTER_KEY = 'tidemark.filter';
 const POLL_MS = 1500;
 
 /** List columns. The pinned header bar and every stack's table share these widths. */
 const COLUMNS = [
-  { label: 'Container', width: 'w-[27%]' },
-  { label: 'Image', width: 'w-[29%]' },
-  { label: 'Version', width: 'w-[28%]' },
-  { label: 'Update', width: 'w-[16%]' },
+  { label: 'Container', width: 'w-[25%]' },
+  { label: 'Image', width: 'w-[28%]' },
+  { label: 'Version', width: 'w-[26%]' },
+  { label: 'Update', width: 'w-[21%]' },
 ];
 
 const VIEWS: SegmentOption<ViewMode>[] = [
@@ -64,19 +65,34 @@ export class Dashboard {
 
   protected readonly views = VIEWS;
   protected readonly columns = COLUMNS;
-  protected readonly view = signal<ViewMode>(readView());
+  protected readonly view = signal<ViewMode>(readStored(VIEW_KEY, ['list', 'tiles'], 'list'));
+  protected readonly filter = signal<Filter>(readStored(FILTER_KEY, ['all', 'updates', 'breaking'], 'all'));
   protected readonly starting = signal(false);
 
   // value() throws while the resource is in an error state, so always go through hasValue().
   private readonly data = computed(() => (this.list.hasValue() ? this.list.value() : undefined));
 
-  protected readonly stacks = computed(() => groupByStack(this.data()?.containers ?? []));
+  private readonly containers = computed(() => this.data()?.containers ?? []);
+  /** All stacks (for the summary), and the ones shown under the current filter. */
+  protected readonly stacks = computed(() => groupByStack(this.containers()));
+  protected readonly shownStacks = computed(() => {
+    const filter = this.filter();
+    return groupByStack(this.containers().filter((c) => matchesFilter(c, filter)));
+  });
+  protected readonly filters = computed<SegmentOption<Filter>[]>(() => {
+    const updates = this.containers().filter(hasUpdate);
+    return [
+      { value: 'all', label: 'All' },
+      { value: 'updates', label: 'Updates', count: updates.length },
+      { value: 'breaking', label: 'Breaking', count: updates.filter((c) => c.update!.level === 'breaking').length },
+    ];
+  });
   protected readonly source = computed(() => this.data()?.source);
   protected readonly check = computed(() => this.data()?.check);
   protected readonly checking = computed(() => this.check()?.running ?? false);
 
   protected readonly summary = computed(() => {
-    const containers = this.data()?.containers ?? [];
+    const containers = this.containers();
     const running = containers.filter((c) => c.state === 'running').length;
     const stacks = this.stacks().filter((s) => s.name !== null).length;
     const parts = [plural(containers.length, 'container'), plural(stacks, 'stack')];
@@ -105,14 +121,8 @@ export class Dashboard {
   protected readonly plural = plural;
 
   constructor() {
-    effect(() => {
-      const view = this.view();
-      try {
-        localStorage.setItem(VIEW_KEY, view);
-      } catch {
-        // storage blocked: the choice just won't persist
-      }
-    });
+    effect(() => store(VIEW_KEY, this.view()));
+    effect(() => store(FILTER_KEY, this.filter()));
 
     // While a check runs, poll so results appear as they come in. Depend on the status
     // object (new on every response), not the boolean, which stays `true` between polls.
@@ -149,14 +159,22 @@ export class Dashboard {
   }
 }
 
-function readView(): ViewMode {
+function readStored<T extends string>(key: string, allowed: T[], fallback: T): T {
   try {
-    const stored = localStorage.getItem(VIEW_KEY);
-    if (stored === 'list' || stored === 'tiles') return stored;
+    const stored = localStorage.getItem(key) as T | null;
+    if (stored && allowed.includes(stored)) return stored;
   } catch {
     // ignore
   }
-  return 'list';
+  return fallback;
+}
+
+function store(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // storage blocked: the choice just won't persist
+  }
 }
 
 function plural(n: number, word: string): string {

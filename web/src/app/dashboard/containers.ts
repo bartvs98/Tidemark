@@ -1,4 +1,4 @@
-import { AppIconSources } from '../ui';
+import { AppIconSources, Level } from '../ui';
 
 /** Shapes of GET /api/containers (internal/api/containers.go). */
 export interface ContainerList {
@@ -36,6 +36,10 @@ export interface UpdateInfo {
   newImage: boolean;
   error?: string;
   checkedAt: string;
+  /** Breaking-change verdict from the version jump and the stored release notes. */
+  level: Exclude<Level, 'unknown'>;
+  /** Why, most severe first: "Major version: 2 → 3", "v3.0.0: Redis 8.0 or newer is now required". */
+  reasons?: string[];
 }
 
 export interface ContainerSummary {
@@ -88,7 +92,21 @@ export function imageName(c: ContainerSummary): string {
   return registry === 'docker.io' ? repository.replace(/^library\//, '') : `${registry}/${repository}`;
 }
 
+/** A successful check found a newer version or image. */
+export function hasUpdate(c: ContainerSummary): boolean {
+  return !!c.update && !c.update.error && c.update.class !== 'none';
+}
+
 /** Containers with an update of any kind. */
 export function countUpdates(containers: ContainerSummary[]): number {
-  return containers.filter((c) => c.update && !c.update.error && c.update.class !== 'none').length;
+  return containers.filter(hasUpdate).length;
+}
+
+/** Dashboard filter: everything, only containers with an update, or only breaking updates. */
+export type Filter = 'all' | 'updates' | 'breaking';
+
+export function matchesFilter(c: ContainerSummary, filter: Filter): boolean {
+  if (filter === 'updates') return hasUpdate(c);
+  if (filter === 'breaking') return hasUpdate(c) && c.update!.level === 'breaking';
+  return true;
 }

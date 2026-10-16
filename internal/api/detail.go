@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bartvs98/tidemark/internal/analysis"
 	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/imageref"
 	"github.com/bartvs98/tidemark/internal/source"
@@ -50,6 +51,10 @@ type releaseJSON struct {
 	Body        string     `json:"body"` // markdown from the repo: untrusted, sanitise before rendering
 	URL         string     `json:"url"`
 	PublishedAt *time.Time `json:"publishedAt,omitempty"`
+	// Level and the flagged lines of this release's notes (Hit.Line is the trimmed markdown
+	// source line, so the UI can find it again when rendering).
+	Level analysis.Level `json:"level"`
+	Hits  []analysis.Hit `json:"hits"`
 }
 
 type linksJSON struct {
@@ -85,7 +90,7 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 	c := list[idx]
 
 	out := detailJSON{
-		Container: s.toContainerJSON(c),
+		Container: s.toContainerJSON(r.Context(), c),
 		Image:     imageDetail{Digests: orEmptySlice(c.Image.RepoDigests), Labels: ociLabels(c.Image.Labels)},
 	}
 
@@ -113,6 +118,19 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out.Changelog = toChangelogJSON(repo, how, ch)
+	// The notes may be fresher than what the list endpoint saw, so assess again.
+	if u := out.Container.Update; u != nil && u.Error == "" {
+		res := assess(u.Class, running, latest, ch)
+		if u.Class != string(version.None) {
+			u.Level, u.Reasons = res.Level, res.Reasons
+		}
+		for i, rel := range res.Releases {
+			out.Changelog.Releases[i].Level = rel.Level
+			if rel.Hits != nil {
+				out.Changelog.Releases[i].Hits = rel.Hits
+			}
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -128,7 +146,7 @@ func toChangelogJSON(repo source.Repo, how source.How, ch changelog.Changes) *ch
 		cj.FetchedAt = &ch.FetchedAt
 	}
 	for _, r := range ch.Releases {
-		rj := releaseJSON{Tag: r.Tag, Name: r.Name, Body: r.Body, URL: r.URL}
+		rj := releaseJSON{Tag: r.Tag, Name: r.Name, Body: r.Body, URL: r.URL, Hits: []analysis.Hit{}}
 		if !r.PublishedAt.IsZero() {
 			rj.PublishedAt = &r.PublishedAt
 		}

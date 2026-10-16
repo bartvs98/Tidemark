@@ -45,7 +45,7 @@ Use the **`verify` skill** (`.claude/skills/verify/SKILL.md`), which runs `node 
 ## Gotchas (learned the hard way)
 
 - **`ng serve` must bind `127.0.0.1`** (set in `angular.json`): bound to `[::1]` only, Firefox on Windows waits ~2 s per connection.
-- **GitHub quota:** without `TIDEMARK_GITHUB_TOKEN`, GitHub allows 60 API requests/hour per IP. Each verify run starts with an empty data dir and prefetches ~11 repos, so a few runs an hour are fine; don't loop it.
+- **GitHub quota:** without `TIDEMARK_GITHUB_TOKEN`, GitHub allows 60 API requests/hour per IP. Each verify run starts with an empty data dir and prefetches ~11 repos, so a few runs an hour are fine; don't loop it. When the quota runs low, reuse notes with `--data .verify/<earlier run>/data` (pick a run whose `repos` table has no rate-limit errors; `--serve` reuses `.verify/serve` and overwrites it). Without notes, levels only reflect version jumps.
 - **Bundles:** `ui/markdown` (marked + DOMPurify) is deliberately not in the `ui` barrel; import it directly, from lazy routes only.
 - **CSS build (lightningcss):** a declaration using `color-mix(... var())` gets an `@supports` copy containing only that declaration. With a `background` shorthand that copy resets `background-size`/`-position` (this froze the skeleton shimmer for a whole step). Use longhands (`background-image`).
 - **Angular:** `httpResource.value()` throws in the error state, so go through `hasValue()`. Effects only re-run when a read signal *changes*: depend on objects that change per response, not on a boolean that stays `true` (this broke polling once; there's a regression test).

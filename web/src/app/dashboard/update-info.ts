@@ -1,5 +1,5 @@
 import { Component, computed, input } from '@angular/core';
-import { TmBadge, TmSkeleton, TmUpdateClass, TmVersionDiff, UpdateClass } from '../ui';
+import { TmBadge, TmLevel, TmSkeleton, TmUpdateClass, TmVersionDiff, UpdateClass } from '../ui';
 import { ContainerSummary, UpdateSource } from './containers';
 
 const SOURCE_HINT: Record<UpdateSource, string> = {
@@ -54,10 +54,10 @@ export class ContainerVersion {
   });
 }
 
-/** The update class badge, "check failed", or a placeholder while checking. */
+/** The update class and risk level badges, "check failed", or a placeholder while checking. */
 @Component({
   selector: 'tm-container-update',
-  imports: [TmBadge, TmSkeleton, TmUpdateClass],
+  imports: [TmBadge, TmLevel, TmSkeleton, TmUpdateClass],
   template: `
     @if (update(); as u) {
       @if (u.error) {
@@ -65,12 +65,16 @@ export class ContainerVersion {
         <tm-badge tone="unknown" icon="circle-help" [attr.title]="u.error" class="relative z-10">check failed</tm-badge>
       } @else {
         <tm-update-class [kind]="kind()" />
+        @if (kind() !== 'none') {
+          <!-- relative z-10: hoverable above a stretched link, so the reasons tooltip shows -->
+          <tm-level [level]="u.level" [attr.title]="reasons()" class="relative z-10" data-testid="level" />
+        }
       }
     } @else if (checking()) {
       <tm-skeleton width="4.5rem" height="1.25rem" />
     }
   `,
-  host: { class: 'inline-flex' },
+  host: { class: 'inline-flex flex-wrap items-center gap-1.5' },
 })
 export class ContainerUpdate {
   readonly container = input.required<ContainerSummary>();
@@ -78,4 +82,5 @@ export class ContainerUpdate {
 
   protected readonly update = computed(() => this.container().update);
   protected readonly kind = computed(() => (this.update()?.class ?? 'none') as UpdateClass);
+  protected readonly reasons = computed(() => this.update()?.reasons?.join('\n') || null);
 }

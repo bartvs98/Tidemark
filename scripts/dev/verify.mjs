@@ -6,12 +6,13 @@
 //   node scripts/dev/verify.mjs --pages dashboard --views tiles --widths 1280,390 --browsers chrome,firefox
 //   node scripts/dev/verify.mjs --no-build            # reuse the last build
 //   node scripts/dev/verify.mjs --serve               # build + run the server only (Ctrl+C to stop)
+//   node scripts/dev/verify.mjs --data .verify/serve/data   # start from a copy of stored results + notes
 //
 // Output: .verify/<run>/ with PNGs and report.json (git-ignored). Exit code 1 on page errors.
 // Needs a local Chrome (and Firefox for --browsers firefox); override with CHROME_PATH / FIREFOX_PATH.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
@@ -40,6 +41,8 @@ if (flag('help')) {
   --out .verify/<timestamp>
   --no-build                   skip ng build + go build
   --no-wait                    don't wait for the startup update check to finish
+  --data <dir>                 start from a copy of an earlier data dir (results, release notes),
+                               e.g. .verify/serve/data: no GitHub requests when the quota is low
   --serve                      only build and run the server until Ctrl+C`);
   process.exit(0);
 }
@@ -111,6 +114,16 @@ if (!flag('no-build')) {
 }
 
 // ── server ───────────────────────────────────────────────
+// A copied data dir with a check younger than an hour skips the startup check (and its GitHub calls).
+const seed = opt('data', '');
+if (seed) {
+  if (!existsSync(resolve(ROOT, seed))) {
+    console.error(`--data: ${seed} doesn't exist`);
+    process.exit(1);
+  }
+  cpSync(resolve(ROOT, seed), join(out, 'data'), { recursive: true });
+}
+
 const server = spawn(bin, [], {
   cwd: ROOT,
   env: {

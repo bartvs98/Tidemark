@@ -51,13 +51,14 @@ Every colour is written once as `light-dark(<light>, <dark>)`. The theme switch 
 | `Toasts` + `<tm-toaster>` | `inject(Toasts).show(msg, tone, ms)`. Breaking toasts use `role="alert"` and the others `role="status"`. |
 | `tm-icon` | `name`, `size`. A small set of Lucide icons; add new ones in `icon.ts`. |
 | `tm-callout` | `tone` (info, attention, breaking), `heading`, content. Explains what's missing and what to do next, in context. |
-| `tm-markdown` | `markdown`, `githubRepo`. Renders untrusted markdown (release notes) sanitised with DOMPurify, styled by `.tm-prose`. **Import it from `ui/markdown`, not the `ui` barrel**, and only in lazy routes: it pulls in marked + DOMPurify (~28 KB gz). |
+| `tm-clamp` | `max` (CSS length, default `40rem`). Caps tall content with a fade and "Show all" / "Show less"; content at most a third taller than the cap is shown whole. Used for long release notes (not for notes with flagged lines, which must stay visible). |
+| `tm-markdown` | `markdown`, `githubRepo`, `flags` (`{line, level}[]` from the API). Flagged source lines get a highlighter in the level's colour (`.tm-flag-breaking` / `.tm-flag-attention` on the heading, paragraph or list item). Renders untrusted markdown (release notes) sanitised with DOMPurify, styled by `.tm-prose`. **Import it from `ui/markdown`, not the `ui` barrel**, and only in lazy routes: it pulls in marked + DOMPurify (~28 KB gz). |
 | `tm-app-icon` | `icon` (`{src, light?, dark?}`), `name`, `size`. An app's logo, with a letter avatar as fallback. Swaps to the light/dark variant when the logo would disappear on the current theme. Decorative (`aria-hidden`); always show the name next to it. |
 | `tm-theme-switch` | System, light or dark. Lives in the header. |
 | `tm-section` | `heading`, `icon`, `meta`, and a `[tmSectionActions]` slot. A titled group such as a Compose stack, announced as a named region. |
-| `tm-segmented` | `options` (`{value, label, icon}`), two-way `[(value)]`, `label`, `iconOnly`. Mutually exclusive toggles such as list/tiles view or theme. |
+| `tm-segmented` | `options` (`{value, label, icon, count}`), two-way `[(value)]`, `label`, `iconOnly`. Mutually exclusive toggles such as list/tiles view, theme, or a filter (`count` shows muted after the label: "Updates 11"). |
 | `tr.tm-row-link` | A table row that opens a link: put `after:absolute after:inset-0` on one link inside (stretched link). Things that must stay hoverable on their own get `relative z-10`. |
-| `table.tm-table` | A plain table, which keeps it accessible by default. For tables split across sections, add `table-fixed` and a `<colgroup>` so columns line up, and show the `<thead>` once (use `sr-only` on the rest). |
+| `table.tm-table` | A plain table, which keeps it accessible by default. For tables split across sections, add `table-fixed` and a `<colgroup>` so columns line up, and show the `<thead>` once (use `sr-only` on the rest). Add `tm-table-stack` (and make any `min-w` `sm:` only) to stack rows below 640px: cells with `data-stack="full"` take the first line, `"hide"` drop out, `"indent"` grows and lines up under the name, the rest share the second line. |
 | `TM_TABS` + `.tm-tabs` | [Angular Aria](https://angular.dev/guide/aria/tabs) headless tabs (`ngTabs`, `ngTabList`, `ngTab`, `ngTabPanel`), styled by the class. Keyboard navigation and ARIA come from Aria. |
 
 ## Rules

@@ -2,13 +2,18 @@ package api
 
 import (
 	"cmp"
+	"context"
 	"net/http"
 	"slices"
 	"time"
 
+	"github.com/bartvs98/tidemark/internal/analysis"
+	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
+	"github.com/bartvs98/tidemark/internal/source"
+	"github.com/bartvs98/tidemark/internal/version"
 )
 
 type containerList struct {
@@ -38,6 +43,10 @@ type updateJSON struct {
 	NewImage      bool      `json:"newImage"`
 	Error         string    `json:"error,omitempty"`
 	CheckedAt     time.Time `json:"checkedAt"`
+	// Level is the breaking-change verdict (none | attention | breaking) from the version
+	// jump and the stored release notes in range; Reasons explain it, most severe first.
+	Level   analysis.Level `json:"level"`
+	Reasons []string       `json:"reasons,omitempty"`
 }
 
 type sourceJSON struct {
@@ -96,7 +105,7 @@ func (s *Server) containers(w http.ResponseWriter, r *http.Request) {
 		out.Check = toCheckJSON(s.checks.Status())
 	}
 	for _, c := range list {
-		out.Containers = append(out.Containers, s.toContainerJSON(c))
+		out.Containers = append(out.Containers, s.toContainerJSON(r.Context(), c))
 	}
 	slices.SortFunc(out.Containers, func(a, b containerJSON) int {
 		return cmp.Or(cmp.Compare(a.Stack, b.Stack), cmp.Compare(a.Name, b.Name))
@@ -104,7 +113,7 @@ func (s *Server) containers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) toContainerJSON(c docker.Container) containerJSON {
+func (s *Server) toContainerJSON(ctx context.Context, c docker.Container) containerJSON {
 	img := imageJSON{
 		Ref:      c.ImageRef,
 		Display:  c.ImageRef,
@@ -144,11 +153,11 @@ func (s *Server) toContainerJSON(c docker.Container) containerJSON {
 		Stack:   c.Project,
 		Service: c.Service,
 		Icon:    icon,
-		Update:  s.updateFor(c),
+		Update:  s.updateFor(ctx, c, ref),
 	}
 }
 
-func (s *Server) updateFor(c docker.Container) *updateJSON {
+func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref.Ref) *updateJSON {
 	if s.checks == nil {
 		return nil
 	}
@@ -157,7 +166,7 @@ func (s *Server) updateFor(c docker.Container) *updateJSON {
 		return nil
 	}
 	r := e.Result
-	return &updateJSON{
+	u := &updateJSON{
 		Running:       r.Running,
 		Source:        string(r.Source),
 		Latest:        r.Latest,
@@ -168,6 +177,35 @@ func (s *Server) updateFor(c docker.Container) *updateJSON {
 		Error:         e.Err,
 		CheckedAt:     e.CheckedAt,
 	}
+	if e.Err == "" && r.Class != version.None {
+		s.assessUpdate(ctx, u, c, ref)
+	}
+	return u
+}
+
+// assessUpdate sets the update's level from the version jump and the release notes that
+// are already stored (the check run prefetches them). It never fetches.
+func (s *Server) assessUpdate(ctx context.Context, u *updateJSON, c docker.Container, ref imageref.Ref) {
+	running, latest := parseVersion(u.Running), parseVersion(u.Latest)
+	var ch changelog.Changes
+	if s.changelogs != nil && ref.Repository != "" {
+		if repo, _, ok := source.Resolve(c, ref); ok {
+			var err error
+			if ch, err = s.changelogs.Changes(ctx, repo, running, latest); err != nil {
+				s.log.Debug("stored release notes unavailable", "repo", repo.Key(), "err", err)
+			}
+		}
+	}
+	res := assess(u.Class, running, latest, ch)
+	u.Level, u.Reasons = res.Level, res.Reasons
+}
+
+func assess(class string, running, latest *version.Version, ch changelog.Changes) analysis.Result {
+	in := analysis.Input{Class: version.Class(class), Running: running, Latest: latest, RunningNotes: ch.FromBody}
+	for _, r := range ch.Releases {
+		in.Releases = append(in.Releases, analysis.Notes{Tag: r.Tag, Body: r.Body})
+	}
+	return analysis.Assess(in)
 }
 
 func toCheckJSON(st check.Status) *checkJSON {

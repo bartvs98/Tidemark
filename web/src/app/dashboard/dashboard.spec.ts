@@ -131,13 +131,13 @@ describe('Dashboard', () => {
       check: { running: false, done: 3, total: 3, finishedAt: '2026-10-16T13:00:00Z', nextRunAt: '2026-10-16T18:00:00Z' },
       containers: [
         container('jellyfin', 'media', {
-          update: { running: '10.9.11', source: 'label', latest: '10.10.7', class: 'minor', floating: true, newImage: true, checkedAt: '' },
+          update: { running: '10.9.11', source: 'label', latest: '10.10.7', class: 'minor', floating: true, newImage: true, checkedAt: '', level: 'none' },
         }),
         container('sonarr', 'media', {
-          update: { running: '4.0.14', source: 'tag', latest: '4.0.14', class: 'none', floating: false, newImage: false, checkedAt: '' },
+          update: { running: '4.0.14', source: 'tag', latest: '4.0.14', class: 'none', floating: false, newImage: false, checkedAt: '', level: 'none' },
         }),
         container('private', 'media', {
-          update: { source: 'unknown', class: 'none', floating: false, newImage: false, error: 'not found, or private', checkedAt: '' },
+          update: { source: 'unknown', class: 'none', floating: false, newImage: false, error: 'not found, or private', checkedAt: '', level: 'none' },
         }),
       ],
     };
@@ -150,6 +150,51 @@ describe('Dashboard', () => {
     expect(rows[2]).toContain('Up to date');
     expect(el.querySelector('[data-testid="summary"]')?.textContent).toContain('1 update');
     expect(el.querySelector('[data-testid="next-run"]')?.textContent).toContain('next');
+  });
+
+  it('shows the risk level with its reasons, and filters to updates or breaking ones', async () => {
+    const update = (cls: 'none' | 'minor' | 'major', level: 'none' | 'attention' | 'breaking', reasons?: string[]) => ({
+      running: '1.0.0', source: 'tag' as const, latest: cls === 'none' ? '1.0.0' : '2.0.0', class: cls,
+      floating: false, newImage: false, checkedAt: '', level, reasons,
+    });
+    const body: ContainerList = {
+      source: { kind: 'docker', location: 'x' },
+      check: { running: false, done: 3, total: 3, finishedAt: '2026-10-16T13:00:00Z' },
+      containers: [
+        container('jellyfin', 'media', { update: update('major', 'breaking', ['Major version: 1.0.0 → 2.0.0']) }),
+        container('sonarr', 'media', { update: update('minor', 'attention', ['2.0.0: settings have been removed']) }),
+        container('mkvtoolnix', 'files', { update: update('none', 'none') }),
+      ],
+    };
+    const el = await render((req) => req.flush(body));
+    const rowNames = () => [...el.querySelectorAll('tbody tr a')].map((a) => a.textContent?.trim());
+
+    const levels = [...el.querySelectorAll('[data-testid="level"]')];
+    expect(levels.map((l) => l.textContent?.trim())).toEqual(['Breaking', 'Attention']); // mkvtoolnix is up to date: no badge
+    expect(levels[0].getAttribute('title')).toBe('Major version: 1.0.0 → 2.0.0');
+
+    const buttons = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="filter"] button')];
+    expect(buttons.map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['All', 'Updates 2', 'Breaking 1']);
+    expect(rowNames()).toEqual(['mkvtoolnix', 'jellyfin', 'sonarr']);
+
+    buttons[2].click();
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(rowNames()).toEqual(['jellyfin']);
+    expect(localStorage.getItem('tidemark.filter')).toBe('breaking');
+
+    buttons[1].click();
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(rowNames()).toEqual(['jellyfin', 'sonarr']);
+  });
+
+  it('says so when the filter leaves nothing to show', async () => {
+    localStorage.setItem('tidemark.filter', 'breaking');
+    const body: ContainerList = { source: { kind: 'docker', location: 'x' }, containers: [container('mkvtoolnix', 'files')] };
+    const el = await render((req) => req.flush(body));
+    expect(el.textContent).toContain('Nothing breaking');
+    el.querySelector<HTMLButtonElement>('tm-empty-state button')!.click();
+    await TestBed.inject(ApplicationRef).whenStable();
+    expect(el.querySelectorAll('tbody tr').length).toBe(1);
   });
 
   it('shows progress while a check runs, and Check now starts one', async () => {

@@ -8,6 +8,7 @@ import {
   TmButton,
   TmCallout,
   TmCard,
+  TmClamp,
   TmEmptyState,
   TmIcon,
   TmLevel,
@@ -20,7 +21,7 @@ import {
   Toasts,
   UpdateClass,
 } from '../ui';
-import { TmMarkdown } from '../ui/markdown';
+import { MarkdownFlag, TmMarkdown } from '../ui/markdown';
 
 interface SampleContainer {
   name: string;
@@ -40,6 +41,7 @@ interface SampleContainer {
     TmButton,
     TmCallout,
     TmCard,
+    TmClamp,
     TmMarkdown,
     TmEmptyState,
     TmIcon,
@@ -61,6 +63,13 @@ export class Styleguide {
   protected readonly views: SegmentOption<'list' | 'tiles'>[] = [
     { value: 'list', label: 'List', icon: 'list' },
     { value: 'tiles', label: 'Tiles', icon: 'layout-grid' },
+  ];
+
+  protected readonly filter = signal<'all' | 'updates' | 'breaking'>('all');
+  protected readonly filters: SegmentOption<'all' | 'updates' | 'breaking'>[] = [
+    { value: 'all', label: 'All' },
+    { value: 'updates', label: 'Updates', count: 11 },
+    { value: 'breaking', label: 'Breaking', count: 4 },
   ];
 
   protected readonly colors = [
@@ -109,6 +118,15 @@ export class Styleguide {
     'database_url: postgres://…',
     '```',
   ].join('\n');
+
+  protected readonly sampleFlags: MarkdownFlag[] = [
+    { line: '## Breaking changes', level: 'breaking' },
+    { line: '- The `legacy_api` option was removed (#12345), thanks @frenck.', level: 'breaking' },
+    { line: '- Config key `DB_URL` is now `DATABASE_URL`.', level: 'breaking' },
+    { line: '> Upgrade notes: back up first.', level: 'attention' },
+  ];
+
+  protected readonly longNotes = Array.from({ length: 24 }, (_, i) => `- Fix number ${i + 1} in a long release`).join('\n');
 
   protected readonly radii = ['rounded-sm', 'rounded-md', 'rounded-lg', 'rounded-xl'];
 

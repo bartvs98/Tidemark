@@ -47,3 +47,37 @@ describe('renderMarkdown', () => {
     expect(dom(renderMarkdown('see #123')).querySelector('a')).toBeNull(); // no repo, no links
   });
 });
+
+describe('renderMarkdown flags', () => {
+  const notes = [
+    '## ⚠ BREAKING CHANGES',
+    '',
+    '* the config file moved',
+    '  * nested detail',
+    '',
+    '> ⚠️ Keycloak support was dropped',
+    '',
+    'Plain paragraph',
+  ].join('\n');
+
+  it('marks headings, list items and quoted paragraphs holding a flagged line', () => {
+    const el = dom(
+      renderMarkdown(notes, undefined, [
+        { line: '## ⚠ BREAKING CHANGES', level: 'breaking' },
+        { line: '* the config file moved', level: 'breaking' },
+        { line: '> ⚠️ Keycloak support was dropped', level: 'attention' },
+      ]),
+    );
+    expect(el.querySelector('h2')?.className).toBe('tm-flag-breaking');
+    const items = el.querySelectorAll('li');
+    expect(items[0].className).toBe('tm-flag-breaking');
+    expect(items[1].className).toBe(''); // the nested item isn't flagged itself
+    expect(el.querySelector('blockquote p')?.className).toBe('tm-flag-attention');
+    expect(el.querySelectorAll('[class^="tm-flag"]').length).toBe(3);
+  });
+
+  it('renders the same without flags', () => {
+    expect(renderMarkdown(notes, undefined, [])).toBe(renderMarkdown(notes));
+    expect(dom(renderMarkdown(notes)).querySelector('[class^="tm-flag"]')).toBeNull();
+  });
+});

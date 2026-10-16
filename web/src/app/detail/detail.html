@@ -25,6 +25,21 @@
     </div>
   </header>
 
+  <!-- ── Why it's flagged (internal/analysis) ───────────── -->
+  @if (update(); as u) {
+    @if (u.level !== 'none' && u.reasons?.length) {
+      <div class="mb-6" data-testid="reasons">
+        <tm-callout [tone]="u.level" [heading]="u.level === 'breaking' ? 'Read before updating' : 'Worth a look before updating'">
+          <ul class="mt-1 flex list-disc flex-col gap-1 pl-5">
+            @for (reason of u.reasons; track $index) {
+              <li>{{ reason }}</li>
+            }
+          </ul>
+        </tm-callout>
+      </div>
+    }
+  }
+
   <!-- ── Links ──────────────────────────────────────────── -->
   @if (changelog(); as cl) {
     <div class="mb-6 flex flex-wrap gap-2" data-testid="links">
@@ -101,13 +116,15 @@
             }
 
             @for (r of cl.releases; track r.tag; let first = $first) {
-              <details class="group rounded-lg border border-line bg-surface shadow-raised" [open]="first">
+              <!-- Open: the newest and the breaking ones. Attention ones stay closed (traefik flags most releases) but show their badge. -->
+              <details class="group rounded-lg border border-line bg-surface shadow-raised" [open]="first || r.level === 'breaking'">
                 <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 select-none [&::-webkit-details-marker]:hidden">
                   <tm-icon name="chevron-right" [size]="14" class="text-fg-subtle transition-transform group-open:rotate-90" />
                   <span class="font-mono font-medium">{{ r.tag }}</span>
                   @if (r.name && r.name !== r.tag) {
                     <span class="truncate text-fg-muted">{{ r.name }}</span>
                   }
+                  <tm-level [level]="r.level" class="shrink-0" />
                   <span class="ml-auto flex shrink-0 items-center gap-3 text-sm text-fg-subtle">
                     @if (r.publishedAt) {
                       <time [attr.datetime]="r.publishedAt">{{ r.publishedAt | date: 'd MMM y' }}</time>
@@ -120,10 +137,15 @@
                   </span>
                 </summary>
                 <div class="border-t border-line px-4 py-4">
-                  @if (r.body.trim()) {
-                    <tm-markdown [markdown]="r.body" [githubRepo]="githubRepo()" />
-                  } @else {
+                  @if (!r.body.trim()) {
                     <p class="text-fg-subtle">No notes for this release.</p>
+                  } @else if (r.hits.length) {
+                    <!-- Never clamp flagged notes: the highlighted lines must stay in view. -->
+                    <tm-markdown [markdown]="r.body" [githubRepo]="githubRepo()" [flags]="r.hits" />
+                  } @else {
+                    <tm-clamp max="40rem">
+                      <tm-markdown [markdown]="r.body" [githubRepo]="githubRepo()" />
+                    </tm-clamp>
                   }
                 </div>
               </details>

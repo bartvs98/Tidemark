@@ -12,6 +12,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"github.com/bartvs98/tidemark/internal/analysis"
 	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
@@ -52,6 +53,11 @@ func TestContainerDetail(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
+	// Nothing prefetched yet (no AfterCheck hook here): the list only knows the version jump.
+	if u := listUpdate(t, h, "jellyfin"); u.Level != analysis.None {
+		t.Errorf("before the notes are stored: level = %v %q", u.Level, u.Reasons)
+	}
+
 	rec := do(t, h, "/api/containers/jellyfin")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
@@ -71,6 +77,20 @@ func TestContainerDetail(t *testing.T) {
 		cl.Links.Running != "https://github.com/jellyfin/jellyfin-packaging/tree/v10.9.11" {
 		t.Errorf("links = %+v", cl.Links)
 	}
+	if u := d.Container.Update; u == nil || u.Level != analysis.Breaking || len(u.Reasons) != 1 || u.Reasons[0] != "v10.10.7: new config" {
+		t.Errorf("update = %+v", d.Container.Update)
+	}
+	if r := cl.Releases[0]; r.Level != analysis.Breaking || len(r.Hits) != 2 || r.Hits[0].Line != "## Breaking" || r.Hits[1].Line != "new config" {
+		t.Errorf("release 0 = level %v hits %+v", r.Level, r.Hits)
+	}
+	if r := cl.Releases[1]; r.Level != analysis.None || r.Hits == nil || len(r.Hits) != 0 {
+		t.Errorf("release 1 = level %v hits %#v", r.Level, r.Hits)
+	}
+	// The detail request stored the notes, so the list (cached before) sees them now.
+	if u := listUpdate(t, h, "jellyfin"); u.Level != analysis.Breaking {
+		t.Errorf("after the notes are stored: level = %v", u.Level)
+	}
+
 	if len(d.Image.Digests) != 1 || d.Image.Labels["org.opencontainers.image.source"] == "" {
 		t.Errorf("image = %+v", d.Image)
 	}
@@ -98,4 +118,19 @@ func TestInListLink(t *testing.T) {
 	if got := toChangelogJSON(repo, source.HowImage, ch).Links.InList; got != "" {
 		t.Errorf("unknown position should give no link, got %s", got)
 	}
+}
+
+func listUpdate(t *testing.T, h http.Handler, name string) updateJSON {
+	t.Helper()
+	var body containerList
+	if err := json.Unmarshal(do(t, h, "/api/containers").Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range body.Containers {
+		if c.Name == name && c.Update != nil {
+			return *c.Update
+		}
+	}
+	t.Fatalf("no update for %s", name)
+	return updateJSON{}
 }

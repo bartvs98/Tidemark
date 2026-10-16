@@ -59,6 +59,10 @@ type Service struct {
 	mu           sync.Mutex
 	locks        map[string]*sync.Mutex // one sync per repo at a time
 	limitedUntil time.Time              // GitHub rate limit reset; no API calls before it
+
+	// Changes results by repo, then by running→latest. The dashboard asks for every
+	// container on each poll; a repo's entry is dropped whenever Sync stores something.
+	cache map[string]map[string]Changes
 }
 
 type Option func(*Service)
@@ -78,6 +82,7 @@ func New(st *store.Store, githubToken string, log *slog.Logger, opts ...Option) 
 		githubRaw: "https://raw.githubusercontent.com",
 		gitlab:    "https://gitlab.com",
 		locks:     map[string]*sync.Mutex{},
+		cache:     map[string]map[string]Changes{},
 	}
 	for _, o := range opts {
 		o(s)
@@ -99,9 +104,14 @@ func (s *Service) Sync(ctx context.Context, repo source.Repo, need *version.Vers
 	if known && time.Since(st.FetchedAt) < freshFor && s.covered(ctx, key, st, need) {
 		return nil
 	}
-	st.Repo = key
+	defer s.forget(key) // anything below may store new notes or state
+	return s.sync(ctx, repo, st, need)
+}
 
-	err = s.syncReleases(ctx, repo, &st, need)
+func (s *Service) sync(ctx context.Context, repo source.Repo, st store.RepoState, need *version.Version) error {
+	st.Repo = repo.Key()
+
+	err := s.syncReleases(ctx, repo, &st, need)
 	if errors.Is(err, errNotFound) {
 		st.Kind, st.HasMore, st.ETag, st.Error, st.FetchedAt = KindNone, false, "", "repository not found", time.Now()
 		return s.store.SaveRepoState(ctx, st)
@@ -329,7 +339,9 @@ type Changes struct {
 	// first, pre-releases included, 0-based), or -1 if unknown.
 	FromIndex int
 	// FromName is the running release's title as the forge shows it (its name, else its tag).
-	FromName  string
+	FromName string
+	// FromBody is the running release's own notes, to tell new lines from repeated history.
+	FromBody  string
 	ToTag     string // repo tag of the latest version
 	Partial   bool   // older releases exist that weren't fetched
 	Error     string // last fetch error
@@ -337,9 +349,44 @@ type Changes struct {
 }
 
 // Changes returns the stored notes after running, up to and including latest. With an
-// unknown running version, only the newest release up to latest is returned.
+// unknown running version, only the newest release up to latest is returned. Results are
+// cached until the repo's notes change; callers must not modify the returned slices.
 func (s *Service) Changes(ctx context.Context, repo source.Repo, running, latest *version.Version) (Changes, error) {
 	key := repo.Key()
+	rangeKey := versionKey(running) + "→" + versionKey(latest)
+	s.mu.Lock()
+	ch, ok := s.cache[key][rangeKey]
+	s.mu.Unlock()
+	if ok {
+		return ch, nil
+	}
+	ch, err := s.changes(ctx, key, running, latest)
+	if err != nil {
+		return ch, err
+	}
+	s.mu.Lock()
+	if s.cache[key] == nil {
+		s.cache[key] = map[string]Changes{}
+	}
+	s.cache[key][rangeKey] = ch
+	s.mu.Unlock()
+	return ch, nil
+}
+
+func (s *Service) forget(repo string) {
+	s.mu.Lock()
+	delete(s.cache, repo)
+	s.mu.Unlock()
+}
+
+func versionKey(v *version.Version) string {
+	if v == nil {
+		return "?"
+	}
+	return fmt.Sprintf("%+v", *v) // all fields: String() leaves out the build ("-ls166")
+}
+
+func (s *Service) changes(ctx context.Context, key string, running, latest *version.Version) (Changes, error) {
 	st, _, err := s.store.RepoState(ctx, key)
 	if err != nil {
 		return Changes{}, err
@@ -399,6 +446,7 @@ func (s *Service) Changes(ctx context.Context, repo source.Repo, running, latest
 	// stored (sync pages down to it), so counting them gives its position in that list.
 	if fromRelease != nil {
 		out.FromName = cmp.Or(strings.TrimSpace(fromRelease.Name), fromRelease.Tag)
+		out.FromBody = fromRelease.Body
 	}
 	if fromRelease != nil && !fromRelease.PublishedAt.IsZero() && st.Kind == KindReleases {
 		out.FromIndex = 0

@@ -5,10 +5,12 @@ export interface SegmentOption<T extends string> {
   value: T;
   label: string;
   icon?: IconName;
+  /** Shown muted after the label ("Updates 11"), e.g. for filters. */
+  count?: number;
 }
 
 /**
- * A small set of mutually exclusive toggle buttons (view mode, theme…).
+ * A small set of mutually exclusive toggle buttons (view mode, theme, filters…).
  *
  *   <tm-segmented label="View" [options]="views" [(value)]="view" />
  *
@@ -34,6 +36,9 @@ export interface SegmentOption<T extends string> {
         }
         @if (!iconOnly()) {
           {{ option.label }}
+          @if (option.count !== undefined) {
+            <span class="text-xs text-fg-subtle tabular-nums">{{ option.count }}</span>
+          }
         }
       </button>
     }

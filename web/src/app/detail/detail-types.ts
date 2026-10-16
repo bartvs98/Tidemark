@@ -1,3 +1,4 @@
+import type { MarkdownFlag } from '../ui/markdown';
 import { ContainerSummary } from '../dashboard/containers';
 
 /** Shape of GET /api/containers/{name} (internal/api/detail.go). */
@@ -29,4 +30,7 @@ export interface Release {
   body: string;
   url: string;
   publishedAt?: string;
+  /** Breaking-change verdict for this release's notes, and the lines that caused it. */
+  level: 'none' | 'attention' | 'breaking';
+  hits: MarkdownFlag[];
 }

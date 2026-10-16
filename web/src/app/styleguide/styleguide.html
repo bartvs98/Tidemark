@@ -106,6 +106,7 @@
     <p class="mb-4 text-fg-muted">
       Each Compose stack is a <span class="font-mono text-sm">tm-section</span> with its own card, so it's obvious where a
       stack starts and ends. Tables use fixed column widths so columns line up across stacks; headers show once.
+      Below 640px, <span class="font-mono text-sm">tm-table-stack</span> stacks each row: name first, then the rest.
     </p>
     <div class="flex flex-col gap-10">
       @for (stack of stacks; track stack.name; let first = $first) {
@@ -117,7 +118,7 @@
           }
           <tm-card flush>
             <div class="overflow-x-auto">
-              <table class="tm-table min-w-[40rem] table-fixed">
+              <table class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]">
                 <colgroup>
                   <col class="w-[30%]" />
                   <col class="w-[28%]" />
@@ -137,14 +138,14 @@
                 <tbody>
                   @for (c of stack.containers; track c.name) {
                     <tr>
-                      <td>
+                      <td data-stack="full">
                         <div class="truncate font-medium">{{ c.name }}</div>
                         <div class="truncate font-mono text-xs text-fg-subtle">{{ c.image }}</div>
                       </td>
-                      <td><tm-version-diff [from]="c.from" [to]="c.kind === 'none' || c.kind === 'digest' ? null : c.to" /></td>
+                      <td data-stack="indent"><tm-version-diff [from]="c.from" [to]="c.kind === 'none' || c.kind === 'digest' ? null : c.to" /></td>
                       <td><tm-update-class [kind]="c.kind" /></td>
                       <td><tm-level [level]="c.level" /></td>
-                      <td class="text-right">
+                      <td class="text-right" data-stack="hide">
                         @if (c.kind !== 'none') {
                           <button tmButton variant="ghost" size="sm">Changes <tm-icon name="arrow-right" [size]="14" /></button>
                         }
@@ -189,6 +190,10 @@
           <tm-segmented label="View" iconOnly [options]="views" [(value)]="view" />
           <span class="text-sm text-fg-muted">Segmented control: <span class="font-mono">{{ view() }}</span></span>
         </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <tm-segmented label="Show" [options]="filters" [(value)]="filter" />
+          <span class="text-sm text-fg-muted">With counts, as a filter: <span class="font-mono">{{ filter() }}</span></span>
+        </div>
       </div>
     </tm-card>
   </section>
@@ -213,7 +218,11 @@
   <!-- ── Callouts & markdown ───────────────────────────── -->
   <section>
     <h2 class="mb-1 text-xl font-semibold">Callouts &amp; release notes</h2>
-    <p class="mb-4 text-fg-muted">Callouts explain why something is missing and what to do. Release notes are sanitised markdown.</p>
+    <p class="mb-4 text-fg-muted">
+      Callouts explain why something is missing and what to do. Release notes are sanitised markdown; lines the
+      breaking-change analysis flagged get a highlighter in the level's colour. Long notes without flags sit in a
+      <span class="font-mono text-sm">tm-clamp</span>.
+    </p>
     <div class="grid gap-4 md:grid-cols-2">
       <div class="flex flex-col gap-3">
         <tm-callout heading="No release notes found">The repository has no releases and no CHANGELOG.md.</tm-callout>
@@ -222,7 +231,12 @@
         <tm-callout>A callout without a heading.</tm-callout>
       </div>
       <tm-card>
-        <tm-markdown [markdown]="sampleNotes" githubRepo="https://github.com/home-assistant/core" />
+        <tm-markdown [markdown]="sampleNotes" githubRepo="https://github.com/home-assistant/core" [flags]="sampleFlags" />
+      </tm-card>
+      <tm-card class="md:col-span-2">
+        <tm-clamp max="12rem">
+          <tm-markdown [markdown]="longNotes" />
+        </tm-clamp>
       </tm-card>
     </div>
   </section>

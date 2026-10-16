@@ -47,6 +47,53 @@
     outline-offset: -2px;
   }
 
+  /* Phone width: tm-table-stack turns each row into two lines instead of scrolling sideways.
+     Cells opt in with data-stack: "full" takes the first line, "hide" is dropped, "indent"
+     grows and lines up under the name (past a 20px icon + 12px gap). Other cells keep their
+     own width and share the second line. */
+  @media (width < 40rem) {
+    .tm-table-stack,
+    .tm-table-stack tbody {
+      display: block;
+    }
+    .tm-table-stack :is(colgroup, thead) {
+      display: none;
+    }
+    .tm-table-stack tbody tr {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 0.375rem 0.75rem;
+      padding: 0.625rem 0.75rem;
+      border-bottom: 1px solid var(--color-line);
+    }
+    .tm-table-stack tbody tr:last-child {
+      border-bottom: 0;
+    }
+    .tm-table-stack tbody tr:is(:hover, :has(a:focus-visible)) {
+      background: var(--color-hover);
+    }
+    .tm-table-stack td {
+      display: block;
+      min-width: 0;
+      padding: 0;
+      border: 0;
+    }
+    .tm-table-stack tbody tr:hover td {
+      background: none;
+    }
+    .tm-table-stack td[data-stack='full'] {
+      flex-basis: 100%;
+    }
+    .tm-table-stack td[data-stack='hide'] {
+      display: none;
+    }
+    .tm-table-stack td[data-stack='indent'] {
+      flex: 1 1 0;
+      padding-left: 2rem;
+    }
+  }
+
   /* ── Prose: rendered release notes (tm-markdown) ───── */
   .tm-prose {
     line-height: 1.6;
@@ -103,6 +150,19 @@
   .tm-prose table { display: block; overflow-x: auto; border-collapse: collapse; }
   .tm-prose :is(th, td) { padding: 0.35rem 0.6rem; border: 1px solid var(--color-line); }
   .tm-prose details > summary { cursor: pointer; color: var(--color-fg-muted); }
+  /* Lines the breaking-change analysis flagged (internal/analysis), like a highlighter.
+     The spread shadow pads the background without shifting the text. */
+  .tm-prose :is(.tm-flag-breaking, .tm-flag-attention) {
+    border-radius: 2px;
+  }
+  .tm-prose .tm-flag-breaking {
+    background-color: var(--color-breaking-soft);
+    box-shadow: 0 0 0 0.25rem var(--color-breaking-soft);
+  }
+  .tm-prose .tm-flag-attention {
+    background-color: var(--color-attention-soft);
+    box-shadow: 0 0 0 0.25rem var(--color-attention-soft);
+  }
 
   /* ── Tabs (Angular Aria: ngTabs / ngTabList / ngTab / ngTabPanel) ── */
   .tm-tabs [role='tablist'] {

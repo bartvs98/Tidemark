@@ -26,6 +26,7 @@
         </tm-badge>
       }
     }
+    <tm-segmented label="Show" [options]="filters()" [(value)]="filter" data-testid="filter" />
     <tm-segmented label="View" iconOnly [options]="views" [(value)]="view" />
     <button
       tmButton
@@ -49,6 +50,22 @@
   @if (stacks().length === 0) {
     <tm-card>
       <tm-empty-state heading="No containers found" description="Docker reported no containers on this host." />
+    </tm-card>
+  } @else if (shownStacks().length === 0) {
+    <tm-card>
+      <tm-empty-state
+        icon="circle-check"
+        [heading]="filter() === 'breaking' ? 'Nothing breaking' : 'No updates'"
+        [description]="
+          filter() === 'breaking'
+            ? 'None of the available updates look breaking.'
+            : checking()
+              ? 'Still checking. Updates show up here as they are found.'
+              : 'Every container runs the latest version.'
+        "
+      >
+        <button tmButton size="sm" (click)="filter.set('all')">Show all containers</button>
+      </tm-empty-state>
     </tm-card>
   } @else {
     @if (view() === 'list') {
@@ -76,7 +93,7 @@
       </div>
     }
     <div class="flex flex-col gap-10" [attr.data-view]="view()">
-      @for (stack of stacks(); track stack.name) {
+      @for (stack of shownStacks(); track stack.name) {
         <tm-section
           [heading]="stack.name ?? 'Ungrouped'"
           [icon]="stack.name ? 'layers' : 'box'"
@@ -86,7 +103,8 @@
             <tm-card flush>
               <div class="overflow-x-auto">
                 <!-- Same fixed column widths as the pinned header bar, so everything lines up. -->
-                <table class="tm-table min-w-[44rem] table-fixed">
+                <!-- tm-table-stack: below 640px each row stacks (name, then version + update), see components.css -->
+                <table class="tm-table tm-table-stack table-fixed sm:min-w-[44rem]">
                   <colgroup>
                     @for (col of columns; track col.label) {
                       <col [class]="col.width" />
@@ -102,7 +120,7 @@
                   <tbody>
                     @for (c of stack.containers; track c.id) {
                       <tr class="tm-row-link">
-                        <td>
+                        <td data-stack="full">
                           <div class="flex items-center gap-3">
                             <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="20" />
                             <div class="min-w-0">
@@ -122,7 +140,7 @@
                             </div>
                           </div>
                         </td>
-                        <td>
+                        <td data-stack="hide">
                           <div class="truncate font-mono text-sm text-fg-muted" [title]="c.image.display">
                             {{ imageName(c) }}<span class="text-fg">:{{ c.image.tag || '—' }}</span>
                           </div>
@@ -130,7 +148,7 @@
                             <tm-badge tone="unknown" class="mt-1">image missing</tm-badge>
                           }
                         </td>
-                        <td><tm-container-version [container]="c" [checking]="checking()" /></td>
+                        <td data-stack="indent"><tm-container-version [container]="c" [checking]="checking()" /></td>
                         <td><tm-container-update [container]="c" [checking]="checking()" /></td>
                       </tr>
                     }

@@ -67,7 +67,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   resolve/                    one container: running version, latest in family, update class
   source/                     image → source repo (label, plausible image label, ghcr, known list, guess)
   changelog/                  GitHub / GitLab releases + CHANGELOG.md, ETag sync into the store, range selection
-  analysis/                   breaking-change heuristics
+  analysis/                   breaking-change heuristics: per-line flags, section inheritance, verdict + reasons
   ai/                         (later) summary provider interface + Anthropic impl
   notify/                     (later) notifier interface + Telegram impl
   updater/                    (later) gated pull/recreate/rollback
@@ -89,7 +89,7 @@ One check run (scheduled or manual), with containers processed concurrently (bou
 2. **Resolve running version**: chain from FEATURES §2. Uses `RepoDigests` from the image, because the local image ID ≠ the registry manifest digest. Digest matching only probes tags written like the running tag (`16.10-alpine` for `16-alpine`, not `16.10-alpine3.22`), at the most precise level, newest first, at most 30 HEADs.
 3. **Latest version**: list tags (cached 1 h per repo), keep stable tags of the same family (same variant), pick the highest, preferring the running tag's spelling (`v` prefix, raw variant) on ties. For floating tags, also `HEAD` the tag's manifest to detect "new image, same tag" updates. Containers sharing an image are checked once; 6 run in parallel, at most 4 requests per registry at a time.
 4. **Changelog**: resolve the source repo → fetch releases (cached forever per tag; the list is refreshed per run) → slice the range from running to latest.
-5. **Analysis**: heuristic flags per release → overall level.
+5. **Analysis**: heuristic flags per release → overall level. Not persisted: the API computes it from the stored notes on read (`changelog.Service.Changes` is cached per repo until a sync stores something), so list and detail always agree.
 6. **AI** (later, if enabled): summary + verdict, cached per (repo, from, to).
 7. **Persist**: upsert container state and write a check-run record. Detected version changes go into the history.
 8. **Notify** (later): compare against previous run + reviewed/snooze state → send only *new* findings.
@@ -124,8 +124,9 @@ ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reas
 ## HTTP API (v1)
 
 ```
-GET  /api/containers                containers + latest check result each + run status
-GET  /api/containers/{name}         detail: container + image digests/labels + changelog (repo, releases in range, links)
+GET  /api/containers                containers + latest check result each (incl. level + reasons) + run status
+GET  /api/containers/{name}         detail: container + image digests/labels + changelog (repo, releases in range
+                                    with level + flagged lines, links)
 POST /api/checks                    start a check run unless one is running (202 + run status)
                                     run status and per-container results are part of GET /api/containers
 GET  /api/health
@@ -142,8 +143,8 @@ All other paths serve the Angular SPA (with fallback to `index.html`).
 
 ## Frontend
 
-- **Dashboard** (built): Compose stacks as sections, list and tile views, app icons; each container shows running → latest, how the version was determined, and the update class. Step 5 adds the risk badge and filters (updates only, breaking only).
-- **Container detail** (built): `/containers/<name>`; version change, compare/releases/source/repo links, Changes tab (sanitised markdown per release, newest first, first one open) and Details tab. Step 5 highlights breaking/attention lines. Later: AI summary panel, review/snooze actions, update button with gate status.
+- **Dashboard** (built): Compose stacks as sections, list and tile views, app icons; each container shows running → latest, how the version was determined, the update class and the risk level (reasons as tooltip). Filter All / Updates / Breaking (remembered in `localStorage`). Below 640px list rows stack.
+- **Container detail** (built): `/containers/<name>`; version change, compare/releases/source/repo links, Changes tab (sanitised markdown per release, newest first; the newest and breaking ones open; flagged lines highlighted; long unflagged notes capped with "Show all") and Details tab. A callout explains a breaking/attention verdict. Later: AI summary panel, review/snooze actions, update button with gate status.
 - **Settings** (later): schedule, tokens set / not set, notification test button.
 - Dev: `ng serve` (bound to 127.0.0.1) with a proxy for `/api` → `localhost:8080`.
 

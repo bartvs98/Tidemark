@@ -59,15 +59,23 @@ The UI shows *how* the version was determined (tag / label / digest match / unkn
 
 ## 5. Breaking change highlighting — MVP
 
-A heuristic pass over each release, producing per-release flags plus an overall level of **none / attention / breaking**:
+A heuristic pass (`internal/analysis`) over each release's notes between running and latest, producing per-release flags plus an overall level of **none / attention / breaking**:
 
 | Signal | Level |
 |---|---|
 | Major version bump (or `0.x` minor bump) | breaking |
-| Text matches `BREAKING`, `breaking change`, `⚠️`, `💥`, conventional-commit `feat!:` / `fix!:` | breaking |
-| Text matches `migration`, `migrate`, `removed`, `deprecated`, `action required`, `manual step`, `config change`, `env var` renamed | attention |
+| `BREAKING` (upper case), `breaking change(s)`, `potentially breaking`, a line starting with `Breaking`, `backward(s)-incompatible`, `incompatible changes`, `💥`, conventional-commit `feat!:` / `fix(x)!:` | breaking |
+| `⚠️`, `action required`, `manual step`, "read the migration/upgrade guide", `upgrade notes`, "you need to migrate / update your …", "existing users should …", "migration may take", "has been / will be removed", "is deprecated", "no longer supported", "drops support", end of life, a line starting with `Removed` / `Deprecated`, `Important:` / `Warning:` / GitHub `[!IMPORTANT]`, a renamed env var / setting / option / endpoint | attention |
 
-Matching lines are shown highlighted in the changelog view so you can jump straight to them.
+Rules that keep it honest (tuned on ~900 real releases):
+
+- **Phrases, not words.** "fix a bug breaking the import", "Migrate mqtt to the new API" and "while the entity is removed" are everyday release-note language and don't count. "No breaking changes", "non-breaking", "fix breaking changes in X" and "add a breaking change note" are negations.
+- **`⚠️` alone is attention**, not breaking: projects use it for recurring reminders (Vaultwarden's "migrate off bitwardenrs").
+- **Sections inherit.** Lines under a flagged heading or bold label ("## Breaking changes", "⚠️ **Breaking Changes**", "## Upgrade notes") get its level (or higher), until the next heading at the same level or a generic one ("Features", "Bug fixes", "Other"…). An empty flagged section ("None", "N/A") says nothing.
+- **Only news counts.** Lines that already appear in the running release's notes, compared without numbers and links, are skipped: some projects repeat their history or boilerplate ("read the migration guide (#v3715)") in every release.
+- Code blocks are ignored.
+
+The dashboard shows the level next to the update class (reasons in the tooltip) and filters on All / Updates / Breaking. The detail page explains the verdict ("v3.0.0: Redis 8.0 or newer is now required", up to three quotes, breaking first), highlights flagged lines in the notes, and opens the newest release plus the breaking ones (attention releases stay closed but carry their badge). The level is computed from stored notes on every request (cached until the notes change), so it appears once the notes are fetched and never lags behind the detail page. Without stored notes (e.g. rate limited) only the version jump counts.
 
 ## 6. Links to the repo — MVP
 
