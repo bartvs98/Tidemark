@@ -28,7 +28,11 @@ func do(t *testing.T, h http.Handler, target string) *httptest.ResponseRecorder 
 }
 
 func handler(spa fstest.MapFS) http.Handler {
-	return New("1.2.3", slog.New(slog.NewTextHandler(io.Discard, nil)), docker.NewSnapshot("../docker/testdata/snapshot.json")).Handler(spa)
+	return New(Deps{
+		Version: "1.2.3",
+		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Source:  docker.NewSnapshot("../docker/testdata/snapshot.json"),
+	}).Handler(spa)
 }
 
 func TestHealth(t *testing.T) {

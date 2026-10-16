@@ -1,13 +1,21 @@
 import { Component, computed, effect, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse, httpResource } from '@angular/common/http';
-import { SegmentOption, TmBadge, TmButton, TmCard, TmEmptyState, TmSection, TmSegmented, TmSkeleton } from '../ui';
+import { SegmentOption, TmAppIcon, TmBadge, TmButton, TmCard, TmEmptyState, TmSection, TmSegmented, TmSkeleton } from '../ui';
 import { ContainerTile } from './container-tile';
 import { ContainerList, groupByStack, imageName } from './containers';
 
 export type ViewMode = 'list' | 'tiles';
 
 const VIEW_KEY = 'tidemark.view';
+
+/** List columns. The pinned header bar and every stack's table share these widths. */
+const COLUMNS = [
+  { label: 'Container', width: 'w-[28%]' },
+  { label: 'Image', width: 'w-[36%]' },
+  { label: 'Tag', width: 'w-[14%]' },
+  { label: 'Status', width: 'w-[22%]' },
+];
 
 const VIEWS: SegmentOption<ViewMode>[] = [
   { value: 'list', label: 'List', icon: 'list' },
@@ -16,13 +24,14 @@ const VIEWS: SegmentOption<ViewMode>[] = [
 
 @Component({
   selector: 'tm-dashboard',
-  imports: [DatePipe, ContainerTile, TmBadge, TmButton, TmCard, TmEmptyState, TmSection, TmSegmented, TmSkeleton],
+  imports: [DatePipe, ContainerTile, TmAppIcon, TmBadge, TmButton, TmCard, TmEmptyState, TmSection, TmSegmented, TmSkeleton],
   templateUrl: './dashboard.html',
 })
 export class Dashboard {
   protected readonly list = httpResource<ContainerList>(() => '/api/containers');
 
   protected readonly views = VIEWS;
+  protected readonly columns = COLUMNS;
   protected readonly view = signal<ViewMode>(readView());
 
   // value() throws while the resource is in an error state, so always go through hasValue().

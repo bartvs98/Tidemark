@@ -15,6 +15,8 @@ Status legend: **MVP** = first usable version · **Later** = on the roadmap, aft
 - List all running (and optionally stopped) containers via the Docker API.
 - Per container: name, image reference (`ghcr.io/owner/app:1.4`), image digest, created/started time, Compose project & service.
 - **Group by Compose stack** using the `com.docker.compose.project` label; standalone containers go in an "Ungrouped" group.
+- **List and tile views**, remembered per browser.
+- **App icons** from [selfh.st/icons](https://selfh.st/icons/) (CC BY 4.0). Matched from the image name first (exact, alias like `postgres` → `postgresql`, trimmed like `woodpecker-agent` → `uptime-kuma`, unique prefix like `stirling` → `stirling-pdf`), then from the Compose service and container name. Override with the `tidemark.icon=<reference>` label, or turn it off for one container with `tidemark.icon=none`. No match gives a letter avatar. Near-black icons swap to their light variant on the dark theme, and near-white icons to their dark variant on the light theme.
 
 ## 2. Running version resolution — MVP
 

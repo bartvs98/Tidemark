@@ -8,16 +8,25 @@ import (
 	"net/http"
 
 	"github.com/bartvs98/tidemark/internal/docker"
+	"github.com/bartvs98/tidemark/internal/icons"
 )
+
+type Deps struct {
+	Version string
+	Log     *slog.Logger
+	Source  docker.Source
+	Icons   *icons.Service // nil when icons are turned off
+}
 
 type Server struct {
 	version string
 	log     *slog.Logger
 	source  docker.Source
+	icons   *icons.Service
 }
 
-func New(version string, log *slog.Logger, source docker.Source) *Server {
-	return &Server{version: version, log: log, source: source}
+func New(d Deps) *Server {
+	return &Server{version: d.Version, log: d.Log, source: d.Source, icons: d.Icons}
 }
 
 // Handler returns the full HTTP handler: API routes plus the SPA served from spa.
@@ -25,6 +34,7 @@ func (s *Server) Handler(spa fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/containers", s.containers)
+	mux.HandleFunc("GET /api/icons/{ref}", s.icon)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})
@@ -34,6 +44,14 @@ func (s *Server) Handler(spa fs.FS) http.Handler {
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.version})
+}
+
+func (s *Server) icon(w http.ResponseWriter, r *http.Request) {
+	if s.icons == nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.icons.Serve(w, r, r.PathValue("ref"), r.URL.Query().Get("variant"))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

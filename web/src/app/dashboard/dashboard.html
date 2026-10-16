@@ -27,8 +27,32 @@
       <tm-empty-state heading="No containers found" description="Docker reported no containers on this host." />
     </tm-card>
   } @else {
+    @if (view() === 'list') {
+      <div
+        class="sticky top-14 z-30 -mx-4 mb-1 hidden bg-canvas/95 px-4 backdrop-blur sm:-mx-6 sm:block sm:px-6"
+        aria-hidden="true"
+        data-testid="column-bar"
+      >
+        <div class="border-x border-transparent">
+          <table class="tm-table min-w-[40rem] table-fixed">
+            <colgroup>
+              @for (col of columns; track col.label) {
+                <col [class]="col.width" />
+              }
+            </colgroup>
+            <thead>
+              <tr>
+                @for (col of columns; track col.label) {
+                  <th>{{ col.label }}</th>
+                }
+              </tr>
+            </thead>
+          </table>
+        </div>
+      </div>
+    }
     <div class="flex flex-col gap-10" [attr.data-view]="view()">
-      @for (stack of stacks(); track stack.name; let first = $first) {
+      @for (stack of stacks(); track stack.name) {
         <tm-section
           [heading]="stack.name ?? 'Ungrouped'"
           [icon]="stack.name ? 'layers' : 'box'"
@@ -37,31 +61,33 @@
           @if (view() === 'list') {
             <tm-card flush>
               <div class="overflow-x-auto">
-                <!-- Fixed column widths keep columns aligned across stacks. -->
+                <!-- Same fixed column widths as the pinned header bar, so everything lines up. -->
                 <table class="tm-table min-w-[40rem] table-fixed">
                   <colgroup>
-                    <col class="w-[26%]" />
-                    <col class="w-[38%]" />
-                    <col class="w-[14%]" />
-                    <col class="w-[22%]" />
+                    @for (col of columns; track col.label) {
+                      <col [class]="col.width" />
+                    }
                   </colgroup>
-                  <!-- Column headers show once; later stacks keep them for screen readers only. -->
-                  <thead [class.sr-only]="!first">
+                  <thead class="sm:sr-only">
                     <tr>
-                      <th scope="col">Container</th>
-                      <th scope="col">Image</th>
-                      <th scope="col">Tag</th>
-                      <th scope="col">Status</th>
+                      @for (col of columns; track col.label) {
+                        <th scope="col">{{ col.label }}</th>
+                      }
                     </tr>
                   </thead>
                   <tbody>
                     @for (c of stack.containers; track c.id) {
                       <tr>
                         <td>
-                          <div class="truncate font-medium" [title]="c.name">{{ c.name }}</div>
-                          @if (c.service && c.service !== c.name) {
-                            <div class="truncate text-sm text-fg-subtle">service: {{ c.service }}</div>
-                          }
+                          <div class="flex items-center gap-3">
+                            <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="24" />
+                            <div class="min-w-0">
+                              <div class="truncate font-medium" [title]="c.name">{{ c.name }}</div>
+                              @if (c.service && c.service !== c.name) {
+                                <div class="truncate text-sm text-fg-subtle">service: {{ c.service }}</div>
+                              }
+                            </div>
+                          </div>
                         </td>
                         <td>
                           <div class="truncate font-mono text-sm text-fg-muted" [title]="c.image.display">{{ imageName(c) }}</div>

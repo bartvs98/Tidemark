@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/api"
 	"github.com/bartvs98/tidemark/internal/config"
 	"github.com/bartvs98/tidemark/internal/docker"
+	"github.com/bartvs98/tidemark/internal/icons"
 	"github.com/bartvs98/tidemark/web"
 )
 
@@ -54,9 +56,15 @@ func run(cfg config.Config, log *slog.Logger) error {
 	info := source.Info()
 	log.Info("container source", "kind", info.Kind, "location", info.Location)
 
+	var iconSvc *icons.Service
+	if cfg.Icons {
+		iconSvc = icons.New(cfg.IconsURL, filepath.Join(cfg.DataDir, "icons"), log)
+		iconSvc.Start(ctx)
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.New(version, log, source).Handler(web.SPA()),
+		Handler:           api.New(api.Deps{Version: version, Log: log, Source: source, Icons: iconSvc}).Handler(web.SPA()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

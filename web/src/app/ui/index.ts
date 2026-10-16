@@ -1,5 +1,6 @@
 import { Tab, TabContent, TabList, TabPanel, Tabs } from '@angular/aria/tabs';
 
+export * from './app-icon';
 export * from './badge';
 export * from './button';
 export * from './card';

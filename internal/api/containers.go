@@ -30,6 +30,15 @@ type containerJSON struct {
 	Created time.Time `json:"created"`
 	Stack   string    `json:"stack,omitempty"`
 	Service string    `json:"service,omitempty"`
+	Icon    *iconJSON `json:"icon,omitempty"` // app icon, if one matched
+}
+
+// iconJSON holds icon URLs. The UI swaps to the light variant when the default icon
+// turns out to be near-black on a dark theme, and to the dark one in the reverse case.
+type iconJSON struct {
+	Src   string `json:"src"`
+	Light string `json:"light,omitempty"`
+	Dark  string `json:"dark,omitempty"`
 }
 
 type imageJSON struct {
@@ -58,7 +67,7 @@ func (s *Server) containers(w http.ResponseWriter, r *http.Request) {
 		Containers: make([]containerJSON, 0, len(list)),
 	}
 	for _, c := range list {
-		out.Containers = append(out.Containers, toContainerJSON(c))
+		out.Containers = append(out.Containers, s.toContainerJSON(c))
 	}
 	slices.SortFunc(out.Containers, func(a, b containerJSON) int {
 		return cmp.Or(cmp.Compare(a.Stack, b.Stack), cmp.Compare(a.Name, b.Name))
@@ -66,7 +75,7 @@ func (s *Server) containers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func toContainerJSON(c docker.Container) containerJSON {
+func (s *Server) toContainerJSON(c docker.Container) containerJSON {
 	img := imageJSON{
 		Ref:      c.ImageRef,
 		Display:  c.ImageRef,
@@ -74,11 +83,24 @@ func toContainerJSON(c docker.Container) containerJSON {
 		Platform: c.Image.Platform,
 		Missing:  c.Image.Missing,
 	}
-	if ref, err := imageref.Parse(c.ImageRef); err == nil {
+	ref, err := imageref.Parse(c.ImageRef)
+	if err == nil {
 		img.Display = ref.Familiar()
 		img.Registry = ref.Registry
 		img.Repository = ref.Repository
 		img.Tag = ref.Tag
+	}
+	var icon *iconJSON
+	if s.icons != nil {
+		if ic, ok := s.icons.Resolve(ref, c.Name, c.Service, c.Labels); ok {
+			icon = &iconJSON{Src: "/api/icons/" + ic.Ref}
+			if ic.Light {
+				icon.Light = icon.Src + "?variant=light"
+			}
+			if ic.Dark {
+				icon.Dark = icon.Src + "?variant=dark"
+			}
+		}
 	}
 	if !c.Image.Created.IsZero() {
 		img.Created = &c.Image.Created
@@ -92,5 +114,6 @@ func toContainerJSON(c docker.Container) containerJSON {
 		Created: c.Created,
 		Stack:   c.Project,
 		Service: c.Service,
+		Icon:    icon,
 	}
 }

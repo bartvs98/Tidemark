@@ -60,7 +60,7 @@ func (failingSource) Containers(context.Context) ([]docker.Container, error) {
 func (failingSource) Info() docker.SourceInfo { return docker.SourceInfo{Kind: "docker"} }
 
 func TestContainersSourceError(t *testing.T) {
-	h := New("1.2.3", slog.New(slog.NewTextHandler(io.Discard, nil)), failingSource{}).Handler(fstest.MapFS{})
+	h := New(Deps{Version: "1.2.3", Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Source: failingSource{}}).Handler(fstest.MapFS{})
 	rec := do(t, h, "/api/containers")
 	var body map[string]string
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)

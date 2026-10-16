@@ -1,19 +1,24 @@
 import { Component, computed, input } from '@angular/core';
-import { TmBadge } from '../ui';
+import { TmAppIcon, TmBadge } from '../ui';
 import { ContainerSummary, imageName } from './containers';
 
 /** One container in tile mode. */
 @Component({
   selector: 'tm-container-tile',
-  imports: [TmBadge],
+  imports: [TmAppIcon, TmBadge],
   template: `
-    <div class="flex items-start justify-between gap-2">
-      <h3 class="truncate font-medium" [title]="container().name">{{ container().name }}</h3>
-      @if (container().state !== 'running') {
-        <tm-badge>{{ container().state }}</tm-badge>
-      }
+    <div class="mb-4 flex items-start gap-3">
+      <tm-app-icon [icon]="container().icon" [name]="container().name" [size]="36" />
+      <div class="min-w-0 flex-1">
+        <div class="flex items-start justify-between gap-2">
+          <h3 class="truncate font-medium" [title]="container().name">{{ container().name }}</h3>
+          @if (container().state !== 'running') {
+            <tm-badge>{{ container().state }}</tm-badge>
+          }
+        </div>
+        <p class="mt-0.5 truncate font-mono text-xs text-fg-subtle" [title]="container().image.display">{{ image() }}</p>
+      </div>
     </div>
-    <p class="mt-0.5 mb-4 truncate font-mono text-xs text-fg-subtle" [title]="container().image.display">{{ image() }}</p>
 
     <div class="mt-auto flex items-center justify-between gap-3 border-t border-line pt-3">
       <span class="flex min-w-0 items-center gap-2">

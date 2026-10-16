@@ -276,6 +276,24 @@
     </div>
   </section>
 
+  <!-- ── App icons ─────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">App icons</h2>
+    <p class="mb-4 text-fg-muted">
+      Logos from selfh.st, served by Tidemark's cache. No icon, or a failed load, gives a letter avatar.
+    </p>
+    <tm-card>
+      <div class="flex flex-wrap items-center gap-6">
+        @for (app of appIcons; track app.name) {
+          <div class="flex items-center gap-2">
+            <tm-app-icon [icon]="app.icon" [name]="app.name" [size]="32" />
+            <span class="text-sm">{{ app.name }}</span>
+          </div>
+        }
+      </div>
+    </tm-card>
+  </section>
+
   <!-- ── Icons ──────────────────────────────────────────── -->
   <section>
     <h2 class="mb-4 text-xl font-semibold">Icons</h2>

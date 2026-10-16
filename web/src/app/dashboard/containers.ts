@@ -1,3 +1,5 @@
+import { AppIconSources } from '../ui';
+
 /** Shapes of GET /api/containers (internal/api/containers.go). */
 export interface ContainerList {
   source: {
@@ -27,6 +29,8 @@ export interface ContainerSummary {
   created: string;
   stack?: string;
   service?: string;
+  /** App icon (selfh.st), if one matched. */
+  icon?: AppIconSources;
 }
 
 export interface Stack {

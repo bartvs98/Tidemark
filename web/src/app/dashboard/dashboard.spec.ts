@@ -86,11 +86,25 @@ describe('Dashboard', () => {
     expect(sections.map((s) => s.querySelector('h2')?.textContent?.trim())).toEqual(['media', 'Ungrouped']);
     expect(sections[0].textContent).toContain('2 containers');
     expect(sections[1].textContent).toContain('1 container');
-    // Column headers are visible above the first stack only.
-    const heads = [...el.querySelectorAll('thead')];
-    expect(heads.map((h) => h.classList.contains('sr-only'))).toEqual([false, true]);
+    // One pinned column bar for all stacks; each table keeps headers for screen readers.
+    expect(el.querySelectorAll('[data-testid="column-bar"]').length).toBe(1);
+    const tableHeads = [...el.querySelectorAll('tm-section thead')];
+    expect(tableHeads.length).toBe(2);
+    expect(tableHeads.every((h) => h.classList.contains('sm:sr-only'))).toBe(true);
     expect(el.textContent).toContain('exited');
     expect(el.textContent).toContain('Snapshot');
+  });
+
+  it('shows app icons, with a letter avatar when there is none', async () => {
+    const body: ContainerList = {
+      source: { kind: 'docker', location: 'unix:///var/run/docker.sock' },
+      containers: [container('jellyfin', 'media', { icon: { src: '/api/icons/jellyfin' } }), container('mkvtoolnix', 'media')],
+    };
+    const el = await render((req) => req.flush(body));
+    const icons = [...el.querySelectorAll('tm-app-icon')];
+    expect(icons[0].querySelector('img')?.getAttribute('src')).toBe('/api/icons/jellyfin');
+    expect(icons[1].querySelector('img')).toBeNull();
+    expect(icons[1].textContent?.trim()).toBe('S');
   });
 
   it('switches to tiles and remembers the choice', async () => {

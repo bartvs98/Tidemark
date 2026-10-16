@@ -3,6 +3,7 @@ import {
   ICON_NAMES,
   Level,
   TM_TABS,
+  TmAppIcon,
   TmBadge,
   TmButton,
   TmCard,
@@ -32,6 +33,7 @@ interface SampleContainer {
 @Component({
   selector: 'tm-styleguide',
   imports: [
+    TmAppIcon,
     TmBadge,
     TmButton,
     TmCard,
@@ -77,6 +79,13 @@ export class Styleguide {
     { cls: 'text-sm text-fg-muted', label: 'sm · 13', sample: 'Secondary text, table meta' },
     { cls: 'text-xs text-fg-muted', label: 'xs · 12', sample: 'Badges, column headers' },
     { cls: 'font-mono text-sm', label: 'mono · 13', sample: '1.4.2 → 1.6.0 · sha256:3f9a1c…' },
+  ];
+
+  protected readonly appIcons = [
+    { name: 'redis', icon: { src: '/api/icons/redis', light: '/api/icons/redis?variant=light' } },
+    { name: 'home-assistant', icon: { src: '/api/icons/home-assistant' } },
+    { name: 'mkvtoolnix', icon: undefined },
+    { name: 'broken', icon: { src: '/api/icons/does-not-exist' } },
   ];
 
   protected readonly radii = ['rounded-sm', 'rounded-md', 'rounded-lg', 'rounded-xl'];

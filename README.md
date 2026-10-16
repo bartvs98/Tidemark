@@ -70,5 +70,12 @@ Then open http://your-server:8080.
 | `TIDEMARK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `TIDEMARK_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker Engine API, or `tcp://socket-proxy:2375` |
 | `TIDEMARK_DOCKER_SNAPSHOT` | none | Use a snapshot file instead of Docker (see Development) |
+| `TIDEMARK_ICONS` | `on` | `off` disables app icons |
+
+Per-container labels: `tidemark.icon=<selfh.st reference>` picks an icon, `tidemark.icon=none` hides it.
 
 More options are added per roadmap step; the full list is in [Architecture → Configuration](docs/ARCHITECTURE.md#configuration).
+
+## Credits
+
+App icons by [selfh.st/icons](https://selfh.st/icons/), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).

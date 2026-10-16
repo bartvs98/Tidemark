@@ -59,6 +59,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   config/                     env + yaml + label parsing
   docker/                     Source interface: live Engine API client + snapshot file reader
   imageref/                   parse image references (registry, repository, tag, digest)
+  icons/                      selfh.st icon index, container → icon matching, cached icon serving
   registry/                   tags, digests, auth per registry
   version/                    parse tags, variants, compare, classify patch/minor/major
   resolve/                    running-version resolution chain
@@ -116,6 +117,7 @@ GET  /api/containers/{id}           detail incl. releases in range + flags + lin
 POST /api/checks                    trigger a check run (returns run id)
 GET  /api/checks/latest             status of last/current run
 GET  /api/health
+GET  /api/icons/{ref}[?variant=light|dark]   app icon from the local cache (fetched from the CDN on first use)
 
 later:
 PUT  /api/containers/{id}/review    { version } | { snoozeUntil } | { snoozeUntilVersion }
@@ -141,6 +143,8 @@ All other paths serve the Angular SPA (with fallback to `index.html`).
 | `TIDEMARK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `TIDEMARK_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker endpoint (e.g. `tcp://socket-proxy:2375`) |
 | `TIDEMARK_DOCKER_SNAPSHOT` | none | Read containers from a `scripts/snapshot.sh` file instead of Docker (development) |
+| `TIDEMARK_ICONS` | `on` | `off` disables app icons (no requests to the icon CDN) |
+| `TIDEMARK_ICONS_URL` | `https://cdn.jsdelivr.net/gh/selfhst/icons` | selfh.st icons base URL, e.g. a self-hosted mirror |
 | `TIDEMARK_SCHEDULE` | `0 */6 * * *` | Check schedule (cron) |
 | `TIDEMARK_DATA_DIR` | `/data` | SQLite location |
 | `TIDEMARK_GITHUB_TOKEN` | — | Fine-grained PAT, public repo read only |
@@ -158,6 +162,7 @@ All other paths serve the Angular SPA (with fallback to `index.html`).
 - Secrets only come from env vars, are never returned by the API, and are never logged.
 - No auth in v1, so keep it LAN-only or put it behind your reverse proxy's auth.
 - Release notes are untrusted HTML/markdown, so they're sanitised with DOMPurify before rendering. For the AI summary, they're passed as data, not instructions.
+- **App icons** are fetched by the server only (browsers never contact the CDN), cached under `$TIDEMARK_DATA_DIR/icons`, and only for references listed in the selfh.st index (no arbitrary URLs or paths). Served SVGs get `Content-Security-Policy: sandbox` so a malicious icon can't run script on Tidemark's origin. Requests to the CDN do reveal which icons you use; `TIDEMARK_ICONS=off` avoids them.
 - Runs as non-root in a distroless image.
 
 ## Deployment
