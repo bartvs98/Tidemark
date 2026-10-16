@@ -1,0 +1,23 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import './styles/tokens.css';
+@import './styles/components.css';
+
+@layer base {
+  body {
+    @apply bg-canvas font-sans text-base text-fg antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  a {
+    color: var(--color-accent-text);
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+}

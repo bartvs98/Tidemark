@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5">
+  <title>Tidemark</title>
+  <!-- the tidemark: how high upstream has risen -->
+  <path d="M9 11h14"/>
+  <!-- the water: where your containers are now -->
+  <path d="M5 20.5c1.8-2.6 3.7-2.6 5.5 0s3.7 2.6 5.5 0 3.7-2.6 5.5 0 3.7 2.6 5.5 0"/>
+</svg>

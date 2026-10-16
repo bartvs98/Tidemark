@@ -1,0 +1,275 @@
+<div class="mb-8">
+  <h1 class="text-2xl font-semibold tracking-tight">Styleguide</h1>
+  <p class="mt-1 text-fg-muted">
+    Every token and component in Tidemark. Switch the theme in the header to check both modes. Rules live in
+    <span class="font-mono text-sm">docs/DESIGN-SYSTEM.md</span>.
+  </p>
+</div>
+
+<div class="flex flex-col gap-10">
+  <!-- ── Colour ─────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-4 text-xl font-semibold">Colour</h2>
+    <div class="grid gap-6">
+      @for (group of colors; track group.group) {
+        <div>
+          <h3 class="mb-2 text-sm font-medium text-fg-muted">{{ group.group }}</h3>
+          <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            @for (token of group.tokens; track token) {
+              <div>
+                <div class="h-12 rounded-md border border-line" [style.background]="'var(--color-' + token + ')'"></div>
+                <p class="mt-1 font-mono text-xs text-fg-muted">{{ token }}</p>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  </section>
+
+  <!-- ── Type ───────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-4 text-xl font-semibold">Typography</h2>
+    <tm-card>
+      <div class="flex flex-col gap-3">
+        @for (t of typeScale; track t.label) {
+          <div class="flex items-baseline gap-6">
+            <span class="w-24 shrink-0 font-mono text-xs text-fg-subtle">{{ t.label }}</span>
+            <span [class]="t.cls">{{ t.sample }}</span>
+          </div>
+        }
+      </div>
+    </tm-card>
+  </section>
+
+  <!-- ── Shape & elevation ──────────────────────────────── -->
+  <section>
+    <h2 class="mb-4 text-xl font-semibold">Radius & elevation</h2>
+    <div class="flex flex-wrap gap-6">
+      @for (r of radii; track r) {
+        <div class="text-center">
+          <div class="size-16 border border-line-strong bg-surface" [class]="r"></div>
+          <p class="mt-1 font-mono text-xs text-fg-muted">{{ r }}</p>
+        </div>
+      }
+      <div class="text-center">
+        <div class="size-16 rounded-lg border border-line bg-surface shadow-raised"></div>
+        <p class="mt-1 font-mono text-xs text-fg-muted">shadow-raised</p>
+      </div>
+      <div class="text-center">
+        <div class="size-16 rounded-lg border border-line bg-raised shadow-overlay"></div>
+        <p class="mt-1 font-mono text-xs text-fg-muted">shadow-overlay</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Status language ────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Status language</h2>
+    <p class="mb-4 text-fg-muted">Update class is always neutral. Only risk gets colour, and every status has an icon and a word.</p>
+    <tm-card>
+      <div class="grid gap-6 sm:grid-cols-3">
+        <div>
+          <h3 class="mb-2 text-sm font-medium text-fg-muted">Update class</h3>
+          <div class="flex flex-col items-start gap-2">
+            <tm-update-class kind="none" />
+            <tm-update-class kind="patch" />
+            <tm-update-class kind="minor" />
+            <tm-update-class kind="major" />
+            <tm-update-class kind="digest" />
+          </div>
+        </div>
+        <div>
+          <h3 class="mb-2 text-sm font-medium text-fg-muted">Level (risk)</h3>
+          <div class="flex flex-col items-start gap-2">
+            <span class="text-sm text-fg-subtle">none → renders nothing</span>
+            <tm-level level="attention" />
+            <tm-level level="breaking" />
+            <tm-level level="unknown" />
+          </div>
+        </div>
+        <div>
+          <h3 class="mb-2 text-sm font-medium text-fg-muted">Versions</h3>
+          <div class="flex flex-col items-start gap-2">
+            <tm-version-diff from="1.4.2" to="1.6.0" />
+            <tm-version-diff from="v1.135.3" to="v2.0.1" />
+            <tm-version-diff from="4.0.14" />
+          </div>
+        </div>
+      </div>
+    </tm-card>
+  </section>
+
+  <!-- ── Table ──────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Container table</h2>
+    <p class="mb-4 text-fg-muted">The dashboard pattern for step 1: grouped by Compose stack, sample data.</p>
+    <tm-card heading="Containers" flush>
+      <button tmCardActions tmButton variant="primary" size="sm" icon="refresh-cw" [loading]="loading()" (click)="fakeLoad()">
+        Check now
+      </button>
+      <div class="overflow-x-auto">
+        <table class="tm-table">
+          <thead>
+            <tr>
+              <th scope="col">Container</th>
+              <th scope="col">Version</th>
+              <th scope="col">Update</th>
+              <th scope="col">Risk</th>
+              <th scope="col"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          @for (stack of stacks; track stack.name) {
+            <tbody>
+              <tr class="tm-group">
+                <th colspan="5" scope="colgroup">{{ stack.name }}</th>
+              </tr>
+              @for (c of stack.containers; track c.name) {
+                <tr>
+                  <td>
+                    <div class="font-medium">{{ c.name }}</div>
+                    <div class="font-mono text-xs text-fg-subtle">{{ c.image }}</div>
+                  </td>
+                  <td><tm-version-diff [from]="c.from" [to]="c.kind === 'none' || c.kind === 'digest' ? null : c.to" /></td>
+                  <td><tm-update-class [kind]="c.kind" /></td>
+                  <td><tm-level [level]="c.level" /></td>
+                  <td class="text-right">
+                    @if (c.kind !== 'none') {
+                      <button tmButton variant="ghost" size="sm">Changes <tm-icon name="arrow-right" [size]="14" /></button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          }
+        </table>
+      </div>
+    </tm-card>
+  </section>
+
+  <!-- ── Buttons ────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-4 text-xl font-semibold">Buttons</h2>
+    <tm-card>
+      <div class="flex flex-col gap-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <button tmButton variant="primary" icon="refresh-cw">Check now</button>
+          <button tmButton variant="secondary">Mark reviewed</button>
+          <button tmButton variant="ghost" icon="external-link">Release notes</button>
+          <button tmButton variant="danger">Update now</button>
+          <button tmButton variant="secondary" square icon="x" aria-label="Close"></button>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button tmButton variant="primary" size="sm" icon="refresh-cw">Check now</button>
+          <button tmButton variant="secondary" size="sm">Mark reviewed</button>
+          <button tmButton variant="ghost" size="sm" icon="external-link">Release notes</button>
+          <button tmButton variant="danger" size="sm">Update now</button>
+          <button tmButton variant="ghost" size="sm" square icon="x" aria-label="Close"></button>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button tmButton variant="primary" loading>Checking…</button>
+          <button tmButton variant="secondary" disabled>Disabled</button>
+          <a tmButton variant="ghost" href="https://github.com" target="_blank" rel="noopener" icon="external-link">As a link</a>
+        </div>
+      </div>
+    </tm-card>
+  </section>
+
+  <!-- ── Badges ─────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-4 text-xl font-semibold">Badges</h2>
+    <tm-card>
+      <div class="flex flex-wrap items-center gap-2">
+        <tm-badge>neutral</tm-badge>
+        <tm-badge tone="accent">accent</tm-badge>
+        <tm-badge tone="ok" icon="check">ok</tm-badge>
+        <tm-badge tone="attention" icon="triangle-alert">attention</tm-badge>
+        <tm-badge tone="breaking" icon="octagon-alert">breaking</tm-badge>
+        <tm-badge tone="unknown" icon="circle-help">unknown</tm-badge>
+        <tm-badge mono>ghcr.io</tm-badge>
+        <tm-badge mono>label: org.opencontainers.image.version</tm-badge>
+      </div>
+    </tm-card>
+  </section>
+
+  <!-- ── Tabs ───────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Tabs</h2>
+    <p class="mb-4 text-fg-muted">Angular Aria tabs with the <span class="font-mono text-sm">tm-tabs</span> class. Arrow keys move between tabs.</p>
+    <tm-card>
+      <div ngTabs class="tm-tabs">
+        <div ngTabList selectedTab="changes">
+          <div ngTab value="changes">Changes</div>
+          <div ngTab value="details">Details</div>
+          <div ngTab value="history" disabled>History</div>
+        </div>
+        <div ngTabPanel value="changes">
+          <ng-template ngTabContent>
+            <p>Release notes between your version and the latest go here.</p>
+          </ng-template>
+        </div>
+        <div ngTabPanel value="details">
+          <ng-template ngTabContent>
+            <p>Image, digest, source repository and how the version was detected.</p>
+          </ng-template>
+        </div>
+        <div ngTabPanel value="history">
+          <ng-template ngTabContent><p>Coming later.</p></ng-template>
+        </div>
+      </div>
+    </tm-card>
+  </section>
+
+  <!-- ── Toasts ─────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-4 text-xl font-semibold">Toasts</h2>
+    <tm-card>
+      <div class="flex flex-wrap gap-2">
+        <button tmButton (click)="toasts.show('Checking 20 containers…')">Info</button>
+        <button tmButton (click)="toasts.show('Check finished · 3 updates', 'ok')">Ok</button>
+        <button tmButton (click)="toasts.show('GitHub rate limit reached. Add a token in settings.', 'attention')">Attention</button>
+        <button tmButton (click)="toasts.show('Update failed, rolled back to 1.4.2.', 'breaking')">Breaking</button>
+      </div>
+    </tm-card>
+  </section>
+
+  <!-- ── Empty & loading ────────────────────────────────── -->
+  <section>
+    <h2 class="mb-4 text-xl font-semibold">Empty & loading states</h2>
+    <div class="grid gap-4 md:grid-cols-2">
+      <tm-card>
+        <tm-empty-state heading="No updates" description="All 20 containers are up to date. Next check in 4 h.">
+          <button tmButton size="sm" icon="refresh-cw">Check now</button>
+        </tm-empty-state>
+      </tm-card>
+      <tm-card>
+        <div class="flex flex-col gap-4 p-2">
+          @for (row of [1, 2, 3]; track row) {
+            <div class="flex items-center gap-4">
+              <div class="flex flex-1 flex-col gap-1.5">
+                <tm-skeleton width="30%" height="0.875rem" />
+                <tm-skeleton width="55%" height="0.75rem" />
+              </div>
+              <tm-skeleton width="6rem" height="1.25rem" />
+            </div>
+          }
+        </div>
+      </tm-card>
+    </div>
+  </section>
+
+  <!-- ── Icons ──────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-4 text-xl font-semibold">Icons</h2>
+    <tm-card>
+      <div class="grid grid-cols-3 gap-4 sm:grid-cols-6 lg:grid-cols-8">
+        @for (icon of icons; track icon) {
+          <div class="flex flex-col items-center gap-1.5 text-fg-muted">
+            <tm-icon [name]="icon" [size]="20" class="text-fg" />
+            <span class="font-mono text-xs">{{ icon }}</span>
+          </div>
+        }
+      </div>
+    </tm-card>
+  </section>
+</div>

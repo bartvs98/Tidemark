@@ -1,0 +1,33 @@
+// Package config loads Tidemark's settings from TIDEMARK_* environment variables.
+package config
+
+import (
+	"fmt"
+	"log/slog"
+	"os"
+	"strings"
+)
+
+type Config struct {
+	Addr     string     // TIDEMARK_ADDR, HTTP listen address
+	DataDir  string     // TIDEMARK_DATA_DIR, where the SQLite database lives
+	LogLevel slog.Level // TIDEMARK_LOG_LEVEL: debug | info | warn | error
+}
+
+func Load() (Config, error) {
+	c := Config{
+		Addr:    env("TIDEMARK_ADDR", ":8080"),
+		DataDir: env("TIDEMARK_DATA_DIR", "./data"),
+	}
+	if err := c.LogLevel.UnmarshalText([]byte(env("TIDEMARK_LOG_LEVEL", "info"))); err != nil {
+		return Config{}, fmt.Errorf("TIDEMARK_LOG_LEVEL: %w", err)
+	}
+	return c, nil
+}
+
+func env(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}

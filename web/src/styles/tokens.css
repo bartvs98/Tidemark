@@ -1,0 +1,108 @@
+/*
+ * Tidemark design tokens. Source of truth: docs/BRAND.md + docs/DESIGN-SYSTEM.md.
+ *
+ * Every semantic colour is defined once as light-dark(<light>, <dark>). Which side applies
+ * follows `color-scheme` on <html>, which the theme switcher sets via [data-theme]:
+ *   dark (default) | light | system (follows the OS)
+ *
+ * Tailwind turns each --color-* / --radius-* / --text-* / --shadow-* below into utilities:
+ *   bg-surface, text-fg-muted, border-line, bg-attention-soft, rounded-md, text-sm, shadow-raised …
+ */
+
+@theme {
+  /* ── Fonts ─────────────────────────────────────────── */
+  --font-sans: 'Geist Variable', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+
+  /* ── Type scale: 12 · 13 · 14 (base) · 16 · 20 · 24 · 32 ── */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.125rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.25rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 2rem;
+  --text-3xl--line-height: 2.5rem;
+
+  /* ── Radius ────────────────────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  /* ── Elevation ─────────────────────────────────────── */
+  --shadow-raised: 0 1px 2px var(--tm-shadow), 0 2px 8px var(--tm-shadow);
+  --shadow-overlay: 0 4px 12px var(--tm-shadow), 0 12px 32px var(--tm-shadow);
+
+  /* ── Primitives (prefer semantic tokens in components) ── */
+  --color-deep-950: #070d17;
+  --color-deep-900: #0b1726;
+  --color-deep-800: #13233a;
+  --color-deep-700: #1e3350;
+  --color-deep-600: #33496a;
+  --color-deep-500: #536785;
+  --color-deep-400: #7c8da6;
+  --color-deep-300: #a9b6c8;
+  --color-deep-200: #cdd6e2;
+  --color-deep-100: #e6ebf2;
+  --color-deep-50: #f4f7fa;
+
+  --color-tide-300: #5eead4;
+  --color-tide-400: #2dd4bf;
+  --color-tide-500: #14b8a6;
+  --color-tide-600: #0d9488;
+  --color-tide-700: #0f766e;
+
+  /* ── Semantic: surfaces ────────────────────────────── */
+  --color-canvas: light-dark(#f4f7fa, #070d17); /* page background */
+  --color-surface: light-dark(#ffffff, #0b1726); /* cards, tables */
+  --color-raised: light-dark(#ffffff, #13233a); /* toasts, popovers */
+  --color-hover: light-dark(#e6ebf2, #112038); /* hover / pressed / skeleton */
+
+  /* ── Semantic: lines ───────────────────────────────── */
+  --color-line: light-dark(#cdd6e2, #1e3350);
+  --color-line-strong: light-dark(#a9b6c8, #33496a);
+
+  /* ── Semantic: text ────────────────────────────────── */
+  --color-fg: light-dark(#0b1726, #f4f7fa);
+  --color-fg-muted: light-dark(#536785, #7c8da6); /* secondary text, ≥ 4.5:1 */
+  --color-fg-subtle: light-dark(#7c8da6, #536785); /* placeholders, arrows, disabled */
+
+  /* ── Semantic: accent (Tide) ───────────────────────── */
+  --color-accent: light-dark(#0f766e, #2dd4bf); /* primary button bg */
+  --color-accent-hover: light-dark(#0b5f58, #5eead4);
+  --color-on-accent: light-dark(#ffffff, #070d17); /* text on accent / breaking bg */
+  --color-accent-text: light-dark(#0f766e, #5eead4); /* links, active tab */
+  --color-accent-soft: light-dark(#dcf3ef, rgb(45 212 191 / 0.12));
+  --color-focus: light-dark(#0d9488, #2dd4bf);
+
+  /* ── Semantic: status (colour = risk only) ─────────── */
+  --color-ok: light-dark(#1f7a4d, #3fb97f);
+
+  --color-attention: light-dark(#9a6700, #f5b83d);
+  --color-attention-soft: light-dark(#fff4d6, rgb(245 184 61 / 0.12));
+  --color-attention-line: light-dark(#ecc977, rgb(245 184 61 / 0.38));
+
+  --color-breaking: light-dark(#c9372c, #f2665e);
+  --color-breaking-soft: light-dark(#fdecea, rgb(242 102 94 / 0.12));
+  --color-breaking-line: light-dark(#f2b3ad, rgb(242 102 94 / 0.42));
+}
+
+:root {
+  --tm-shadow: light-dark(rgb(11 23 38 / 0.08), rgb(0 0 0 / 0.45));
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='system'] {
+  color-scheme: light dark;
+}

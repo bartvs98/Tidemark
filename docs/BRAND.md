@@ -1,0 +1,92 @@
+# Tidemark: Brand
+
+<img src="brand/tidemark-icon.svg" width="64" alt="Tidemark icon"> &nbsp; <img src="brand/tidemark-wordmark.svg" height="48" alt="Tidemark wordmark">
+
+**Know what changed before you update.**
+
+## Name
+
+A *tidemark* is the line left behind showing how high the water reached. In Tidemark, the water is where your containers are now and the mark is how far upstream has moved. The gap between them, and what's in it, is the whole product. It also hints at the second job: *marking* an update as reviewed.
+
+Usage: **Tidemark** in prose, `tidemark` for the binary, image, labels (`tidemark.ignore`) and env vars (`TIDEMARK_*`). Never "TideMark" or "Tide Mark".
+
+## Logo
+
+| Asset | File | Use |
+|---|---|---|
+| Mark | [brand/tidemark-mark.svg](brand/tidemark-mark.svg) | `currentColor`, inline in the app header, any background |
+| App icon | [brand/tidemark-icon.svg](brand/tidemark-icon.svg) | Favicon, PWA icon, Docker Hub / GitHub avatar |
+| Wordmark | [brand/tidemark-wordmark.svg](brand/tidemark-wordmark.svg) | README header, docs |
+
+The mark has two strokes: a straight **line** (the high-water mark, upstream) above a **wave** (your running state). Both are 2.5 px on a 32 px grid with round caps. Keep them the same weight, never add a third element, and leave at least 4 px clear space at 32 px.
+
+The wordmark uses live text in Geist, so it renders in the fallback font until Geist is installed. Convert it to outlines before using it outside the app.
+
+## Colour
+
+Dark mode is the default because home-lab dashboards usually live in dark mode, but light mode is fully supported.
+
+### Deep (neutrals, slightly blue)
+
+| Token | Hex | Typical use |
+|---|---|---|
+| deep-950 | `#070D17` | Dark page background |
+| deep-900 | `#0B1726` | Dark surface, icon tile |
+| deep-800 | `#13233A` | Dark raised surface, hover |
+| deep-700 | `#1E3350` | Dark borders |
+| deep-600 | `#33496A` | Strong border, disabled text (dark) |
+| deep-500 | `#536785` | Secondary text (light) |
+| deep-400 | `#7C8DA6` | Secondary text (dark) |
+| deep-300 | `#A9B6C8` | Light borders strong |
+| deep-200 | `#CDD6E2` | Light borders |
+| deep-100 | `#E6EBF2` | Light raised surface, hover |
+| deep-50  | `#F4F7FA` | Light page background, primary text (dark) |
+
+### Tide (brand accent)
+
+| Token | Hex | Use |
+|---|---|---|
+| tide-300 | `#5EEAD4` | Accent text on dark |
+| tide-400 | `#2DD4BF` | Accent on dark (links, focus ring, active) |
+| tide-500 | `#14B8A6` | Primary button bg (dark text on it) |
+| tide-600 | `#0D9488` | Accent on light (≥ 3:1, large/UI only) |
+| tide-700 | `#0F766E` | Accent text & links on light (≥ 4.5:1) |
+
+### Status
+
+**Colour means risk, nothing else.** Update *class* (patch, minor, major, digest) is shown as a neutral label. Only the *level* (none, attention, breaking) gets colour. A dashboard of 20 containers with a dozen patch updates should look calm, and the one breaking change should stand out.
+
+| Meaning | Dark mode | Light mode | Shown as |
+|---|---|---|---|
+| Up to date | `#3FB97F` | `#1F7A4D` | Small check icon only, no badge |
+| Update, no risk | tide-400 | tide-700 | Neutral class badge + tide dot |
+| Attention | `#F5B83D` | `#9A6700` | Amber badge "Attention" + highlighted lines |
+| Breaking | `#F2665E` | `#C9372C` | Coral badge "Breaking" + highlighted lines |
+| Unknown / error | deep-400 | deep-500 | Muted text, dashed border |
+
+Status is never shown with colour alone: every status also has an icon and a word.
+
+## Typography
+
+| Role | Font | Notes |
+|---|---|---|
+| UI | **Geist** (variable, OFL) | 14 px base, 600 for headings |
+| Versions, tags, digests, code | **Geist Mono** | Always mono: `1.4.2 → 1.6.0`, `sha256:3f9a…` |
+
+Both are bundled with the app (`@fontsource-variable/geist`, `@fontsource-variable/geist-mono`). There's no CDN, so the app works offline on the LAN.
+
+Type scale (px): 12 · 13 · 14 · 16 · 20 · 24 · 32. Tabular numerals in tables.
+
+## Voice
+
+Calm, factual, short, like a tide report rather than an alarm. Say what changed, then what to do.
+
+| Do | Don't |
+|---|---|
+| "3 updates · 1 needs attention" | "⚠️ WARNING: 3 OUTDATED CONTAINERS!" |
+| "Breaking: config key `DB_URL` renamed to `DATABASE_URL` in 2.0.0" | "This update may break things" |
+| "Couldn't fetch the changelog, GitHub rate limit. Add a token in settings." | "Error 403" |
+| "Up to date" | "Congrats! You're all caught up 🎉" |
+| "Reviewed up to 1.6.0" | "Dismissed" |
+
+Running → latest is always written with an arrow: `1.4.2 → 1.6.0`.

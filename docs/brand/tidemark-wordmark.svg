@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 136 32">
+  <title>Tidemark</title>
+  <g fill="none" stroke-linecap="round" stroke-width="2.5">
+    <path d="M9 11h14" stroke="#7C8DA6"/>
+    <path d="M5 20.5c1.8-2.6 3.7-2.6 5.5 0s3.7 2.6 5.5 0 3.7-2.6 5.5 0 3.7 2.6 5.5 0" stroke="#14B8A6"/>
+  </g>
+  <text x="34" y="22.5" fill="#536785" font-family="Geist, 'Geist Fallback', system-ui, sans-serif" font-size="20" font-weight="600" letter-spacing="-0.4">tidemark</text>
+</svg>

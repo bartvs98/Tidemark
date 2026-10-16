@@ -1,0 +1,14 @@
+# Go build output
+/tidemark
+*.exe
+
+# Runtime data (SQLite)
+/data/
+
+# Secrets for local compose runs
+.env
+
+# Editors / OS
+.idea/
+.DS_Store
+Thumbs.db

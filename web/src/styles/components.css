@@ -1,0 +1,106 @@
+/*
+ * Global styles for patterns that are plain HTML rather than Angular components:
+ * tables (class="tm-table") and Angular Aria tabs (class="tm-tabs").
+ */
+
+@layer components {
+  /* ── Table ─────────────────────────────────────────── */
+  .tm-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .tm-table th {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--color-line);
+    text-align: left;
+    font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--color-fg-muted);
+  }
+  .tm-table td {
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--color-line);
+    vertical-align: middle;
+  }
+  .tm-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .tm-table tbody tr:hover td {
+    background: var(--color-hover);
+  }
+  /* Section header row inside a table, e.g. a Compose stack name. */
+  .tm-table tr.tm-group th {
+    padding-top: 1rem;
+    background: var(--color-surface);
+    color: var(--color-fg);
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+
+  /* ── Tabs (Angular Aria: ngTabs / ngTabList / ngTab / ngTabPanel) ── */
+  .tm-tabs [role='tablist'] {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--color-line);
+  }
+  .tm-tabs [role='tab'] {
+    margin-bottom: -1px;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 2px solid transparent;
+    font-weight: 500;
+    color: var(--color-fg-muted);
+    cursor: pointer;
+    user-select: none;
+    transition: color 120ms, border-color 120ms;
+  }
+  .tm-tabs [role='tab']:hover {
+    color: var(--color-fg);
+  }
+  .tm-tabs [role='tab'][aria-selected='true'] {
+    color: var(--color-fg);
+    border-bottom-color: var(--color-accent);
+  }
+  .tm-tabs [role='tab'][aria-disabled='true'] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .tm-tabs [role='tabpanel'] {
+    padding-top: 1rem;
+  }
+  .tm-tabs [role='tabpanel'][inert] {
+    display: none;
+  }
+
+  /* ── Skeleton shimmer ──────────────────────────────── */
+  .tm-shimmer {
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        color-mix(in oklab, var(--color-fg) 6%, transparent) 50%,
+        transparent 100%
+      )
+      var(--color-hover);
+    background-size: 200% 100%;
+    animation: tm-shimmer 1.4s ease-in-out infinite;
+  }
+  @keyframes tm-shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tm-shimmer {
+      animation: none;
+    }
+  }
+}
