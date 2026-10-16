@@ -241,3 +241,23 @@ func TestServeFetchesDifferentIconsInParallel(t *testing.T) {
 		t.Errorf("peak concurrent downloads = %d, want 3 (three different icons; the duplicate waits)", peak.Load())
 	}
 }
+
+func TestServeRemembersFailures(t *testing.T) {
+	var hits atomic.Int32
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusForbidden) // jsDelivr refuses some files with 403
+	}))
+	defer cdn.Close()
+	s := newTestService(t, cdn.URL)
+	for range 3 {
+		rec := httptest.NewRecorder()
+		s.Serve(rec, httptest.NewRequest("GET", "/api/icons/redis", nil), "redis", VariantDefault)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("got %d, want 404", rec.Code)
+		}
+	}
+	if hits.Load() != 1 {
+		t.Errorf("CDN asked %d times, want 1 (failures are remembered)", hits.Load())
+	}
+}

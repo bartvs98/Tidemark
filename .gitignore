@@ -15,3 +15,10 @@ Thumbs.db
 
 # Real Docker host snapshots (scripts/snapshot.sh), never committed
 /snapshots/
+
+# Personal notes, not versioned
+/docs/IDEAS.md
+
+# Visual verification output and dev-tool dependencies (scripts/dev)
+/.verify/
+/scripts/dev/node_modules/

@@ -65,7 +65,11 @@ type Service struct {
 
 	fetchMu  sync.Mutex
 	fetching map[string]*sync.Mutex // per icon file, so different icons download in parallel
+	failed   map[string]time.Time   // icon files the CDN refused, not retried for failedRetry
 }
+
+// failedRetry is how long a missing icon is answered with 404 without asking the CDN again.
+const failedRetry = time.Hour
 
 func New(baseURL, cacheDir string, log *slog.Logger) *Service {
 	return &Service{
@@ -240,8 +244,22 @@ func (s *Service) fetchIcon(ctx context.Context, ext, name, path string) ([]byte
 	if data, err := os.ReadFile(path); err == nil {
 		return data, nil // another request fetched it meanwhile
 	}
+	s.fetchMu.Lock()
+	failedAt, failed := s.failed[path]
+	s.fetchMu.Unlock()
+	if failed && time.Since(failedAt) < failedRetry {
+		return nil, fmt.Errorf("%s: unavailable (cached failure)", name)
+	}
 	data, err := s.download(ctx, fmt.Sprintf("%s/%s/%s.%s", s.base, ext, name, ext), maxIconSize)
 	if err != nil {
+		if ctx.Err() == nil { // a cancelled request says nothing about the icon
+			s.fetchMu.Lock()
+			if s.failed == nil {
+				s.failed = map[string]time.Time{}
+			}
+			s.failed[path] = time.Now()
+			s.fetchMu.Unlock()
+		}
 		return nil, err
 	}
 	if err := writeFileAtomic(path, data); err != nil {

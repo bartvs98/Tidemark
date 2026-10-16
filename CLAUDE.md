@@ -8,7 +8,8 @@ Self-hosted dashboard that shows, per running Docker container, the running vers
 2. [docs/FEATURES.md](docs/FEATURES.md): behaviour and rules (version resolution chain, icon matching, update gates).
 3. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): stack, package layout, data model, API, config, security.
 4. [docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md) + [docs/BRAND.md](docs/BRAND.md) before any UI work.
-5. [docs/IDEAS.md](docs/IDEAS.md): the owner's original ideas and answers.
+
+(`docs/IDEAS.md` may exist locally: the owner's personal notes, git-ignored. Everything decided from it is in the docs above.)
 
 ## Stack in one breath
 
@@ -35,11 +36,11 @@ cd web; npm start                                                               
 - **One roadmap step at a time.** Briefly state the plan, build it, verify it, then summarise. Ask only for decisions that are genuinely the owner's.
 - **Each step ends with:** all tests green, docs updated (ROADMAP checkbox + a ✅ verification note, plus FEATURES / ARCHITECTURE / README config tables as relevant), then **commit and push** to `origin main` (github.com/bartvs98/Tidemark, private). Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Small fixes between steps get their own commit.
 - **UI is built only from design-system pieces** in `web/src/app/ui/`. New piece → add it there, export from `ui/index.ts`, show it on `/styleguide`, document it in DESIGN-SYSTEM.md. Colour means risk only; status always icon + word; versions/tags/digests in mono.
-- **Verify UI changes visually** in both themes (and phone width when layout changes): build, run the binary against the snapshot, screenshot with headless Chrome (see below), look at the screenshots before reporting.
+- **Verify UI changes visually** with the verify skill, in both themes (and phone width when layout changes), and look at the screenshots before reporting.
 
-## Visual verification recipe
+## Visual verification
 
-Puppeteer is **not** a project dependency. In the session scratchpad: `npm i puppeteer-core@24.10.0`, then launch with `executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe'` (Firefox: `browser: 'firefox'`, `C:/Program Files/Mozilla Firefox/firefox.exe`). Run the server with `TIDEMARK_ADDR=127.0.0.1:18080`, `TIDEMARK_DOCKER_SNAPSHOT=snapshots/home.json` and `TIDEMARK_DATA_DIR=<scratchpad>/data` (keeps `./data` clean). Set the theme/view via `localStorage` keys `tidemark.theme` (`dark|light|system`) and `tidemark.view` (`list|tiles`), then reload.
+Use the **`verify` skill** (`.claude/skills/verify/SKILL.md`), which runs `node scripts/dev/verify.mjs`: it builds, runs the binary against the snapshot and screenshots dashboard + styleguide across browsers, themes, views and widths into `.verify/`, reporting page errors and failed requests. First time: `npm install --prefix scripts/dev`.
 
 ## Gotchas (learned the hard way)
 

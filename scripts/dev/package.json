@@ -1,0 +1,12 @@
+{
+  "name": "tidemark-dev-tools",
+  "private": true,
+  "description": "Development tools for Tidemark (not part of the app): visual verification with headless browsers.",
+  "type": "module",
+  "scripts": {
+    "verify": "node verify.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "24.10.0"
+  }
+}

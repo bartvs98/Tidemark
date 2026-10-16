@@ -6,3 +6,5 @@ web/node_modules
 web/dist/spa
 web/.angular
 **/*.exe
+.verify
+scripts/dev/node_modules
