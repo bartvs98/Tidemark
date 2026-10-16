@@ -38,6 +38,9 @@ func checkFixture(t *testing.T, list []Container) {
 	if j.Image.Labels["org.opencontainers.image.source"] == "" || j.Image.Created.Year() != 2024 {
 		t.Errorf("jellyfin image labels/created = %+v", j.Image)
 	}
+	if len(j.Image.VersionEnv) != 1 || j.Image.VersionEnv["JELLYFIN_VERSION"] != "10.9.11" {
+		t.Errorf("only *_VERSION env should be kept, got %v", j.Image.VersionEnv)
+	}
 	if !j.Created.Equal(time.Unix(1759305600, 0)) {
 		t.Errorf("jellyfin created = %v", j.Created)
 	}

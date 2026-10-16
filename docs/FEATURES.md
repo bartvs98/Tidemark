@@ -24,9 +24,12 @@ Many images run as `:latest` or a floating tag (`:1`, `:1.4`), so the tag alone 
 
 1. Tag is a full version (`1.4.2`, `v1.4.2`, `1.4.2-alpine`) → use it.
 2. Image label `org.opencontainers.image.version`, **only if it's plausible for the tag**. Labels are inherited from base images: `mongo:8.3` reports `24.04` (its Ubuntu base). Reject a label whose version doesn't share the tag's leading numbers, unless the tag is floating (`latest`).
-3. Image label `build_version` (linuxserver.io images: `Linuxserver.io version:- 1.4.2-ls123 ...`).
+   In practice: a label is only trusted if the registry has a tag with exactly that version.
+3. Image label `build_version` (linuxserver.io images: `Linuxserver.io version:- 1.4.2-ls123 ...`), same rule.
 4. **Digest match**: list the registry's tags and find a version tag whose digest equals the running image digest.
-5. Unknown → show the digest and still report "update available" if the floating tag's digest moved.
+5. **Image `*_VERSION` variable** (`PG_VERSION=16.10`, `REDIS_VERSION`). Official images are rebuilt and re-pushed under the same version tags, so an older pull's digest no longer matches any tag; these images record their version in their own environment instead. Only `*_VERSION` variables are ever read. The value must exist as a tag, and must extend a version tag (`16.10` for `16-alpine`); for word tags like `latest` the variable must be named after the image, so a `NODE_VERSION` inherited from a Node base image is ignored.
+6. A partial version tag (`16-alpine`, `8.3`) as-is.
+7. Unknown → still report "new image" if the floating tag's digest moved.
 
 The UI shows *how* the version was determined (tag / label / digest match / unknown) so you know how much to trust it.
 

@@ -56,7 +56,10 @@
       "Architecture": "amd64",
       "Os": "linux",
       "Variant": null,
-      "Config": { "Labels": { "org.opencontainers.image.source": "https://github.com/jellyfin/jellyfin-packaging" } }
+      "Config": {
+        "Labels": { "org.opencontainers.image.source": "https://github.com/jellyfin/jellyfin-packaging" },
+        "Env": ["PATH=/usr/bin", "JELLYFIN_VERSION=10.9.11", "SECRET_TOKEN=nope", "_VERSION=x"]
+      }
     },
     {
       "Id": "sha256:bbb",

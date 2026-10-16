@@ -18,9 +18,11 @@ import (
 	"time"
 
 	"github.com/bartvs98/tidemark/internal/api"
+	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/config"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/icons"
+	"github.com/bartvs98/tidemark/internal/registry"
 	"github.com/bartvs98/tidemark/web"
 )
 
@@ -62,9 +64,19 @@ func run(cfg config.Config, log *slog.Logger) error {
 		iconSvc.Start(ctx)
 	}
 
+	checks := check.New(source, registry.New("tidemark/"+version), log)
+	checks.Start(ctx) // first check right away; step 3 adds a schedule
+
 	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           api.New(api.Deps{Version: version, Log: log, Source: source, Icons: iconSvc}).Handler(web.SPA()),
+		Addr: cfg.Addr,
+		Handler: api.New(api.Deps{
+			Version:    version,
+			Log:        log,
+			Source:     source,
+			Icons:      iconSvc,
+			Checks:     checks,
+			Background: ctx,
+		}).Handler(web.SPA()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

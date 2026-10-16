@@ -4,6 +4,9 @@
     <p class="mt-1 h-5 text-fg-muted" data-testid="summary">
       @if (list.hasValue()) {
         {{ summary() }}
+        @if (check()?.finishedAt && !checking()) {
+          <span class="text-fg-subtle"> · checked {{ check()!.finishedAt | date: 'HH:mm' }}</span>
+        }
       }
     </p>
   </div>
@@ -17,7 +20,21 @@
       }
     }
     <tm-segmented label="View" iconOnly [options]="views" [(value)]="view" />
-    <button tmButton size="sm" icon="refresh-cw" [loading]="list.isLoading()" (click)="list.reload()">Refresh</button>
+    <button
+      tmButton
+      variant="primary"
+      size="sm"
+      icon="refresh-cw"
+      [loading]="checking() || starting()"
+      (click)="checkNow()"
+      data-testid="check-now"
+    >
+      @if (checking() && check(); as c) {
+        Checking {{ c.done }}/{{ c.total }}
+      } @else {
+        Check now
+      }
+    </button>
   </div>
 </div>
 
@@ -34,7 +51,7 @@
         data-testid="column-bar"
       >
         <div class="border-x border-transparent">
-          <table class="tm-table min-w-[40rem] table-fixed">
+          <table class="tm-table min-w-[44rem] table-fixed">
             <colgroup>
               @for (col of columns; track col.label) {
                 <col [class]="col.width" />
@@ -62,7 +79,7 @@
             <tm-card flush>
               <div class="overflow-x-auto">
                 <!-- Same fixed column widths as the pinned header bar, so everything lines up. -->
-                <table class="tm-table min-w-[40rem] table-fixed">
+                <table class="tm-table min-w-[44rem] table-fixed">
                   <colgroup>
                     @for (col of columns; track col.label) {
                       <col [class]="col.width" />
@@ -80,34 +97,28 @@
                       <tr>
                         <td>
                           <div class="flex items-center gap-3">
-                            <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="24" />
+                            <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="20" />
                             <div class="min-w-0">
-                              <div class="truncate font-medium" [title]="c.name">{{ c.name }}</div>
-                              @if (c.service && c.service !== c.name) {
-                                <div class="truncate text-sm text-fg-subtle">service: {{ c.service }}</div>
-                              }
+                              <div class="flex items-center gap-2">
+                                <span class="truncate font-medium" [title]="c.name">{{ c.name }}</span>
+                                @if (c.state !== 'running') {
+                                  <tm-badge>{{ c.state }}</tm-badge>
+                                }
+                              </div>
+                              <div class="truncate text-xs text-fg-subtle" [title]="c.status">{{ c.status }}</div>
                             </div>
                           </div>
                         </td>
                         <td>
-                          <div class="truncate font-mono text-sm text-fg-muted" [title]="c.image.display">{{ imageName(c) }}</div>
-                        </td>
-                        <td>
-                          <div class="flex items-center gap-2">
-                            <span class="truncate font-mono text-sm">{{ c.image.tag || '—' }}</span>
-                            @if (c.image.missing) {
-                              <tm-badge tone="unknown">image missing</tm-badge>
-                            }
+                          <div class="truncate font-mono text-sm text-fg-muted" [title]="c.image.display">
+                            {{ imageName(c) }}<span class="text-fg">:{{ c.image.tag || '—' }}</span>
                           </div>
+                          @if (c.image.missing) {
+                            <tm-badge tone="unknown" class="mt-1">image missing</tm-badge>
+                          }
                         </td>
-                        <td>
-                          <div class="flex items-center gap-2">
-                            @if (c.state !== 'running') {
-                              <tm-badge>{{ c.state }}</tm-badge>
-                            }
-                            <span class="truncate text-sm text-fg-muted" [title]="c.status">{{ c.status }}</span>
-                          </div>
-                        </td>
+                        <td><tm-container-version [container]="c" [checking]="checking()" /></td>
+                        <td><tm-container-update [container]="c" [checking]="checking()" /></td>
                       </tr>
                     }
                   </tbody>
@@ -117,7 +128,7 @@
           } @else {
             <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               @for (c of stack.containers; track c.id) {
-                <tm-container-tile [container]="c" />
+                <tm-container-tile [container]="c" [checking]="checking()" />
               }
             </div>
           }

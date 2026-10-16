@@ -6,13 +6,36 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
 )
 
 type containerList struct {
 	Source     sourceJSON      `json:"source"`
+	Check      *checkJSON      `json:"check,omitempty"`
 	Containers []containerJSON `json:"containers"`
+}
+
+type checkJSON struct {
+	Running    bool       `json:"running"`
+	StartedAt  *time.Time `json:"startedAt,omitempty"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+	Done       int        `json:"done"`
+	Total      int        `json:"total"`
+	Error      string     `json:"error,omitempty"`
+}
+
+type updateJSON struct {
+	Running       string    `json:"running,omitempty"`       // running version (tag text), empty if unknown
+	Source        string    `json:"source"`                  // tag | label | digest | unknown
+	Latest        string    `json:"latest,omitempty"`        // newest release in the same family
+	LatestInMajor string    `json:"latestInMajor,omitempty"` // newest within the running major, for major jumps
+	Class         string    `json:"class"`                   // none | patch | minor | major | digest
+	Floating      bool      `json:"floating"`
+	NewImage      bool      `json:"newImage"`
+	Error         string    `json:"error,omitempty"`
+	CheckedAt     time.Time `json:"checkedAt"`
 }
 
 type sourceJSON struct {
@@ -22,15 +45,16 @@ type sourceJSON struct {
 }
 
 type containerJSON struct {
-	ID      string    `json:"id"`
-	Name    string    `json:"name"`
-	Image   imageJSON `json:"image"`
-	State   string    `json:"state"`
-	Status  string    `json:"status"`
-	Created time.Time `json:"created"`
-	Stack   string    `json:"stack,omitempty"`
-	Service string    `json:"service,omitempty"`
-	Icon    *iconJSON `json:"icon,omitempty"` // app icon, if one matched
+	ID      string      `json:"id"`
+	Name    string      `json:"name"`
+	Image   imageJSON   `json:"image"`
+	State   string      `json:"state"`
+	Status  string      `json:"status"`
+	Created time.Time   `json:"created"`
+	Stack   string      `json:"stack,omitempty"`
+	Service string      `json:"service,omitempty"`
+	Icon    *iconJSON   `json:"icon,omitempty"`   // app icon, if one matched
+	Update  *updateJSON `json:"update,omitempty"` // result of the last check, if any
 }
 
 // iconJSON holds icon URLs. The UI swaps to the light variant when the default icon
@@ -65,6 +89,9 @@ func (s *Server) containers(w http.ResponseWriter, r *http.Request) {
 	out := containerList{
 		Source:     sourceJSON{Kind: info.Kind, Location: info.Location, CapturedAt: info.CapturedAt},
 		Containers: make([]containerJSON, 0, len(list)),
+	}
+	if s.checks != nil {
+		out.Check = toCheckJSON(s.checks.Status())
 	}
 	for _, c := range list {
 		out.Containers = append(out.Containers, s.toContainerJSON(c))
@@ -115,5 +142,42 @@ func (s *Server) toContainerJSON(c docker.Container) containerJSON {
 		Stack:   c.Project,
 		Service: c.Service,
 		Icon:    icon,
+		Update:  s.updateFor(c.ID),
 	}
+}
+
+func (s *Server) updateFor(containerID string) *updateJSON {
+	if s.checks == nil {
+		return nil
+	}
+	e, ok := s.checks.Result(containerID)
+	if !ok {
+		return nil
+	}
+	r := e.Result
+	return &updateJSON{
+		Running:       r.Running,
+		Source:        string(r.Source),
+		Latest:        r.Latest,
+		LatestInMajor: r.LatestInMajor,
+		Class:         string(r.Class),
+		Floating:      r.Floating,
+		NewImage:      r.NewImage,
+		Error:         e.Err,
+		CheckedAt:     e.CheckedAt,
+	}
+}
+
+func toCheckJSON(st check.Status) *checkJSON {
+	return &checkJSON{Running: st.Running, StartedAt: st.StartedAt, FinishedAt: st.FinishedAt, Done: st.Done, Total: st.Total, Error: st.Err}
+}
+
+// startCheck starts a check run unless one is running, and answers with the run's status.
+func (s *Server) startCheck(w http.ResponseWriter, r *http.Request) {
+	if s.checks == nil {
+		writeError(w, http.StatusNotImplemented, "update checks are not enabled")
+		return
+	}
+	s.checks.Start(s.background)
+	writeJSON(w, http.StatusAccepted, toCheckJSON(s.checks.Status()))
 }

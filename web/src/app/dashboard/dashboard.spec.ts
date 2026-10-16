@@ -123,6 +123,78 @@ describe('Dashboard', () => {
     expect(localStorage.getItem('tidemark.view')).toBe('tiles');
   });
 
+  it('shows versions, update classes and failures from the last check', async () => {
+    const body: ContainerList = {
+      source: { kind: 'docker', location: 'unix:///var/run/docker.sock' },
+      check: { running: false, done: 3, total: 3, finishedAt: '2026-10-16T13:00:00Z' },
+      containers: [
+        container('jellyfin', 'media', {
+          update: { running: '10.9.11', source: 'label', latest: '10.10.7', class: 'minor', floating: true, newImage: true, checkedAt: '' },
+        }),
+        container('sonarr', 'media', {
+          update: { running: '4.0.14', source: 'tag', latest: '4.0.14', class: 'none', floating: false, newImage: false, checkedAt: '' },
+        }),
+        container('private', 'media', {
+          update: { source: 'unknown', class: 'none', floating: false, newImage: false, error: 'not found, or private', checkedAt: '' },
+        }),
+      ],
+    };
+    const el = await render((req) => req.flush(body));
+    const rows = [...el.querySelectorAll('tbody tr')].map((r) => r.textContent?.replace(/s+/g, ' ').trim() ?? '');
+    expect(rows[0].replace(/ /g, '')).toContain('10.9.11→10.10.7');
+    expect(rows[0]).toContain('detected from image label');
+    expect(rows[0]).toContain('minor');
+    expect(rows[1]).toContain('check failed'); // rows sort by name: jellyfin, private, sonarr
+    expect(rows[2]).toContain('Up to date');
+    expect(el.querySelector('[data-testid="summary"]')?.textContent).toContain('1 update');
+  });
+
+  it('shows progress while a check runs, and Check now starts one', async () => {
+    const body: ContainerList = {
+      source: { kind: 'docker', location: 'unix:///var/run/docker.sock' },
+      check: { running: true, done: 3, total: 24 },
+      containers: [container('jellyfin', 'media')],
+    };
+    const el = await render((req) => req.flush(body));
+    const button = el.querySelector<HTMLButtonElement>('[data-testid="check-now"]')!;
+    expect(button.textContent).toContain('Checking 3/24');
+    expect(el.querySelectorAll('tm-container-version tm-skeleton').length).toBe(1);
+
+    button.click();
+    http.expectOne({ method: 'POST', url: '/api/checks' }).flush({ running: true, done: 0, total: 24 });
+  });
+
+  it('keeps polling while the check runs, then stops', async () => {
+    // Angular's scheduler runs on the faked timers too, so settle by advancing the clock.
+    vi.useFakeTimers();
+    const settle = () => vi.advanceTimersByTimeAsync(20);
+    try {
+      const running = (done: number): ContainerList => ({
+        source: { kind: 'docker', location: 'x' },
+        check: { running: true, done, total: 3 },
+        containers: [container('jellyfin', 'media')],
+      });
+      const fixture = TestBed.createComponent(Dashboard);
+      fixture.detectChanges();
+      http.expectOne('/api/containers').flush(running(0));
+      await settle();
+
+      for (const done of [1, 2]) {
+        await vi.advanceTimersByTimeAsync(1500);
+        http.expectOne('/api/containers').flush(running(done));
+        await settle();
+      }
+      await vi.advanceTimersByTimeAsync(1500);
+      http.expectOne('/api/containers').flush({ ...running(3), check: { running: false, done: 3, total: 3, finishedAt: '2026-10-16T13:00:00Z' } });
+      await settle();
+
+      await vi.advanceTimersByTimeAsync(5000);
+      http.expectNone('/api/containers');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('shows the API error message', async () => {
     const el = await render((req) =>
       req.flush({ error: "can't reach Docker at unix:///var/run/docker.sock" }, { status: 502, statusText: 'Bad Gateway' }),

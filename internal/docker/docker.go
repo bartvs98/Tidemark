@@ -41,7 +41,11 @@ type Image struct {
 	Created     time.Time
 	Platform    string // linux/amd64, linux/arm64/v8
 	Labels      map[string]string
-	Missing     bool // the image could not be inspected (deleted since the container was created)
+	// VersionEnv holds the image's *_VERSION environment variables (PG_VERSION=16.10),
+	// which official images use to record their exact version. Nothing else from the
+	// image environment is kept.
+	VersionEnv map[string]string
+	Missing    bool // the image could not be inspected (deleted since the container was created)
 }
 
 const (
@@ -71,6 +75,7 @@ type apiImage struct {
 	Variant      string   `json:"Variant"`
 	Config       struct {
 		Labels map[string]string `json:"Labels"`
+		Env    []string          `json:"Env"`
 	} `json:"Config"`
 }
 
@@ -98,7 +103,7 @@ func (c apiContainer) toContainer(images map[string]apiImage) Container {
 
 func (i apiImage) toImage(id string, found bool) Image {
 	if !found {
-		return Image{ID: id, Missing: true, Labels: map[string]string{}}
+		return Image{ID: id, Missing: true, Labels: map[string]string{}, VersionEnv: map[string]string{}}
 	}
 	created, _ := time.Parse(time.RFC3339Nano, i.Created)
 	platform := i.Os + "/" + i.Architecture
@@ -112,7 +117,19 @@ func (i apiImage) toImage(id string, found bool) Image {
 		Created:     created,
 		Platform:    platform,
 		Labels:      orEmpty(i.Config.Labels),
+		VersionEnv:  versionEnv(i.Config.Env),
 	}
+}
+
+func versionEnv(env []string) map[string]string {
+	out := map[string]string{}
+	for _, kv := range env {
+		k, v, ok := strings.Cut(kv, "=")
+		if ok && strings.HasSuffix(k, "_VERSION") && len(k) > len("_VERSION") {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 func firstOr(s []string, fallback string) string {

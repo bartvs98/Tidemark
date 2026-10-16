@@ -7,7 +7,32 @@ export interface ContainerList {
     location: string;
     capturedAt?: string;
   };
+  check?: CheckStatus;
   containers: ContainerSummary[];
+}
+
+export interface CheckStatus {
+  running: boolean;
+  startedAt?: string;
+  finishedAt?: string;
+  done: number;
+  total: number;
+  error?: string;
+}
+
+/** How the running version was determined (internal/resolve). */
+export type UpdateSource = 'tag' | 'label' | 'digest' | 'env' | 'unknown';
+
+export interface UpdateInfo {
+  running?: string;
+  source: UpdateSource;
+  latest?: string;
+  latestInMajor?: string;
+  class: 'none' | 'patch' | 'minor' | 'major' | 'digest';
+  floating: boolean;
+  newImage: boolean;
+  error?: string;
+  checkedAt: string;
 }
 
 export interface ContainerSummary {
@@ -31,6 +56,8 @@ export interface ContainerSummary {
   service?: string;
   /** App icon (selfh.st), if one matched. */
   icon?: AppIconSources;
+  /** Result of the last update check, once there is one. */
+  update?: UpdateInfo;
 }
 
 export interface Stack {
@@ -56,4 +83,9 @@ export function imageName(c: ContainerSummary): string {
   const { registry, repository, ref } = c.image;
   if (!registry) return ref;
   return registry === 'docker.io' ? repository.replace(/^library\//, '') : `${registry}/${repository}`;
+}
+
+/** Containers with an update of any kind. */
+export function countUpdates(containers: ContainerSummary[]): number {
+  return containers.filter((c) => c.update && !c.update.error && c.update.class !== 'none').length;
 }

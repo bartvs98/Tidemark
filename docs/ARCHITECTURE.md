@@ -38,7 +38,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 | Language | **Go 1.26+** | Fast, small static binary, low memory, great Docker ecosystem |
 | Docker | Own minimal read-only Engine API client (`internal/docker`) | Only 2 GET endpoints needed; avoids the SDK dependency tree; same decoder for live and snapshot mode. Pull/create for one-click updates comes in step 11. |
 | Registry | `github.com/google/go-containerregistry` | Handles token auth for Hub/GHCR/Quay, tag listing, manifest HEAD, multi-arch indexes |
-| Versions | `github.com/Masterminds/semver/v3` + own variant parser | Lenient semver parsing (`v1.2`, `1.2.3-ls45`) |
+| Versions | Own lenient parser (`internal/version`) | Real tags aren't semver: `16-alpine`, `v1.15.0-ls175`, `2026.9.0`, `7.4.2-alpine3.21` |
 | HTTP | stdlib `net/http` (Go 1.22+ pattern routing) | No framework needed |
 | DB | SQLite via `modernc.org/sqlite` (pure Go, no CGO) | Zero ops, single file, easy cross-compile |
 | Migrations | embedded `.sql` files, applied on start | Simple, no extra tooling |
@@ -62,7 +62,9 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   icons/                      selfh.st icon index, container → icon matching, cached icon serving
   registry/                   tags, digests, auth per registry
   version/                    parse tags, variants, compare, classify patch/minor/major
-  resolve/                    running-version resolution chain
+  version/                    parse tags (prefix, numbers, variant, pre-release, build), compare, classify
+  registry/                   tag lists + manifest digests via go-containerregistry, cached, anonymous
+  resolve/                    one container: running version, latest in family, update class
   source/                     image → source repo resolution
   changelog/                  GitHub / GitLab / CHANGELOG.md providers
   analysis/                   breaking-change heuristics
@@ -70,7 +72,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   notify/                     (later) notifier interface + Telegram impl
   updater/                    (later) gated pull/recreate/rollback
   store/                      SQLite repository + migrations
-  check/                      orchestrates one full check run
+  check/                      background check runs over all containers, results in memory (SQLite in step 3)
   api/                        HTTP handlers + embedded SPA serving
 /web/                         Angular workspace
 /docs/                        these documents
@@ -84,8 +86,8 @@ compose.example.yaml
 One check run (scheduled or manual), with containers processed concurrently (bounded worker pool, e.g. 4):
 
 1. **Inventory**: `GET /containers/json` + `GET /images/{id}/json` → name, image ref, local digest(s), labels, compose project. Container inspect is never called, because it exposes environment variables.
-2. **Resolve running version**: chain from FEATURES §2. Uses `RepoDigests` from the image, because the local image ID ≠ the registry manifest digest.
-3. **Latest version**: list tags (cached ~1 h per repo), filter by variant + pre-release rules, pick the highest. For floating tags, also `HEAD` the tag's manifest to detect digest-only updates.
+2. **Resolve running version**: chain from FEATURES §2. Uses `RepoDigests` from the image, because the local image ID ≠ the registry manifest digest. Digest matching only probes tags written like the running tag (`16.10-alpine` for `16-alpine`, not `16.10-alpine3.22`), at the most precise level, newest first, at most 30 HEADs.
+3. **Latest version**: list tags (cached 1 h per repo), keep stable tags of the same family (same variant), pick the highest, preferring the running tag's spelling (`v` prefix, raw variant) on ties. For floating tags, also `HEAD` the tag's manifest to detect "new image, same tag" updates. Containers sharing an image are checked once; 6 run in parallel, at most 4 requests per registry at a time.
 4. **Changelog**: resolve the source repo → fetch releases (cached forever per tag; the list is refreshed per run) → slice the range from running to latest.
 5. **Analysis**: heuristic flags per release → overall level.
 6. **AI** (later, if enabled): summary + verdict, cached per (repo, from, to).
@@ -114,8 +116,8 @@ ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reas
 ```
 GET  /api/containers                list with status, grouped info, level
 GET  /api/containers/{id}           detail incl. releases in range + flags + links
-POST /api/checks                    trigger a check run (returns run id)
-GET  /api/checks/latest             status of last/current run
+POST /api/checks                    start a check run unless one is running (202 + run status)
+                                    run status and per-container results are part of GET /api/containers
 GET  /api/health
 GET  /api/icons/{ref}[?variant=light|dark]   app icon from the local cache (fetched from the CDN on first use)
 

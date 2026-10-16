@@ -2,11 +2,13 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"log/slog"
 	"net/http"
 
+	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/icons"
 )
@@ -16,17 +18,27 @@ type Deps struct {
 	Log     *slog.Logger
 	Source  docker.Source
 	Icons   *icons.Service // nil when icons are turned off
+	Checks  *check.Service // nil in tests that don't need update checks
+
+	// Context for background work started by requests (check runs); it outlives the request.
+	Background context.Context
 }
 
 type Server struct {
-	version string
-	log     *slog.Logger
-	source  docker.Source
-	icons   *icons.Service
+	version    string
+	log        *slog.Logger
+	source     docker.Source
+	icons      *icons.Service
+	checks     *check.Service
+	background context.Context
 }
 
 func New(d Deps) *Server {
-	return &Server{version: d.Version, log: d.Log, source: d.Source, icons: d.Icons}
+	bg := d.Background
+	if bg == nil {
+		bg = context.Background()
+	}
+	return &Server{version: d.Version, log: d.Log, source: d.Source, icons: d.Icons, checks: d.Checks, background: bg}
 }
 
 // Handler returns the full HTTP handler: API routes plus the SPA served from spa.
@@ -35,6 +47,7 @@ func (s *Server) Handler(spa fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/containers", s.containers)
 	mux.HandleFunc("GET /api/icons/{ref}", s.icon)
+	mux.HandleFunc("POST /api/checks", s.startCheck)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})

@@ -5,8 +5,10 @@
 #
 # Kept:    container id/name/image/state/created, compose project/service labels,
 #          tidemark.* and org.opencontainers.image.* labels; image id/tags/digests/
-#          created/platform and image labels (the same data any registry serves).
-# Dropped: environment variables, commands, mounts, ports, networks, every other label.
+#          created/platform, image labels and the image's *_VERSION variables
+#          (PG_VERSION=16.10; the same data any registry serves).
+# Dropped: container environment, all other image environment, commands, mounts,
+#          ports, networks, every other label.
 #
 # Only reads (GET) from the Docker socket. Needs curl and access to the socket
 # (root or the docker group). jq runs in a throwaway container, so it needn't be installed.
@@ -36,11 +38,14 @@ ids=$(printf '%s' "$containers" | jq -r '.[].ImageID' | tr -d '\r' | sort -u)
 images=$(for id in $ids; do api "/images/$id/json" || true; echo; done | jq -s -c '
   [ .[] | {
       Id, RepoTags, RepoDigests, Created, Architecture, Os, Variant,
-      Config: { Labels: (.Config.Labels // {}) }
+      Config: {
+        Labels: (.Config.Labels // {}),
+        Env: [ (.Config.Env // [])[] | select(test("^[A-Za-z0-9_]+_VERSION=")) ]
+      }
   } ]')
 
 printf '{"capturedAt":"%s","version":%s,"containers":%s,"images":%s}\n' \
   "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$version" "$containers" "$images" | jq . > "$OUT"
 
 echo "Wrote $OUT: $(printf '%s' "$containers" | jq length) containers, $(printf '%s' "$images" | jq length) images." >&2
-echo "Review it before sharing. It contains no environment variables." >&2
+echo "Review it before sharing. The only environment variables in it are image *_VERSION ones." >&2

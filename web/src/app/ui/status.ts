@@ -61,13 +61,16 @@ export class TmLevel {
 @Component({
   selector: 'tm-version-diff',
   template: `
-    <span class="text-fg-muted">{{ from() }}</span>
+    <span class="whitespace-nowrap text-fg-muted">{{ from() }}</span>
     @if (to(); as to) {
-      <span class="text-fg-subtle" aria-label="to">→</span>
-      <span class="font-medium text-fg">{{ to }}</span>
+      <!-- arrow and target wrap together, never inside a version -->
+      <span class="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+        <span class="text-fg-subtle" aria-label="to">→</span>
+        <span class="font-medium text-fg">{{ to }}</span>
+      </span>
     }
   `,
-  host: { class: 'inline-flex items-baseline gap-1.5 font-mono text-sm tabular-nums' },
+  host: { class: 'inline-flex flex-wrap items-baseline gap-x-1.5 font-mono text-sm tabular-nums' },
 })
 export class TmVersionDiff {
   readonly from = input.required<string>();
