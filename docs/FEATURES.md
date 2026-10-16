@@ -73,6 +73,7 @@ Matching lines are shown highlighted in the changelog view so you can jump strai
 
 - **Compare link**: `https://github.com/owner/repo/compare/v1.4.2...v1.6.0` (tag prefix `v` auto-detected from the repo's actual tag names).
 - Link to the release page of every version in between, and to the repo's tree at your running version.
+- **Your version in the release list** (GitHub): opens `/releases` on the page that holds your version (10 per page, pre-releases included), scrolled to and highlighting its heading via a text fragment, so you see it in relation to everything newer.
 - Built in step 4 on the container detail page (`/containers/<name>`), with a Details tab (image, digests, how the version and repo were found, OCI labels).
 
 ## 7. Scheduled checks & caching — MVP

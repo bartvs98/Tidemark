@@ -101,13 +101,19 @@
                   </thead>
                   <tbody>
                     @for (c of stack.containers; track c.id) {
-                      <tr>
+                      <tr class="tm-row-link">
                         <td>
                           <div class="flex items-center gap-3">
                             <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="20" />
                             <div class="min-w-0">
                               <div class="flex items-center gap-2">
-                                <a [routerLink]="['/containers', c.name]" class="truncate font-medium text-fg no-underline hover:underline" [title]="c.name">{{ c.name }}</a>
+                                <!-- Stretched link: the whole row opens the detail page, but stays one link for keyboards and screen readers. -->
+                                <a
+                                  [routerLink]="['/containers', c.name]"
+                                  class="truncate font-medium text-fg no-underline after:absolute after:inset-0 hover:no-underline"
+                                  [title]="c.name"
+                                  >{{ c.name }}</a
+                                >
                                 @if (c.state !== 'running') {
                                   <tm-badge>{{ c.state }}</tm-badge>
                                 }

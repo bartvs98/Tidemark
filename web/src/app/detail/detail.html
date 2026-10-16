@@ -33,6 +33,20 @@
           Compare {{ update()?.running }} → {{ update()?.latest }}
         </a>
       }
+      @if (cl.links.inList) {
+        <a
+          tmButton
+          variant="secondary"
+          size="sm"
+          icon="external-link"
+          [href]="cl.links.inList"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Opens the GitHub release list at your version, so you can see what came after it"
+        >
+          {{ update()?.running }} in releases
+        </a>
+      }
       @if (cl.links.releases) {
         <a tmButton variant="ghost" size="sm" icon="external-link" [href]="cl.links.releases" target="_blank" rel="noopener noreferrer">
           {{ cl.kind === 'changelog' ? 'Changelog' : 'All releases' }}

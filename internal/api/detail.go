@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bartvs98/tidemark/internal/changelog"
@@ -54,7 +56,13 @@ type linksJSON struct {
 	Compare  string `json:"compare,omitempty"`  // running...latest diff on the forge
 	Releases string `json:"releases,omitempty"` // releases page or CHANGELOG file
 	Running  string `json:"running,omitempty"`  // source tree at the running version
+	// InList opens the forge's release list on the page with the running version, scrolled
+	// to it with a text fragment, to see it in relation to the newer releases (GitHub only).
+	InList string `json:"inList,omitempty"`
 }
+
+// githubReleasesPerPage is how many releases github.com shows per page of /releases.
+const githubReleasesPerPage = 10
 
 func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
@@ -139,6 +147,17 @@ func toChangelogJSON(repo source.Repo, how source.How, ch changelog.Changes) *ch
 			cj.Links.Releases = ch.Releases[0].URL
 		}
 	}
+	if ch.FromName != "" && ch.FromIndex >= 0 && repo.IsGitHub() {
+		list := repo.URL() + "/releases"
+		if page := ch.FromIndex/githubReleasesPerPage + 1; page > 1 {
+			list += "?page=" + strconv.Itoa(page)
+		}
+		// GitHub's sticky "Release list" sidebar also contains the version, and comes first in
+		// the page. Requiring the "Compare" button right after the text matches only the
+		// release heading. If GitHub's markup changes, the fragment just doesn't match and the
+		// page still opens at the right release page.
+		cj.Links.InList = list + "#:~:text=" + textFragment(ch.FromName) + ",-Compare"
+	}
 	if ch.FromTag != "" {
 		cj.Links.Running = repo.URL() + sep + "tree/" + url.PathEscape(ch.FromTag)
 		if ch.ToTag != "" && ch.ToTag != ch.FromTag {
@@ -146,6 +165,12 @@ func toChangelogJSON(repo source.Repo, how source.How, ch changelog.Changes) *ch
 		}
 	}
 	return cj
+}
+
+// textFragment encodes text for a #:~:text= fragment, where "-", "," and "&" are syntax.
+func textFragment(s string) string {
+	e := strings.ReplaceAll(url.QueryEscape(s), "+", "%20")
+	return strings.ReplaceAll(e, "-", "%2D")
 }
 
 func parseVersion(s string) *version.Version {

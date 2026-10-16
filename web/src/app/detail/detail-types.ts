@@ -15,7 +15,8 @@ export interface Changelog {
   repo: { url: string; name: string; how: 'label' | 'image' | 'registry' | 'known' | 'guess' };
   kind: 'releases' | 'changelog' | 'none' | '';
   releases: Release[];
-  links: { compare?: string; releases?: string; running?: string };
+  /** inList: GitHub release list, on the page with the running version, scrolled to it. */
+  links: { compare?: string; releases?: string; running?: string; inList?: string };
   partial: boolean;
   error?: string;
   fetchedAt?: string;

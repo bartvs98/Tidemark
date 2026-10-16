@@ -8,6 +8,7 @@
 package changelog
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -321,12 +322,17 @@ func (s *Service) lock(key string) func() {
 
 // Changes are the release notes between a running and a latest version.
 type Changes struct {
-	Kind      string          // releases | changelog | none ("" if never fetched)
-	Releases  []store.Release // newest first
-	FromTag   string          // repo tag of the running version, if the repo has it
-	ToTag     string          // repo tag of the latest version
-	Partial   bool            // older releases exist that weren't fetched
-	Error     string          // last fetch error
+	Kind     string          // releases | changelog | none ("" if never fetched)
+	Releases []store.Release // newest first
+	FromTag  string          // repo tag of the running version, if the repo has it
+	// FromIndex is the running release's position in the forge's release list (newest
+	// first, pre-releases included, 0-based), or -1 if unknown.
+	FromIndex int
+	// FromName is the running release's title as the forge shows it (its name, else its tag).
+	FromName  string
+	ToTag     string // repo tag of the latest version
+	Partial   bool   // older releases exist that weren't fetched
+	Error     string // last fetch error
 	FetchedAt time.Time
 }
 
@@ -342,7 +348,8 @@ func (s *Service) Changes(ctx context.Context, repo source.Repo, running, latest
 	if err != nil {
 		return Changes{}, err
 	}
-	out := Changes{Kind: st.Kind, Error: st.Error, FetchedAt: st.FetchedAt}
+	out := Changes{Kind: st.Kind, Error: st.Error, FetchedAt: st.FetchedAt, FromIndex: -1}
+	var fromRelease *store.Release
 
 	type rv struct {
 		r store.Release
@@ -361,6 +368,8 @@ func (s *Service) Changes(ctx context.Context, repo source.Repo, running, latest
 		}
 		if running != nil && sameRelease(v, *running) {
 			out.FromTag = r.Tag
+			rel := r
+			fromRelease = &rel
 		}
 		if latest != nil && sameRelease(v, *latest) {
 			out.ToTag = r.Tag
@@ -385,6 +394,20 @@ func (s *Service) Changes(ctx context.Context, repo source.Repo, running, latest
 		out.Releases = append(out.Releases, p.r)
 	}
 	out.Partial = st.HasMore && running != nil && oldest != nil && version.Compare(*oldest, *running) > 0
+
+	// The forge lists releases newest first; everything newer than the running release is
+	// stored (sync pages down to it), so counting them gives its position in that list.
+	if fromRelease != nil {
+		out.FromName = cmp.Or(strings.TrimSpace(fromRelease.Name), fromRelease.Tag)
+	}
+	if fromRelease != nil && !fromRelease.PublishedAt.IsZero() && st.Kind == KindReleases {
+		out.FromIndex = 0
+		for _, r := range all {
+			if r.PublishedAt.After(fromRelease.PublishedAt) {
+				out.FromIndex++
+			}
+		}
+	}
 	return out, nil
 }
 

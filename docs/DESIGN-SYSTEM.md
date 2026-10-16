@@ -56,6 +56,7 @@ Every colour is written once as `light-dark(<light>, <dark>)`. The theme switch 
 | `tm-theme-switch` | System, light or dark. Lives in the header. |
 | `tm-section` | `heading`, `icon`, `meta`, and a `[tmSectionActions]` slot. A titled group such as a Compose stack, announced as a named region. |
 | `tm-segmented` | `options` (`{value, label, icon}`), two-way `[(value)]`, `label`, `iconOnly`. Mutually exclusive toggles such as list/tiles view or theme. |
+| `tr.tm-row-link` | A table row that opens a link: put `after:absolute after:inset-0` on one link inside (stretched link). Things that must stay hoverable on their own get `relative z-10`. |
 | `table.tm-table` | A plain table, which keeps it accessible by default. For tables split across sections, add `table-fixed` and a `<colgroup>` so columns line up, and show the `<thead>` once (use `sr-only` on the rest). |
 | `TM_TABS` + `.tm-tabs` | [Angular Aria](https://angular.dev/guide/aria/tabs) headless tabs (`ngTabs`, `ngTabList`, `ngTab`, `ngTabPanel`), styled by the class. Keyboard navigation and ARIA come from Aria. |
 

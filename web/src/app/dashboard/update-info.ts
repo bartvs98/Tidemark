@@ -61,7 +61,8 @@ export class ContainerVersion {
   template: `
     @if (update(); as u) {
       @if (u.error) {
-        <tm-badge tone="unknown" icon="circle-help" [attr.title]="u.error">check failed</tm-badge>
+        <!-- relative z-10: stays hoverable above the row's stretched link, so the reason shows -->
+        <tm-badge tone="unknown" icon="circle-help" [attr.title]="u.error" class="relative z-10">check failed</tm-badge>
       } @else {
         <tm-update-class [kind]="kind()" />
       }

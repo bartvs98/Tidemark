@@ -15,6 +15,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
+	"github.com/bartvs98/tidemark/internal/source"
 	"github.com/bartvs98/tidemark/internal/store"
 )
 
@@ -76,5 +77,25 @@ func TestContainerDetail(t *testing.T) {
 
 	if rec := do(t, h, "/api/containers/ghost"); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown container: %d", rec.Code)
+	}
+}
+
+func TestInListLink(t *testing.T) {
+	repo, _ := source.ParseURL("https://github.com/linuxserver/docker-thelounge")
+	ch := changelog.Changes{Kind: changelog.KindReleases, FromTag: "1.20.0-ls166", FromName: "1.20.0-ls166", ToTag: "1.20.0-ls168", FromIndex: 14}
+	got := toChangelogJSON(repo, source.HowImage, ch).Links.InList
+	want := "https://github.com/linuxserver/docker-thelounge/releases?page=2#:~:text=1.20.0%2Dls166,-Compare"
+	if got != want {
+		t.Errorf("in-list link\n got %s\nwant %s", got, want)
+	}
+
+	ch.FromIndex = 9 // last entry of page 1: no ?page
+	if got := toChangelogJSON(repo, source.HowImage, ch).Links.InList; got != "https://github.com/linuxserver/docker-thelounge/releases#:~:text=1.20.0%2Dls166,-Compare" {
+		t.Errorf("page 1 link = %s", got)
+	}
+
+	ch.FromIndex = -1 // position unknown: no link
+	if got := toChangelogJSON(repo, source.HowImage, ch).Links.InList; got != "" {
+		t.Errorf("unknown position should give no link, got %s", got)
 	}
 }

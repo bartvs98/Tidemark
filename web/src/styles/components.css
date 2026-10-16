@@ -33,6 +33,19 @@
   .tm-table tbody tr:hover td {
     background: var(--color-hover);
   }
+  /* A row whose stretched link (after:absolute inset-0 on a link inside) opens it.
+     Elements that must stay interactive on their own (tooltips) get position: relative + z-index. */
+  .tm-table tr.tm-row-link {
+    position: relative;
+    cursor: pointer;
+  }
+  .tm-table tr.tm-row-link:has(a:focus-visible) td {
+    background: var(--color-hover);
+  }
+  .tm-table tr.tm-row-link:has(a:focus-visible) {
+    outline: 2px solid var(--color-focus);
+    outline-offset: -2px;
+  }
 
   /* ── Prose: rendered release notes (tm-markdown) ───── */
   .tm-prose {

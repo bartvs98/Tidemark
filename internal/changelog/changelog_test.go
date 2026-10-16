@@ -61,7 +61,7 @@ func (f *fakeHosts) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for i := start; i < end && i < len(tags); i++ {
 			out = append(out, map[string]any{
 				"tag_name": tags[i], "name": "Release " + tags[i], "body": "notes for " + tags[i],
-				"html_url": "https://github.com/" + repo + "/releases/tag/" + tags[i], "published_at": "2026-10-01T00:00:00Z",
+				"html_url": "https://github.com/" + repo + "/releases/tag/" + tags[i], "published_at": time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC).Add(-time.Duration(i) * time.Hour).Format(time.RFC3339),
 				"prerelease": strings.Contains(tags[i], "rc"), "draft": tags[i] == "draft",
 			})
 		}
@@ -136,6 +136,13 @@ func TestReleasesInRange(t *testing.T) {
 	}
 	if cs.FromTag != "2026.9.0" || cs.ToTag != "2026.10.1" || cs.Kind != KindReleases || cs.Partial {
 		t.Errorf("changes = %+v", cs)
+	}
+	// GitHub lists newest first, pre-releases included: 2026.11.0rc1, 2026.10.1, 2026.10.0, 2026.9.4 come first.
+	if cs.FromName != "Release 2026.9.0" {
+		t.Errorf("running release title = %q", cs.FromName)
+	}
+	if cs.FromIndex != 4 {
+		t.Errorf("running release position = %d, want 4", cs.FromIndex)
 	}
 
 	// Unknown running version: just the newest release up to latest.
