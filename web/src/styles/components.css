@@ -69,28 +69,35 @@
   }
 
   /* ── Skeleton shimmer ──────────────────────────────── */
+  /* A highlight band sweeps across. With reduced motion, it gently fades instead. */
   .tm-shimmer {
     background: linear-gradient(
-        90deg,
-        transparent 0%,
-        color-mix(in oklab, var(--color-fg) 6%, transparent) 50%,
-        transparent 100%
+        100deg,
+        transparent 30%,
+        color-mix(in oklab, var(--color-fg) 14%, transparent) 50%,
+        transparent 70%
       )
       var(--color-hover);
-    background-size: 200% 100%;
-    animation: tm-shimmer 1.4s ease-in-out infinite;
+    background-size: 250% 100%;
+    animation: tm-shimmer 1.6s ease-in-out infinite;
   }
   @keyframes tm-shimmer {
     from {
       background-position: 100% 0;
     }
     to {
-      background-position: -100% 0;
+      background-position: 0% 0;
     }
   }
   @media (prefers-reduced-motion: reduce) {
     .tm-shimmer {
-      animation: none;
+      background: var(--color-hover);
+      animation: tm-pulse 2s ease-in-out infinite;
+    }
+  }
+  @keyframes tm-pulse {
+    50% {
+      opacity: 0.55;
     }
   }
 }
