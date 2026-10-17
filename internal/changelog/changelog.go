@@ -404,6 +404,9 @@ func (s *Service) changes(ctx context.Context, key string, running, latest *vers
 	}
 	var picked []rv
 	oldest := (*version.Version)(nil)
+	// Pre-releases count when either end is one: running an rc, or a container that
+	// follows pre-releases (Latest is an rc). Otherwise they're noise between stables.
+	allowPre := running != nil && !running.Stable() || latest != nil && !latest.Stable()
 	for _, r := range all {
 		v, ok := parseTag(r.Tag)
 		if !ok {
@@ -421,7 +424,6 @@ func (s *Service) changes(ctx context.Context, key string, running, latest *vers
 		if latest != nil && sameRelease(v, *latest) {
 			out.ToTag = r.Tag
 		}
-		allowPre := running != nil && !running.Stable()
 		if (r.Prerelease || !v.Stable()) && !allowPre {
 			continue
 		}

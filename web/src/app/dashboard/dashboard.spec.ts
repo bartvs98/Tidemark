@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { Dashboard } from './dashboard';
-import { ContainerList, ContainerSummary, groupByStack, imageName } from './containers';
+import { ContainerList, ContainerSummary, groupByStack, hasUpdate, imageName, splitIgnored, UpdateInfo } from './containers';
 
 function container(name: string, stack?: string, extra: Partial<ContainerSummary> = {}): ContainerSummary {
   return {
@@ -39,6 +39,25 @@ describe('groupByStack', () => {
     expect(stacks.map((s) => s.name)).toEqual(['media', 'networking', null]);
     expect(stacks[0].containers.map((c) => c.name)).toEqual(['jellyfin', 'sonarr']);
     expect(stacks[2].containers.map((c) => c.name)).toEqual(['alpha', 'zed']);
+  });
+});
+
+describe('splitIgnored', () => {
+  it('takes ignored containers out of their stacks, sorted by name', () => {
+    const { active, ignored } = splitIgnored([
+      container('zed', 'media', { rules: { ignore: true, from: { ignore: 'label' } } }),
+      container('sonarr', 'media'),
+      container('alpha', undefined, { rules: { ignore: true, from: { ignore: 'config' } } }),
+      container('pinned', 'media', { rules: { pin: '1.4', from: { pin: 'label' } } }),
+    ]);
+    expect(active.map((c) => c.name)).toEqual(['sonarr', 'pinned']);
+    expect(ignored.map((c) => c.name)).toEqual(['alpha', 'zed']);
+  });
+
+  it('never counts an ignored container as an update', () => {
+    const u: UpdateInfo = { running: '1', source: 'tag', latest: '2', class: 'major', floating: false, newImage: false, checkedAt: '', level: 'breaking' };
+    expect(hasUpdate(container('a', undefined, { update: u }))).toBe(true);
+    expect(hasUpdate(container('a', undefined, { update: u, rules: { ignore: true, from: {} } }))).toBe(false);
   });
 });
 
@@ -241,6 +260,127 @@ describe('Dashboard', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('rules', () => {
+    const update = (extra: Partial<UpdateInfo> = {}): UpdateInfo => ({
+      running: '1.4.2', source: 'tag', latest: '1.4.7', class: 'patch', floating: false, newImage: false, checkedAt: '', level: 'none', ...extra,
+    });
+    const breaking = update({ latest: '2.0.0', class: 'major', level: 'breaking' });
+    const text = (e: Element | null | undefined) => e?.textContent?.replace(/\s+/g, ' ').trim();
+
+    function body(): ContainerList {
+      return {
+        source: { kind: 'docker', location: 'x' },
+        check: { running: false, done: 4, total: 4, finishedAt: '2026-10-16T13:00:00Z' },
+        containers: [
+          container('jellyfin', 'media', { update: breaking }),
+          container('watchtower', 'media', { rules: { ignore: true, from: { ignore: 'label' } } }),
+          container('filebrowser', undefined, { rules: { ignore: true, from: { ignore: 'config' } } }),
+          container('mkvtoolnix'),
+        ],
+      };
+    }
+
+    it('puts ignored containers in a collapsed section after every stack', async () => {
+      const el = await render((req) => req.flush(body()));
+      const sections = [...el.querySelectorAll('tm-section')];
+      expect(sections.map((s) => text(s.querySelector('h2')))).toEqual(['media', 'Ungrouped', 'Ignored']);
+      expect(sections[0].textContent).toContain('1 container'); // watchtower left its stack
+
+      const ignored = el.querySelector('[data-testid="ignored-section"]')!;
+      expect(ignored.textContent).toContain('2 containers');
+      const toggle = ignored.querySelector<HTMLButtonElement>('h2 button')!;
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(ignored.querySelectorAll('tbody tr').length).toBe(0);
+
+      toggle.click();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      const rows = [...ignored.querySelectorAll('tbody tr')];
+      expect(rows.map((r) => text(r.querySelector('a')))).toEqual(['filebrowser', 'watchtower']);
+      expect(text(rows[1])).toContain('media · Up 2 days'); // its stack, since it's not in that section
+      const marks = [...ignored.querySelectorAll('[data-testid="ignored"]')];
+      expect(marks.map(text)).toEqual(['Ignored', 'Ignored']);
+      expect(marks[0].getAttribute('title')).toBe('Not checked for updates: ignored in the config file.');
+      expect(marks[1].getAttribute('title')).toBe('Not checked for updates: ignored by the tidemark.ignore label.');
+      expect(ignored.querySelector('tm-update-class')).toBeNull();
+    });
+
+    it('shows ignored containers as tiles too', async () => {
+      localStorage.setItem('tidemark.view', 'tiles');
+      const el = await render((req) => req.flush(body()));
+      const ignored = el.querySelector('[data-testid="ignored-section"]')!;
+      ignored.querySelector<HTMLButtonElement>('h2 button')!.click();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(ignored.querySelectorAll('tm-container-tile').length).toBe(2);
+    });
+
+    it('leaves ignored containers out of the Updates and Breaking filters', async () => {
+      const list = body();
+      // Even if an update were present, an ignored container doesn't count.
+      list.containers[1].update = breaking;
+      const el = await render((req) => req.flush(list));
+      const buttons = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="filter"] button')];
+      expect(buttons.map(text)).toEqual(['All', 'Updates 1', 'Breaking 1']);
+      expect(el.querySelector('[data-testid="summary"]')?.textContent).toContain('1 update');
+
+      buttons[1].click();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(el.querySelector('[data-testid="ignored-section"]')).toBeNull();
+      expect(el.querySelectorAll('tm-section').length).toBe(1);
+    });
+
+    it('shows only the Ignored section when every container is ignored', async () => {
+      const list = body();
+      list.containers = list.containers.filter((c) => c.rules?.ignore);
+      const el = await render((req) => req.flush(list));
+      expect(el.querySelector('tm-empty-state')).toBeNull();
+      expect(el.querySelector('[data-testid="ignored-section"]')).not.toBeNull();
+    });
+
+    it('says quietly which version a rule holds back', async () => {
+      const list = body();
+      list.containers = [
+        container('immich', undefined, { rules: { pin: '1.4', from: { pin: 'label' } }, update: update({ held: '2.1.0', heldBy: 'pin' }) }),
+        container('postgres', undefined, {
+          rules: { allowMajor: false, from: { 'allow-major': 'config' } },
+          update: update({ running: '16.4', latest: '16.10', class: 'minor', held: '18.0', heldBy: 'allow-major' }),
+        }),
+      ];
+      const el = await render((req) => req.flush(list));
+      const held = [...el.querySelectorAll('[data-testid="held"]')];
+      expect(held.map(text)).toEqual(['2.1.0 held back by pin 1.4', '18.0 held back, majors off']);
+      expect(held[0].querySelectorAll('.font-mono').length).toBe(2);
+      // The held-in version is still the update shown.
+      expect(el.querySelector('tbody tr')?.textContent?.replace(/\s/g, '')).toContain('1.4.2→1.4.7');
+    });
+
+    it('marks containers whose rules have problems', async () => {
+      const list = body();
+      list.containers.push(
+        container('redis', undefined, { rules: { from: {}, problems: ['tidemark.allow-major: "maybe" is not true or false'] } }),
+      );
+      const el = await render((req) => req.flush(list));
+      const marks = [...el.querySelectorAll('[data-testid="rule-problems"]')];
+      expect(marks.length).toBe(1);
+      expect(text(marks[0])).toBe('rule skipped');
+      expect(marks[0].getAttribute('title')).toContain('"maybe" is not true or false');
+    });
+
+    it('says when the config file could not be read', async () => {
+      const list = body();
+      list.check!.rulesError = 'open /config/tidemark.yml: permission denied';
+      const el = await render((req) => req.flush(list));
+      const notice = el.querySelector('[data-testid="rules-error"]')!;
+      expect(notice.textContent).toContain("Couldn't read the config file");
+      expect(notice.querySelector('.font-mono')?.textContent).toBe('open /config/tidemark.yml: permission denied');
+    });
+
+    it('shows no config notice when the file loaded', async () => {
+      const el = await render((req) => req.flush(body()));
+      expect(el.querySelector('[data-testid="rules-error"]')).toBeNull();
+    });
   });
 
   it('shows the API error message', async () => {

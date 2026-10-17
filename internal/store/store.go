@@ -146,6 +146,9 @@ type Result struct {
 	Class         string
 	Floating      bool
 	NewImage      bool
+	Held          string
+	HeldBy        string
+	Rules         string // fingerprint of the rules it was checked with, "" for none
 	Error         string
 	CheckedAt     time.Time
 	RunID         int64
@@ -154,22 +157,22 @@ type Result struct {
 func (s *Store) SaveResult(ctx context.Context, r Result) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO results (container_name, image_ref, image_id, running, source, latest, latest_in_major,
-		                     class, floating, new_image, error, checked_at, run_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                     class, floating, new_image, held, held_by, rules, error, checked_at, run_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (container_name) DO UPDATE SET
 			image_ref = excluded.image_ref, image_id = excluded.image_id, running = excluded.running,
 			source = excluded.source, latest = excluded.latest, latest_in_major = excluded.latest_in_major,
 			class = excluded.class, floating = excluded.floating, new_image = excluded.new_image,
-			error = excluded.error, checked_at = excluded.checked_at, run_id = excluded.run_id`,
+			held = excluded.held, held_by = excluded.held_by, rules = excluded.rules, error = excluded.error, checked_at = excluded.checked_at, run_id = excluded.run_id`,
 		r.ContainerName, r.ImageRef, r.ImageID, r.Running, r.Source, r.Latest, r.LatestInMajor,
-		r.Class, r.Floating, r.NewImage, r.Error, ts(r.CheckedAt), nullID(r.RunID))
+		r.Class, r.Floating, r.NewImage, r.Held, r.HeldBy, r.Rules, r.Error, ts(r.CheckedAt), nullID(r.RunID))
 	return err
 }
 
 func (s *Store) Results(ctx context.Context) ([]Result, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT container_name, image_ref, image_id, running, source, latest, latest_in_major,
-		       class, floating, new_image, error, checked_at, COALESCE(run_id, 0)
+		       class, floating, new_image, held, held_by, rules, error, checked_at, COALESCE(run_id, 0)
 		FROM results`)
 	if err != nil {
 		return nil, err
@@ -180,7 +183,7 @@ func (s *Store) Results(ctx context.Context) ([]Result, error) {
 		var r Result
 		var checked string
 		if err := rows.Scan(&r.ContainerName, &r.ImageRef, &r.ImageID, &r.Running, &r.Source, &r.Latest,
-			&r.LatestInMajor, &r.Class, &r.Floating, &r.NewImage, &r.Error, &checked, &r.RunID); err != nil {
+			&r.LatestInMajor, &r.Class, &r.Floating, &r.NewImage, &r.Held, &r.HeldBy, &r.Rules, &r.Error, &checked, &r.RunID); err != nil {
 			return nil, err
 		}
 		r.CheckedAt = parseTS(checked)

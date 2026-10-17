@@ -10,6 +10,18 @@
 //     running tag; official images are rebuilt under the same tags, so old digests vanish
 //  5. a partial version tag (16-alpine, 8.3) as-is
 //  6. unknown
+//
+// Latest is the newest stable tag in the running version's family (same variant).
+// Per-container Options adjust that:
+//   - TagPattern: only registry tags matching it count as versions, for every step
+//     above; the running tag itself is still read as a version.
+//   - Prerelease: pre-release tags (rc, beta, nightly) can be Latest. Running-version
+//     matching by digest or env stays stable-only, to keep HEAD requests bounded.
+//   - Pin ("1.4") and HoldMajor keep Latest within that prefix or the running major
+//     (both apply when both are set). The newest version they keep back is reported as
+//     Held, so the UI can still mention it. HoldMajor needs a known major: with an
+//     unknown running version (latest, nightly) it doesn't apply.
+//   - Floating-tag digest updates (NewImage) ignore holds: they're the same tag.
 package resolve
 
 import (
@@ -39,6 +51,20 @@ const (
 	SourceUnknown Source = "unknown"
 )
 
+// Options are per-container rules; the zero value is the default behaviour.
+type Options struct {
+	Prerelease bool           // pre-release tags can be Latest
+	TagPattern *regexp.Regexp // when set, only registry tags matching it count as versions
+	Pin        string         // version prefix ("1.4", "16"): Latest must start with it
+	HoldMajor  bool           // Latest stays within the running major
+}
+
+// Hold reasons for Result.HeldBy.
+const (
+	HeldByPin        = "pin"
+	HeldByAllowMajor = "allow-major"
+)
+
 type Result struct {
 	Running       string        // tag text of the running version ("v1.15.0-ls175"), empty if unknown
 	Source        Source        // how Running was found
@@ -47,6 +73,8 @@ type Result struct {
 	Class         version.Class // size of the update from Running (or the floating tag) to Latest
 	Floating      bool          // the tag moves between releases (latest, 16-alpine, 8.3)
 	NewImage      bool          // the floating tag now points to a different image than the one running
+	Held          string        // newest version a pin or major hold keeps back, empty if none
+	HeldBy        string        // HeldByPin or HeldByAllowMajor when Held is set
 }
 
 // maxDigestProbes bounds HEAD requests when matching a running image to a tag by digest.
@@ -58,7 +86,7 @@ var (
 	plainTags      = map[string]bool{"latest": true, "stable": true, "release": true, "main": true, "master": true}
 )
 
-func Resolve(ctx context.Context, reg Registry, c docker.Container) (Result, error) {
+func Resolve(ctx context.Context, reg Registry, c docker.Container, opts Options) (Result, error) {
 	var r Result
 	ref, err := imageref.Parse(c.ImageRef)
 	if err != nil {
@@ -70,6 +98,9 @@ func Resolve(ctx context.Context, reg Registry, c docker.Container) (Result, err
 	}
 	var tags []version.Version
 	for _, t := range rawTags {
+		if opts.TagPattern != nil && !opts.TagPattern.MatchString(t) {
+			continue
+		}
 		if v, ok := version.Parse(t); ok {
 			tags = append(tags, v)
 		}
@@ -134,18 +165,31 @@ func Resolve(ctx context.Context, reg Registry, c docker.Container) (Result, err
 		family = running
 	}
 
-	// Latest stable release in the family.
-	latest, ok := newest(tags, family, nil)
+	// Latest release in the family, within any hold.
+	cands := tags
+	if !opts.Prerelease {
+		cands = slices.DeleteFunc(slices.Clone(tags), func(t version.Version) bool { return !t.Stable() })
+	}
+	h := newHold(opts, running, have)
+	latest, ok := newest(cands, family, h.allows)
 	if ok {
 		r.Latest = latest.Raw
 		if have {
 			r.Class = version.Classify(running, latest)
-			if r.Class == version.Major {
-				inMajor, ok := newest(tags, family, func(v version.Version) bool { return v.Nums[0] == running.Nums[0] })
+			if r.Class == version.Major && !h.active() {
+				inMajor, ok := newest(cands, family, func(v version.Version) bool { return v.Nums[0] == running.Nums[0] })
 				if ok && version.Compare(inMajor, running) > 0 {
 					r.LatestInMajor = inMajor.Raw
 				}
 			}
+		}
+	}
+	if h.active() {
+		// Only worth mentioning if it's newer than both what we offer and what runs.
+		if all, ok := newest(cands, family, nil); ok &&
+			(r.Latest == "" || version.Compare(all, latest) > 0) &&
+			(!have || version.Compare(all, running) > 0) {
+			r.Held, r.HeldBy = all.Raw, h.reason(all)
 		}
 	}
 	if r.Class == "" {
@@ -287,13 +331,48 @@ func matchDigest(ctx context.Context, reg Registry, ref imageref.Ref, tags []ver
 	return version.Version{}, false
 }
 
-// newest returns the highest stable tag in the family, preferring the family's own
+// hold keeps Latest within a pinned prefix and/or a major.
+type hold struct {
+	pin      version.Version
+	hasPin   bool
+	major    int
+	hasMajor bool
+}
+
+// newHold reads the options; an unparsable pin or an unknown running major means no hold.
+func newHold(opts Options, running version.Version, have bool) hold {
+	var h hold
+	if opts.Pin != "" {
+		h.pin, h.hasPin = version.Parse(opts.Pin)
+	}
+	if opts.HoldMajor && have {
+		h.major, h.hasMajor = running.Nums[0], true
+	}
+	return h
+}
+
+func (h hold) active() bool { return h.hasPin || h.hasMajor }
+
+func (h hold) allows(v version.Version) bool { return h.reason(v) == "" }
+
+// reason names the constraint that excludes v, the pin first, or "" if v is allowed.
+func (h hold) reason(v version.Version) string {
+	switch {
+	case h.hasPin && !v.HasPrefix(h.pin):
+		return HeldByPin
+	case h.hasMajor && v.Nums[0] != h.major:
+		return HeldByAllowMajor
+	}
+	return ""
+}
+
+// newest returns the highest tag in the family, preferring the family's own
 // spelling ("v1.4.0" over "1.4.0" when the running tag has a v) on ties.
 func newest(tags []version.Version, family version.Version, keep func(version.Version) bool) (version.Version, bool) {
 	var best version.Version
 	found := false
 	for _, t := range tags {
-		if !t.Stable() || t.Variant != family.Variant || (keep != nil && !keep(t)) {
+		if t.Variant != family.Variant || (keep != nil && !keep(t)) {
 			continue
 		}
 		if !found {

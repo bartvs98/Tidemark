@@ -26,6 +26,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/imageref"
 	"github.com/bartvs98/tidemark/internal/registry"
 	"github.com/bartvs98/tidemark/internal/resolve"
+	"github.com/bartvs98/tidemark/internal/rules"
 	reposource "github.com/bartvs98/tidemark/internal/source"
 	"github.com/bartvs98/tidemark/internal/store"
 	tmversion "github.com/bartvs98/tidemark/internal/version"
@@ -35,7 +36,8 @@ import (
 // version is set at build time: -ldflags "-X main.version=1.0.0".
 var version = "dev"
 
-// startupCheckAge: at startup, check only if the last check finished longer ago than this.
+// startupCheckAge: at startup, check only if the last check finished longer ago than this
+// (or a container has no valid result).
 const startupCheckAge = time.Hour
 
 func main() {
@@ -81,6 +83,8 @@ func run(cfg config.Config, log *slog.Logger) error {
 
 	reg := registry.New("tidemark/"+version, registry.WithTagCache(db))
 	checks := check.New(source, reg, db, log)
+	checks.UseRulesFile(cfg.ConfigFile)
+	log.Info("config file", "path", cfg.ConfigFile)
 	if err := checks.Load(ctx); err != nil {
 		return err
 	}
@@ -88,7 +92,7 @@ func run(cfg config.Config, log *slog.Logger) error {
 	// Prefetch release notes for containers with an update, so the detail page is instant
 	// and later steps can scan them for breaking changes.
 	changelogs := changelog.New(db, cfg.GitHubToken, log)
-	checks.SetAfterCheck(func(ctx context.Context, c docker.Container, r resolve.Result) {
+	checks.SetAfterCheck(func(ctx context.Context, c docker.Container, rs rules.Rules, r resolve.Result) {
 		if r.Class == tmversion.None {
 			return
 		}
@@ -96,7 +100,7 @@ func run(cfg config.Config, log *slog.Logger) error {
 		if err != nil {
 			return
 		}
-		repo, _, ok := reposource.Resolve(c, ref)
+		repo, _, ok := reposource.Resolve(c, ref, rs)
 		if !ok {
 			return
 		}
@@ -114,8 +118,15 @@ func run(cfg config.Config, log *slog.Logger) error {
 		}
 		log.Info("check schedule", "spec", cfg.Schedule, "next", checks.Status().NextRunAt)
 	}
-	// Check at startup unless a recent result exists, so restarts don't hammer registries.
-	if last := checks.LastFinished(); time.Since(last) > startupCheckAge {
+	// Check at startup unless a recent run covered every container, so restarts don't hammer
+	// registries. Containers without a valid result (new, recreated, or with changed rules)
+	// would otherwise show nothing until the next scheduled run.
+	last := checks.LastFinished()
+	unchecked, err := checks.Unchecked(ctx)
+	if err != nil {
+		log.Warn("can't list containers at startup", "err", err)
+	}
+	if time.Since(last) > startupCheckAge || unchecked > 0 {
 		checks.Start(ctx, check.TriggerStartup)
 	} else {
 		log.Info("skipping startup check, last one is recent", "finished", last.Format(time.RFC3339))

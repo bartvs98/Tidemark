@@ -2,7 +2,8 @@
 // image, where its release notes live.
 //
 // Order, first hit wins:
-//  1. the container label tidemark.repo (set by the user, always trusted)
+//  1. the repo rule (tidemark.repo label or repo: in the config file; set by the
+//     user, always trusted)
 //  2. the image label org.opencontainers.image.source (or org.label-schema.vcs-url),
 //     if it plausibly belongs to this image: labels are inherited from base images
 //     (plex-meta-manager says linuxserver/docker-baseimage-ubuntu)
@@ -17,9 +18,8 @@ import (
 
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
+	"github.com/bartvs98/tidemark/internal/rules"
 )
-
-const LabelRepo = "tidemark.repo"
 
 // Repo is a repository on a supported host.
 type Repo struct {
@@ -38,7 +38,8 @@ func (r Repo) IsGitHub() bool { return r.Host == "github.com" }
 type How string
 
 const (
-	HowLabel    How = "label"    // tidemark.repo
+	HowLabel    How = "label"    // tidemark.repo label
+	HowConfig   How = "config"   // repo: in the config file
 	HowImage    How = "image"    // the image's source label
 	HowRegistry How = "registry" // ghcr.io path
 	HowKnown    How = "known"    // official image list
@@ -60,8 +61,13 @@ var known = map[string]string{
 	"library/python":    "github.com/python/cpython",
 }
 
-func Resolve(c docker.Container, ref imageref.Ref) (Repo, How, bool) {
-	if r, ok := ParseURL(c.Labels[LabelRepo]); ok {
+// Resolve finds the repository for a container with the given effective rules. An
+// unusable repo rule (unsupported host) falls through to the automatic chain.
+func Resolve(c docker.Container, ref imageref.Ref, rs rules.Rules) (Repo, How, bool) {
+	if r, ok := ParseURL(rs.Repo); ok {
+		if rs.From[rules.KeyRepo] == rules.FromConfig {
+			return r, HowConfig, true
+		}
 		return r, HowLabel, true
 	}
 	for _, key := range []string{"org.opencontainers.image.source", "org.label-schema.vcs-url"} {

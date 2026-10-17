@@ -13,7 +13,7 @@ export interface ContainerDetailData {
 }
 
 export interface Changelog {
-  repo: { url: string; name: string; how: 'label' | 'image' | 'registry' | 'known' | 'guess' };
+  repo: { url: string; name: string; how: 'label' | 'config' | 'image' | 'registry' | 'known' | 'guess' };
   kind: 'releases' | 'changelog' | 'none' | '';
   releases: Release[];
   /** inList: GitHub release list, on the page with the running version, scrolled to it. */

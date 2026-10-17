@@ -5,12 +5,14 @@ import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 import { TM_TABS, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmClamp, TmEmptyState, TmIcon, TmLevel, TmSkeleton } from '../ui';
 import { TmMarkdown } from '../ui/markdown';
-import { imageName } from '../dashboard/containers';
-import { ContainerUpdate, ContainerVersion } from '../dashboard/update-info';
+import { imageName, isIgnored, ruleOrigin } from '../dashboard/containers';
+import { ContainerRuleProblems, ContainerUpdate, ContainerVersion, heldText } from '../dashboard/update-info';
 import { ContainerDetailData } from './detail-types';
+import { describeRules } from './rules';
 
 const HOW: Record<string, string> = {
   label: 'from the tidemark.repo label',
+  config: 'set in the config file',
   image: "from the image's source label",
   registry: 'from the GitHub Container Registry path',
   known: 'official image',
@@ -30,6 +32,7 @@ const SOURCE: Record<string, string> = {
   imports: [
     DatePipe,
     RouterLink,
+    ContainerRuleProblems,
     ContainerUpdate,
     ContainerVersion,
     TmAppIcon,
@@ -57,6 +60,17 @@ export class ContainerDetail {
   protected readonly data = computed(() => (this.detail.hasValue() ? this.detail.value() : undefined));
   protected readonly changelog = computed(() => this.data()?.changelog);
   protected readonly update = computed(() => this.data()?.container.update);
+  protected readonly rules = computed(() => this.data()?.container.rules);
+  protected readonly ruleLines = computed(() => describeRules(this.rules()));
+  protected readonly ignored = computed(() => {
+    const c = this.data()?.container;
+    if (!c || !isIgnored(c)) return undefined;
+    return { origin: ruleOrigin(c.rules!, 'ignore') };
+  });
+  protected readonly held = computed(() => {
+    const c = this.data()?.container;
+    return c?.update?.held ? heldText(c.update, c) : undefined;
+  });
   protected readonly githubRepo = computed(() => {
     const url = this.changelog()?.repo.url;
     return url?.startsWith('https://github.com/') ? url : undefined;

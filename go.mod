@@ -5,6 +5,7 @@ go 1.26.1
 require (
 	github.com/google/go-containerregistry v0.22.1
 	github.com/robfig/cron/v3 v3.0.1
+	go.yaml.in/yaml/v3 v3.0.5
 	modernc.org/sqlite v1.60.1
 )
 

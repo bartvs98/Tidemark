@@ -138,10 +138,42 @@ func Compare(a, b Version) int {
 		}
 		return -1
 	}
-	if a.Pre != b.Pre {
-		return strings.Compare(a.Pre, b.Pre)
+	if c := comparePre(a.Pre, b.Pre); c != 0 {
+		return c
 	}
 	return cmpInt(a.Build, b.Build)
+}
+
+// preRank orders the usual pre-release stages; unlisted words (nightly, dev, …) rank lowest.
+var preRank = map[string]int{"a": 1, "alpha": 1, "b": 2, "beta": 2, "pre": 3, "preview": 3, "rc": 4}
+
+var preTokRe = regexp.MustCompile(`[a-z]+|\d+`)
+
+// comparePre orders pre-release markers token by token: stage first (alpha < beta < rc),
+// numbers numerically, so rc.2 < rc10 and rc1 == rc.1. More tokens rank higher (rc < rc1).
+func comparePre(a, b string) int {
+	x, y := preTokRe.FindAllString(a, -1), preTokRe.FindAllString(b, -1)
+	for i := 0; i < min(len(x), len(y)); i++ {
+		xn, xerr := strconv.Atoi(x[i])
+		yn, yerr := strconv.Atoi(y[i])
+		var c int
+		switch {
+		case xerr == nil && yerr == nil:
+			c = cmpInt(xn, yn)
+		case xerr == nil:
+			c = -1 // numbers before words, as in semver
+		case yerr == nil:
+			c = 1
+		default:
+			if c = cmpInt(preRank[x[i]], preRank[y[i]]); c == 0 {
+				c = strings.Compare(x[i], y[i])
+			}
+		}
+		if c != 0 {
+			return c
+		}
+	}
+	return cmpInt(len(x), len(y))
 }
 
 // Class is how big a version jump is.
@@ -178,8 +210,11 @@ func Classify(running, latest Version) Class {
 			return Patch
 		}
 	}
-	if running.Pre != latest.Pre && latest.Stable() {
-		return Patch // 2.0.0-rc.2 → 2.0.0
+	if running.Pre != latest.Pre {
+		if Compare(latest, running) > 0 {
+			return Patch // 2.0.0-rc.2 → 2.0.0, 2.0.0-rc.2 → 2.0.0-rc.3
+		}
+		return None
 	}
 	if latest.Build > running.Build {
 		return Digest

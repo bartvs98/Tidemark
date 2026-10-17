@@ -1,13 +1,13 @@
 import { Component, computed, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TmAppIcon, TmBadge } from '../ui';
-import { ContainerSummary, imageName } from './containers';
-import { ContainerUpdate, ContainerVersion } from './update-info';
+import { ContainerSummary, imageName, isIgnored } from './containers';
+import { ContainerRuleProblems, ContainerUpdate, ContainerVersion } from './update-info';
 
 /** One container in tile mode. */
 @Component({
   selector: 'tm-container-tile',
-  imports: [RouterLink, ContainerUpdate, ContainerVersion, TmAppIcon, TmBadge],
+  imports: [RouterLink, ContainerRuleProblems, ContainerUpdate, ContainerVersion, TmAppIcon, TmBadge],
   template: `
     <div class="mb-4 flex items-start gap-3">
       <tm-app-icon [icon]="container().icon" [name]="container().name" [size]="28" />
@@ -15,11 +15,19 @@ import { ContainerUpdate, ContainerVersion } from './update-info';
         <div class="flex items-start justify-between gap-2">
           <h3 class="truncate font-medium" [title]="container().name">
             <!-- Stretched link: the whole tile is clickable, but it stays one link for keyboards and screen readers. -->
-            <a [routerLink]="['/containers', container().name]" class="text-fg no-underline after:absolute after:inset-0 after:rounded-lg hover:no-underline">{{ container().name }}</a>
+            <a
+              [routerLink]="['/containers', container().name]"
+              class="no-underline after:absolute after:inset-0 after:rounded-lg hover:no-underline"
+              [class]="ignored() ? 'text-fg-muted' : 'text-fg'"
+              >{{ container().name }}</a
+            >
           </h3>
-          @if (container().state !== 'running') {
-            <tm-badge>{{ container().state }}</tm-badge>
-          }
+          <div class="flex shrink-0 items-center gap-1.5 empty:hidden">
+            <tm-rule-problems [container]="container()" />
+            @if (container().state !== 'running') {
+              <tm-badge>{{ container().state }}</tm-badge>
+            }
+          </div>
         </div>
         <p class="mt-0.5 truncate font-mono text-xs text-fg-subtle" [title]="container().image.display">
           {{ image() }}:{{ container().image.tag || '—' }}
@@ -42,4 +50,5 @@ export class ContainerTile {
   readonly container = input.required<ContainerSummary>();
   readonly checking = input(false);
   protected readonly image = computed(() => imageName(this.container()));
+  protected readonly ignored = computed(() => isIgnored(this.container()));
 }

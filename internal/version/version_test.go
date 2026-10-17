@@ -90,6 +90,20 @@ func TestCompareSortsTags(t *testing.T) {
 	}
 }
 
+func TestComparePreReleases(t *testing.T) {
+	// Each tag ranks above the one before it.
+	order := []string{"1.4.9", "1.5.0-nightly", "1.5.0-alpha", "1.5.0-alpha.2", "1.5.0-beta1", "1.5.0-rc", "1.5.0-rc.2", "1.5.0-rc10", "1.5.0", "1.5.1-rc1"}
+	for i := 1; i < len(order); i++ {
+		a, b := mustParse(t, order[i-1]), mustParse(t, order[i])
+		if Compare(a, b) >= 0 || Compare(b, a) <= 0 {
+			t.Errorf("want %s < %s", a.Raw, b.Raw)
+		}
+	}
+	if Compare(mustParse(t, "1.5.0-rc1"), mustParse(t, "1.5.0-rc.1")) != 0 {
+		t.Error("rc1 and rc.1 should compare equal")
+	}
+}
+
 func TestClassify(t *testing.T) {
 	tests := []struct {
 		from, to string
@@ -105,6 +119,10 @@ func TestClassify(t *testing.T) {
 		{"1.20.0-ls166", "1.20.0-ls170", Digest},
 		{"1.20.0-ls166", "1.21.0-ls171", Minor},
 		{"2.0.0-rc.2", "2.0.0", Patch},
+		{"2.0.0-rc.2", "2.0.0-rc.10", Patch},
+		{"2.0.0-rc.2", "2.0.0-beta.5", None},
+		{"2.0.0", "2.0.0-rc.1", None},
+		{"1.4.9", "1.5.0-rc1", Minor},
 		{"3.6.13", "3.6.13", None},
 		{"3.6.13", "3.5.0", None},
 		{"v4.33.0", "4.33.0", None},

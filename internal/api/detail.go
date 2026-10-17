@@ -42,7 +42,7 @@ type changelogJSON struct {
 type repoJSON struct {
 	URL  string `json:"url"`
 	Name string `json:"name"` // owner/name
-	How  string `json:"how"`  // label | image | registry | known | guess
+	How  string `json:"how"`  // label | config | image | registry | known | guess
 }
 
 type releaseJSON struct {
@@ -94,8 +94,14 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 		Image:     imageDetail{Digests: orEmptySlice(c.Image.RepoDigests), Labels: ociLabels(c.Image.Labels)},
 	}
 
+	// Ignore means no outside calls for this container, release notes included.
+	rs := s.rulesFor(c)
+	if rs.Ignore {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
 	ref, err := imageref.Parse(c.ImageRef)
-	repo, how, ok := source.Resolve(c, ref)
+	repo, how, ok := source.Resolve(c, ref, rs)
 	if s.changelogs == nil || err != nil || !ok {
 		writeJSON(w, http.StatusOK, out)
 		return

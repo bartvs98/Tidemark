@@ -22,6 +22,22 @@ import {
   UpdateClass,
 } from '../ui';
 import { MarkdownFlag, TmMarkdown } from '../ui/markdown';
+import { ContainerSummary } from '../dashboard/containers';
+import { ContainerRuleProblems, ContainerUpdate, ContainerVersion } from '../dashboard/update-info';
+
+function sample(name: string, extra: Partial<ContainerSummary>): ContainerSummary {
+  return {
+    id: name,
+    name,
+    image: { ref: `${name}:1`, display: `${name}:1`, registry: 'docker.io', repository: name, tag: '1', id: 'sha256:x' },
+    state: 'running',
+    status: 'Up 2 days',
+    created: '',
+    ...extra,
+  };
+}
+
+const UPDATE = { source: 'tag' as const, floating: false, newImage: false, checkedAt: '', level: 'none' as const };
 
 interface SampleContainer {
   name: string;
@@ -36,6 +52,9 @@ interface SampleContainer {
 @Component({
   selector: 'tm-styleguide',
   imports: [
+    ContainerRuleProblems,
+    ContainerUpdate,
+    ContainerVersion,
     TmAppIcon,
     TmBadge,
     TmButton,
@@ -127,6 +146,37 @@ export class Styleguide {
   ];
 
   protected readonly longNotes = Array.from({ length: 24 }, (_, i) => `- Fix number ${i + 1} in a long release`).join('\n');
+
+  protected readonly ignoredOpen = signal(false);
+
+  /** Per-container rules as the dashboard shows them (real components, sample data). */
+  protected readonly ruleSamples: { label: string; container: ContainerSummary }[] = [
+    {
+      label: 'Pinned to 1.4, newer major held back',
+      container: sample('immich', {
+        rules: { pin: '1.4', from: { pin: 'label' } },
+        update: { ...UPDATE, running: '1.4.2', latest: '1.4.7', class: 'patch', held: '2.1.0', heldBy: 'pin' },
+      }),
+    },
+    {
+      label: 'Major updates off',
+      container: sample('postgres', {
+        rules: { allowMajor: false, from: { 'allow-major': 'config' } },
+        update: { ...UPDATE, running: '16.4', latest: '16.10', class: 'minor', held: '18.0', heldBy: 'allow-major' },
+      }),
+    },
+    {
+      label: 'Ignored',
+      container: sample('watchtower', { rules: { ignore: true, from: { ignore: 'label' } } }),
+    },
+    {
+      label: 'A rule was skipped',
+      container: sample('redis', {
+        rules: { from: {}, problems: ['tidemark.allow-major: "maybe" is not true or false'] },
+        update: { ...UPDATE, running: '7.4.2', latest: '7.4.6', class: 'patch' },
+      }),
+    },
+  ];
 
   protected readonly radii = ['rounded-sm', 'rounded-md', 'rounded-lg', 'rounded-xl'];
 

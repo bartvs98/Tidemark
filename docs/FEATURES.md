@@ -37,7 +37,7 @@ The UI shows *how* the version was determined (tag / label / digest match / unkn
 
 - List tags from the registry (Docker Hub, GHCR, Quay, lscr.io, GitLab, generic OCI v2 registries).
 - Keep only tags that parse as versions **and share the same variant** as the running tag: `1.4-alpine` is only compared with `x.y-alpine`, never with `x.y` or `x.y-debian`.
-- Ignore pre-releases (`-rc`, `-beta`, `-alpha`, `-dev`, `nightly`) unless enabled for that container.
+- Ignore pre-releases (`-rc`, `-beta`, `-alpha`, `-dev`, `nightly`) unless enabled for that container (`prerelease` rule, §8). Pre-releases order by stage (`nightly`/`dev` < `alpha` < `beta` < `pre`/`preview` < `rc`), then by number (`rc.2` < `rc.10`).
 - Classify the update: **patch / minor / major / digest-only** (same tag, new image).
 - Also report the newest version *within the current major*, so a "major available" container can still show "1.9.3 is a safe step".
 
@@ -49,7 +49,7 @@ The UI shows *how* the version was determined (tag / label / digest match / unkn
   3. `ghcr.io/owner/repo` → `github.com/owner/repo`.
   4. A short list of official Docker Hub images (`redis` → `redis/redis`, `postgres` → `postgres/postgres`, …).
   5. A guess: `docker.io/namespace/name` → `github.com/namespace/name` (shown as "guessed" in the UI).
-  6. A config-file mapping comes with step 6.
+  The `repo` rule (§8) can also come from the config file (shown as "set in the config file"); a repo on an unsupported host falls back to the steps below it.
 - linuxserver.io images point at their packaging repo (`linuxserver/docker-<app>`); its releases match the `-ls` tags and include the upstream changes.
 - Fetch **GitHub Releases** (and GitLab Releases), keep the ones after the running version up to and including the latest, newest first; pre-releases and drafts are skipped. With an unknown running version, only the latest release is shown.
 - Fallback when a repo has no releases: `CHANGELOG.md` / `CHANGES.md`, split into sections by version headings.
@@ -90,17 +90,43 @@ The dashboard shows the level next to the update class (reasons in the tooltip) 
 - Registry calls use `HEAD` on manifests where possible (doesn't count towards Docker Hub's pull rate limit).
 - Optional GitHub token (raises the API limit from 60 to 5000 requests/hour). Recommended.
 
-## 8. Ignore / pin rules — MVP
+## 8. Rules — MVP
 
-Configurable per container via labels (or config file):
+Per container, via container labels or the config file (`internal/rules`):
 
-| Label | Effect |
-|---|---|
-| `tidemark.ignore=true` | Hide container from checks |
-| `tidemark.allow-major=false` | Never report major updates (still shows "major exists" quietly) |
-| `tidemark.prerelease=true` | Include pre-release tags |
-| `tidemark.tag-pattern=^\d+\.\d+\.\d+-alpine$` | Explicit regex for which tags count as versions |
-| `tidemark.repo=github.com/owner/repo` | Source repo override |
+| Label | Config key | Effect |
+|---|---|---|
+| `tidemark.ignore=true` | `ignore` | Not checked at all (no registry or GitHub calls, no release notes). Listed in a collapsed, muted "Ignored" section at the bottom of the dashboard; left out of the Updates / Breaking filters. |
+| `tidemark.pin=1.4` | `pin` | Only versions starting with this prefix count as updates (`1.4` → 1.4.x, `16` → 16.x). |
+| `tidemark.allow-major=false` | `allow-major` | Only versions within the running major count as updates. |
+| `tidemark.prerelease=true` | `prerelease` | Pre-release tags count as updates (and their releases show in the changelog). |
+| `tidemark.tag-pattern=^\d+\.\d+\.\d+-alpine$` | `tag-pattern` | Only registry tags matching this regex count as versions (for latest *and* for finding the running version). |
+| `tidemark.repo=github.com/owner/repo` | `repo` | Source repository for release notes (§4). |
+
+Booleans accept `true/false/yes/no/1/0`. A version that a pin or `allow-major=false` keeps back is still shown, quietly: "2.1.0 held back by pin 1.4", "3.0.0 held back, majors off". The update class and risk level are those of the held-in version.
+
+**Config file** (`TIDEMARK_CONFIG`, default `<data dir>/config.yaml`):
+
+```yaml
+containers:            # container name, glob (* ?) allowed
+  vaultwarden:
+    allow-major: false
+  "immich-*":
+    ignore: true
+images:                # image repository without tag, glob allowed
+  postgres:            # matches postgres:16-alpine, docker.io/library/postgres:16
+    pin: "16"
+  linuxserver/sonarr:  # no registry: also matches lscr.io/… and ghcr.io/…
+    prerelease: true
+  ghcr.io/foo/bar:
+    repo: github.com/foo/bar-src
+```
+
+- **Precedence per rule:** container label > `containers:` entry > `images:` entry > default. Within a section all matching entries merge rule by rule, the most specific first (exact before glob, longer key before shorter).
+- **Re-read at the start of every check run**, so edits apply on the next check without a restart. A file that doesn't load (bad YAML, unknown key) is reported on the dashboard; the last good file stays in use and labels always apply. A missing file means no file rules.
+- **Invalid values don't break a container:** that rule is skipped and shown as "rule skipped" on the dashboard and in the detail page's Rules card (`tidemark.allow-major: "maybe" is not true or false`).
+- **Edge cases:** a pin above the running version is offered as an update; a pin matching no tag gives no latest version (the newest one shows as held back); `allow-major=false` can't apply while the running version is unknown (e.g. `:latest` with no label or digest match); pin and `allow-major=false` together both apply. A version label only counts if a tag matching the `tag-pattern` has that version.
+- **Results follow the rules:** each stored result records the rules it was checked with; when they change (a new label means a recreated container), the result is stale until the next check, and startup checks right away when any non-ignored container has no valid result.
 
 ## 9. Reviewed / snooze state — Later
 
@@ -127,7 +153,7 @@ Pull the new image and recreate the container with identical config, **only when
 
 1. Update class is patch or minor (no major, no `0.x` minor bump).
 2. Heuristic level is `none` **and** the AI verdict (if enabled) is `none`.
-3. Container isn't pinned/ignored, and update isn't snoozed.
+3. Container isn't ignored or held by a rule, and the update isn't snoozed.
 4. The container uses a **floating tag** (`latest`, `1`, `1.4`) so that a pull plus a recreate actually picks up the new version. For a pinned tag (`1.4.2`) in a Compose file, recreating via the API would be undone by the next `docker compose up`. For those the UI shows the line to change in the compose file instead of a button.
 
 Safety:

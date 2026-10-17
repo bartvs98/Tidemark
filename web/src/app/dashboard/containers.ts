@@ -21,6 +21,8 @@ export interface CheckStatus {
   done: number;
   total: number;
   error?: string;
+  /** The config file couldn't be loaded; its rules aren't applied (labels still are). */
+  rulesError?: string;
 }
 
 /** How the running version was determined (internal/resolve). */
@@ -40,6 +42,31 @@ export interface UpdateInfo {
   level: Exclude<Level, 'unknown'>;
   /** Why, most severe first: "Major version: 2 → 3", "v3.0.0: Redis 8.0 or newer is now required". */
   reasons?: string[];
+  /** Newest version a rule keeps back (outside the pin or the running major). */
+  held?: string;
+  heldBy?: 'pin' | 'allow-major';
+}
+
+/** Rule names as used in labels (`tidemark.<key>`) and the config file. */
+export type RuleKey = 'ignore' | 'allow-major' | 'pin' | 'prerelease' | 'tag-pattern' | 'repo';
+
+/** Per-container rules (Docker labels or the config file). */
+export interface ContainerRules {
+  /** Not checked: such a container has no `update`. */
+  ignore?: true;
+  /** Present only when false: major updates are held back. */
+  allowMajor?: false;
+  /** Version prefix, e.g. "1.4" or "16". */
+  pin?: string;
+  prerelease?: true;
+  /** Regex source. */
+  tagPattern?: string;
+  /** e.g. "github.com/owner/repo". */
+  repo?: string;
+  /** Where each set rule came from. */
+  from: Partial<Record<RuleKey, 'label' | 'config'>>;
+  /** Rules skipped because their value was invalid. */
+  problems?: string[];
 }
 
 export interface ContainerSummary {
@@ -65,6 +92,8 @@ export interface ContainerSummary {
   icon?: AppIconSources;
   /** Result of the last update check, once there is one. */
   update?: UpdateInfo;
+  /** Per-container rules; omitted when no rule is set and there are no problems. */
+  rules?: ContainerRules;
 }
 
 export interface Stack {
@@ -85,6 +114,27 @@ export function groupByStack(containers: ContainerSummary[]): Stack[] {
     .sort((a, b) => (a.name === null ? 1 : b.name === null ? -1 : a.name.localeCompare(b.name)));
 }
 
+/** The container has `ignore` set: it isn't checked and sits in the "Ignored" section. */
+export function isIgnored(c: ContainerSummary): boolean {
+  return !!c.rules?.ignore;
+}
+
+/** Splits off the ignored containers (sorted by name); the rest go to groupByStack. */
+export function splitIgnored(containers: ContainerSummary[]): { active: ContainerSummary[]; ignored: ContainerSummary[] } {
+  const active: ContainerSummary[] = [];
+  const ignored: ContainerSummary[] = [];
+  for (const c of containers) (isIgnored(c) ? ignored : active).push(c);
+  ignored.sort((a, b) => a.name.localeCompare(b.name));
+  return { active, ignored };
+}
+
+/** Where a rule came from, in words: "label tidemark.pin" or "config file". */
+export function ruleOrigin(rules: ContainerRules, key: RuleKey): { kind: 'label' | 'config'; text: string; label?: string } | undefined {
+  const from = rules.from[key];
+  if (!from) return undefined;
+  return from === 'label' ? { kind: 'label', text: 'label', label: `tidemark.${key}` } : { kind: 'config', text: 'config file' };
+}
+
 /** Image name without the tag: "redis", "louislam/uptime-kuma", "ghcr.io/sergi0g/cup". */
 export function imageName(c: ContainerSummary): string {
   const { registry, repository, ref } = c.image;
@@ -94,7 +144,7 @@ export function imageName(c: ContainerSummary): string {
 
 /** A successful check found a newer version or image. */
 export function hasUpdate(c: ContainerSummary): boolean {
-  return !!c.update && !c.update.error && c.update.class !== 'none';
+  return !isIgnored(c) && !!c.update && !c.update.error && c.update.class !== 'none';
 }
 
 /** Containers with an update of any kind. */

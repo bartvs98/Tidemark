@@ -1,5 +1,5 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -8,6 +8,7 @@ import {
   TmAppIcon,
   TmBadge,
   TmButton,
+  TmCallout,
   TmCard,
   TmEmptyState,
   TmSection,
@@ -16,8 +17,8 @@ import {
   Toasts,
 } from '../ui';
 import { ContainerTile } from './container-tile';
-import { ContainerList, countUpdates, Filter, groupByStack, hasUpdate, imageName, matchesFilter } from './containers';
-import { ContainerUpdate, ContainerVersion } from './update-info';
+import { ContainerList, countUpdates, Filter, groupByStack, hasUpdate, imageName, matchesFilter, splitIgnored } from './containers';
+import { ContainerRuleProblems, ContainerUpdate, ContainerVersion } from './update-info';
 
 export type ViewMode = 'list' | 'tiles';
 
@@ -42,13 +43,16 @@ const VIEWS: SegmentOption<ViewMode>[] = [
   selector: 'tm-dashboard',
   imports: [
     DatePipe,
+    NgTemplateOutlet,
     RouterLink,
+    ContainerRuleProblems,
     ContainerTile,
     ContainerUpdate,
     ContainerVersion,
     TmAppIcon,
     TmBadge,
     TmButton,
+    TmCallout,
     TmCard,
     TmEmptyState,
     TmSection,
@@ -73,12 +77,17 @@ export class Dashboard {
   private readonly data = computed(() => (this.list.hasValue() ? this.list.value() : undefined));
 
   private readonly containers = computed(() => this.data()?.containers ?? []);
+  /** Ignored containers leave their stack for the collapsed "Ignored" section at the bottom. */
+  private readonly split = computed(() => splitIgnored(this.containers()));
   /** All stacks (for the summary), and the ones shown under the current filter. */
   protected readonly stacks = computed(() => groupByStack(this.containers()));
   protected readonly shownStacks = computed(() => {
     const filter = this.filter();
-    return groupByStack(this.containers().filter((c) => matchesFilter(c, filter)));
+    return groupByStack(this.split().active.filter((c) => matchesFilter(c, filter)));
   });
+  /** Ignored containers have no update, so they only show under "All". */
+  protected readonly shownIgnored = computed(() => (this.filter() === 'all' ? this.split().ignored : []));
+  protected readonly ignoredOpen = signal(false);
   protected readonly filters = computed<SegmentOption<Filter>[]>(() => {
     const updates = this.containers().filter(hasUpdate);
     return [
@@ -90,6 +99,7 @@ export class Dashboard {
   protected readonly source = computed(() => this.data()?.source);
   protected readonly check = computed(() => this.data()?.check);
   protected readonly checking = computed(() => this.check()?.running ?? false);
+  protected readonly rulesError = computed(() => this.check()?.rulesError);
 
   protected readonly summary = computed(() => {
     const containers = this.containers();

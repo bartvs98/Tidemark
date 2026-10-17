@@ -44,7 +44,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 | Migrations | embedded `.sql` files, applied on start | Simple, no extra tooling |
 | Scheduler | `github.com/robfig/cron/v3` | Cron expressions |
 | Markdown | Rendered in the frontend | Backend stores raw release notes |
-| Config | env vars (`TIDEMARK_*`) + optional `config.yaml` + container labels | Labels keep per-container rules next to the compose file |
+| Config | env vars (`TIDEMARK_*`) + optional rules `config.yaml` + container labels | Labels keep per-container rules next to the compose file |
 | Frontend | **Angular 22**: standalone components, signals, zoneless, `HttpClient` + `httpResource` | Small dashboard; it doubles as Angular practice |
 | Accessible widgets | `@angular/aria` (headless tabs, menus, listboxes) | Keyboard and ARIA handled for us; we only style |
 | UI styling | Tailwind CSS v4 + own design system (`web/src/app/ui`) | Semantic tokens with `light-dark()`; see [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md) |
@@ -64,7 +64,8 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   version/                    parse tags, variants, compare, classify patch/minor/major
   version/                    parse tags (prefix, numbers, variant, pre-release, build), compare, classify
   registry/                   tag lists + manifest digests via go-containerregistry, cached, anonymous
-  resolve/                    one container: running version, latest in family, update class
+  resolve/                    one container: running version, latest in family (within pin / major hold), update class
+  rules/                      per-container rules: labels + config.yaml, merged, validated, fingerprinted
   source/                     image → source repo (label, plausible image label, ghcr, known list, guess)
   changelog/                  GitHub / GitLab releases + CHANGELOG.md, ETag sync into the store, range selection
   analysis/                   breaking-change heuristics: per-line flags, section inheritance, verdict + reasons
@@ -72,7 +73,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   notify/                     (later) notifier interface + Telegram impl
   updater/                    (later) gated pull/recreate/rollback
   store/                      SQLite repository + migrations
-  check/                      background check runs over all containers, results in memory (SQLite in step 3)
+  check/                      background check runs over all containers (skips ignored ones), results in memory + SQLite
   api/                        HTTP handlers + embedded SPA serving
 /web/                         Angular workspace
 /docs/                        these documents
@@ -103,7 +104,7 @@ File: `$TIDEMARK_DATA_DIR/tidemark.db` (WAL mode). Migrations live in `internal/
 ```
 check_runs      id, trigger (startup|schedule|manual), started_at, finished_at, images, error
 results         container_name (PK), image_ref, image_id, running, source, latest, latest_in_major,
-                class, floating, new_image, error, checked_at, run_id
+                class, floating, new_image, held, held_by, rules (fingerprint), error, checked_at, run_id
 tag_cache       repository (PK), tags (JSON), fetched_at
 releases        repo, tag, name, body, url, published_at, prerelease   (PK repo+tag)
 repos           repo (PK), kind (releases|changelog|none), etag, has_more, fetched_at, error
@@ -112,13 +113,14 @@ history         container_id, from_version, to_version, detected_at, via (manual
 ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reasons_json   (later)
 ```
 
-- **Results are keyed by container name**, because Compose gives a recreated container a new ID. Each result records the image ref and image ID it was checked against; once the container runs a different image (after `pull` + `up`), the stored result is ignored until the next check.
+- **Results are keyed by container name**, because Compose gives a recreated container a new ID. Each result records the image ref and image ID it was checked against; once the container runs a different image (after `pull` + `up`), or its rules changed (the stored rules fingerprint differs), the stored result is ignored until the next check.
 - **Tag lists** are cached in memory and in `tag_cache` for 1 h, so restarts don't re-download repositories with thousands of tags. Digests are only cached in memory: HEAD requests are cheap.
 
 ## Scheduling
 
 - `TIDEMARK_SCHEDULE` is a cron spec (`0 */6 * * *` by default, also `@daily`, `@every 3h`; prefix `CRON_TZ=Europe/Amsterdam ` for a time zone other than the server's). `off` disables scheduled checks.
-- At startup a check runs only if the last one finished more than 1 hour ago, so restarts don't hammer registries.
+- At startup a check runs if the last one finished more than 1 hour ago, or if any non-ignored container has no valid result (new, recreated, or rules changed); otherwise restarts don't hammer registries.
+- The rules file is re-read at the start of each run. Containers share a check only when both image and rules match.
 - One run at a time: a scheduled or manual trigger while a run is in progress is ignored.
 
 ## HTTP API (v1)
@@ -143,8 +145,8 @@ All other paths serve the Angular SPA (with fallback to `index.html`).
 
 ## Frontend
 
-- **Dashboard** (built): Compose stacks as sections, list and tile views, app icons; each container shows running → latest, how the version was determined, the update class and the risk level (reasons as tooltip). Filter All / Updates / Breaking (remembered in `localStorage`). Below 640px list rows stack.
-- **Container detail** (built): `/containers/<name>`; version change, compare/releases/source/repo links, Changes tab (sanitised markdown per release, newest first; the newest and breaking ones open; flagged lines highlighted; long unflagged notes capped with "Show all") and Details tab. A callout explains a breaking/attention verdict. Later: AI summary panel, review/snooze actions, update button with gate status.
+- **Dashboard** (built): Compose stacks as sections, list and tile views, app icons; each container shows running → latest, how the version was determined, the update class and the risk level (reasons as tooltip). Filter All / Updates / Breaking (remembered in `localStorage`). Below 640px list rows stack. Ignored containers go in a collapsed, muted section at the bottom; a version held back by a rule shows as a quiet line under the version change; containers with skipped rules get a "rule skipped" badge; a config file that won't load gets a notice at the top.
+- **Container detail** (built): `/containers/<name>`; version change, compare/releases/source/repo links, Changes tab (sanitised markdown per release, newest first; the newest and breaking ones open; flagged lines highlighted; long unflagged notes capped with "Show all") and Details tab (with a Rules card: each rule, where it came from, skipped ones). A callout explains a breaking/attention verdict. Later: AI summary panel, review/snooze actions, update button with gate status.
 - **Settings** (later): schedule, tokens set / not set, notification test button.
 - Dev: `ng serve` (bound to 127.0.0.1) with a proxy for `/api` → `localhost:8080`.
 
@@ -161,6 +163,7 @@ All other paths serve the Angular SPA (with fallback to `index.html`).
 | `TIDEMARK_SCHEDULE` | `0 */6 * * *` | Check schedule (cron), `off` to only check on demand |
 | `TIDEMARK_DATA_DIR` | `/data` | SQLite location |
 | `TIDEMARK_GITHUB_TOKEN` | — | Fine-grained PAT, public repositories read-only; raises GitHub's limit from 60 to 5000 requests/hour |
+| `TIDEMARK_CONFIG` | `<TIDEMARK_DATA_DIR>/config.yaml` | Optional rules file (FEATURES §8); missing = no file rules |
 | `TIDEMARK_REGISTRY_AUTH_FILE` | — | Optional docker `config.json` for private registries |
 | `TIDEMARK_TELEGRAM_BOT_TOKEN` / `_CHAT_ID` | — | Later |
 | `TIDEMARK_AI_PROVIDER` / `_API_KEY` / `_MODEL` | — | Later, opt-in |

@@ -161,6 +161,60 @@
     </div>
   </section>
 
+  <!-- ── Rules ──────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Per-container rules</h2>
+    <p class="mb-4 text-fg-muted">
+      Rules are not a risk, so they stay neutral: a held-back version is a quiet line under the versions, ignored
+      containers say so with an icon and a word, and skipped rules get a dashed "unknown" badge. Ignored containers sit in a
+      <span class="font-mono text-sm">collapsible muted</span> section at the bottom of the dashboard.
+    </p>
+    <div class="flex flex-col gap-6">
+      <tm-card flush>
+        <table class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]">
+          <colgroup>
+            <col class="w-[40%]" />
+            <col class="w-[35%]" />
+            <col class="w-[25%]" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">Case</th>
+              <th scope="col">Version</th>
+              <th scope="col">Update</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (s of ruleSamples; track s.label) {
+              <tr>
+                <td data-stack="full">
+                  <div class="flex items-center gap-2">
+                    <span class="truncate font-medium">{{ s.container.name }}</span>
+                    <tm-rule-problems [container]="s.container" />
+                  </div>
+                  <div class="truncate text-xs text-fg-subtle">{{ s.label }}</div>
+                </td>
+                <td data-stack="indent"><tm-container-version [container]="s.container" /></td>
+                <td><tm-container-update [container]="s.container" /></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </tm-card>
+
+      <tm-section heading="Ignored" icon="eye-off" meta="2 containers" collapsible muted [(open)]="ignoredOpen">
+        <tm-card>
+          <p class="text-fg-muted">Collapsed by default. The heading is a button with <span class="font-mono text-sm">aria-expanded</span>.</p>
+        </tm-card>
+      </tm-section>
+
+      <tm-callout tone="attention" heading="Couldn't read the config file">
+        Its rules aren't applied until it loads; rules from labels still are.
+        <span class="mt-1 block font-mono text-xs break-all">/config/tidemark.yml: yaml: line 4: did not find expected key</span>
+      </tm-callout>
+    </div>
+  </section>
+
   <!-- ── Buttons ────────────────────────────────────────── -->
   <section>
     <h2 class="mb-4 text-xl font-semibold">Buttons</h2>

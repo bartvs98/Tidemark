@@ -118,7 +118,7 @@ func gh(path string) source.Repo { return source.Repo{Host: "github.com", Path: 
 
 func TestReleasesInRange(t *testing.T) {
 	f := &fakeHosts{releases: map[string][]string{
-		"home-assistant/core": {"2026.11.0rc1", "2026.10.1", "2026.10.0", "draft", "2026.9.4", "2026.9.0", "2026.8.0"},
+		"home-assistant/core": {"2026.11.0-rc.1", "2026.10.1", "2026.10.0", "draft", "2026.9.4", "2026.9.0", "2026.8.0"},
 	}}
 	s := setup(t, f)
 	ctx := context.Background()
@@ -288,5 +288,28 @@ func TestParseTag(t *testing.T) {
 		if got, ok := parseTag(tag); !ok || got.String() != "1.2.3" {
 			t.Errorf("parseTag(%q) = %v %v", tag, got, ok)
 		}
+	}
+}
+
+func TestPrereleaseLatestIncludesPrereleases(t *testing.T) {
+	f := &fakeHosts{releases: map[string][]string{
+		"home-assistant/core": {"2026.11.0-rc.2", "2026.11.0-rc.1", "2026.10.1", "2026.10.0"},
+	}}
+	s := setup(t, f)
+	ctx := context.Background()
+	repo := gh("home-assistant/core")
+	if err := s.Sync(ctx, repo, v(t, "2026.10.0")); err != nil {
+		t.Fatal(err)
+	}
+	// A container that follows pre-releases: Latest is an rc, so the rcs in range count.
+	cs, err := s.Changes(ctx, repo, v(t, "2026.10.0"), v(t, "2026.11.0-rc.2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"2026.11.0-rc.2", "2026.11.0-rc.1", "2026.10.1"}; !slices.Equal(tags(cs), want) {
+		t.Errorf("range = %v, want %v", tags(cs), want)
+	}
+	if cs.ToTag != "2026.11.0-rc.2" {
+		t.Errorf("to tag = %q", cs.ToTag)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -12,6 +13,10 @@ type Config struct {
 	Addr     string     // TIDEMARK_ADDR, HTTP listen address
 	DataDir  string     // TIDEMARK_DATA_DIR, where the SQLite database lives
 	LogLevel slog.Level // TIDEMARK_LOG_LEVEL: debug | info | warn | error
+
+	// ConfigFile is TIDEMARK_CONFIG, the YAML file with per-container rules
+	// (default <data dir>/config.yaml). It's optional and re-read on every check run.
+	ConfigFile string
 
 	DockerHost     string // TIDEMARK_DOCKER_HOST: unix:///var/run/docker.sock or tcp://host:2375
 	DockerSnapshot string // TIDEMARK_DOCKER_SNAPSHOT: read containers from a scripts/snapshot.sh file instead
@@ -39,6 +44,7 @@ func Load() (Config, error) {
 		Icons:    !strings.EqualFold(env("TIDEMARK_ICONS", "on"), "off"),
 		IconsURL: env("TIDEMARK_ICONS_URL", "https://cdn.jsdelivr.net/gh/selfhst/icons"),
 	}
+	c.ConfigFile = env("TIDEMARK_CONFIG", filepath.Join(c.DataDir, "config.yaml"))
 	if err := c.LogLevel.UnmarshalText([]byte(env("TIDEMARK_LOG_LEVEL", "info"))); err != nil {
 		return Config{}, fmt.Errorf("TIDEMARK_LOG_LEVEL: %w", err)
 	}

@@ -3,6 +3,7 @@ package resolve
 import (
 	"context"
 	"errors"
+	"regexp"
 	"slices"
 	"testing"
 
@@ -135,7 +136,7 @@ func TestResolve(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Resolve(context.Background(), tt.reg, tt.c)
+			got, err := Resolve(context.Background(), tt.reg, tt.c, Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -170,7 +171,7 @@ func TestResolveEnvVersion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := container(tt.image, "x@sha256:none", nil)
 			c.Image.VersionEnv = tt.env
-			got, err := Resolve(context.Background(), &fakeRegistry{tags: tags}, c)
+			got, err := Resolve(context.Background(), &fakeRegistry{tags: tags}, c, Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -178,6 +179,155 @@ func TestResolveEnvVersion(t *testing.T) {
 				t.Errorf("running = %q via %s, want %q via %s", got.Running, got.Source, tt.wantRunning, tt.wantSource)
 			}
 		})
+	}
+}
+
+func TestResolveOptions(t *testing.T) {
+	appTags := []string{"1.3.0", "1.4.0", "1.4.2", "1.5.0", "1.6.0-rc1", "2.0.0", "2.1.0", "2.2.0-beta.2", "latest", "nightly"}
+	tests := []struct {
+		name  string
+		image string
+		tags  []string
+		opts  Options
+		want  Result
+	}{
+		{
+			name:  "zero options: newest stable, major jump",
+			image: "app:1.4.0", tags: appTags,
+			want: Result{Running: "1.4.0", Source: SourceTag, Latest: "2.1.0", LatestInMajor: "1.5.0", Class: version.Major},
+		},
+		{
+			name:  "prerelease: newest pre-release wins",
+			image: "app:1.4.0", tags: appTags, opts: Options{Prerelease: true},
+			want: Result{Running: "1.4.0", Source: SourceTag, Latest: "2.2.0-beta.2", LatestInMajor: "1.6.0-rc1", Class: version.Major},
+		},
+		{
+			name:  "prerelease: rc ranks below its release",
+			image: "app:1.5.0", tags: []string{"1.5.0", "1.5.0-rc1", "1.5.0-rc10", "1.4.9"}, opts: Options{Prerelease: true},
+			want: Result{Running: "1.5.0", Source: SourceTag, Latest: "1.5.0", Class: version.None},
+		},
+		{
+			name:  "prerelease: running rc moves to the next rc",
+			image: "app:1.5.0-rc2", tags: []string{"1.4.9", "1.5.0-rc1", "1.5.0-rc2", "1.5.0-rc10"}, opts: Options{Prerelease: true},
+			want: Result{Running: "1.5.0-rc2", Source: SourceTag, Latest: "1.5.0-rc10", Class: version.Patch},
+		},
+		{
+			name:  "running rc without prerelease: stable releases only, as before",
+			image: "app:1.5.0-rc2", tags: []string{"1.4.9", "1.5.0-rc2", "1.5.0-rc10"},
+			want: Result{Running: "1.5.0-rc2", Source: SourceTag, Latest: "1.4.9", Class: version.None},
+		},
+		{
+			name:  "tag pattern filters registry tags",
+			image: "app:1.4.0", tags: []string{"1.4.0", "1.4.1", "1.5.0-amd64", "20260101", "2.0.0-amd64"},
+			opts: Options{TagPattern: regexp.MustCompile(`^\d+\.\d+\.\d+$`)},
+			want: Result{Running: "1.4.0", Source: SourceTag, Latest: "1.4.1", Class: version.Patch},
+		},
+		{
+			name:  "running tag outside the pattern is still read",
+			image: "app:1.4.0-amd64", tags: []string{"1.4.0-amd64", "1.4.1-amd64", "1.5.0"},
+			opts: Options{TagPattern: regexp.MustCompile(`^\d+\.\d+\.\d+$`)},
+			want: Result{Running: "1.4.0-amd64", Source: SourceTag, Class: version.None},
+		},
+		{
+			name:  "prerelease and tag pattern together",
+			image: "app:1.4.0", tags: []string{"1.4.0", "1.5.0-rc1", "1.5.0-beta1", "1.6.0-nightly"},
+			opts: Options{Prerelease: true, TagPattern: regexp.MustCompile(`^[\d.]+(-rc\d+)?$`)},
+			want: Result{Running: "1.4.0", Source: SourceTag, Latest: "1.5.0-rc1", Class: version.Minor},
+		},
+		{
+			name:  "pin keeps latest within the prefix",
+			image: "app:1.4.0", tags: appTags, opts: Options{Pin: "1.4"},
+			want: Result{Running: "1.4.0", Source: SourceTag, Latest: "1.4.2", Class: version.Patch, Held: "2.1.0", HeldBy: HeldByPin},
+		},
+		{
+			name:  "pin to a major",
+			image: "app:1.3.0", tags: appTags, opts: Options{Pin: "1"},
+			want: Result{Running: "1.3.0", Source: SourceTag, Latest: "1.5.0", Class: version.Minor, Held: "2.1.0", HeldBy: HeldByPin},
+		},
+		{
+			name:  "pin above the running version: offered as an update",
+			image: "app:1.3.0", tags: appTags, opts: Options{Pin: "1.4"},
+			want: Result{Running: "1.3.0", Source: SourceTag, Latest: "1.4.2", Class: version.Minor, Held: "2.1.0", HeldBy: HeldByPin},
+		},
+		{
+			name:  "pin below the running version: nothing to do",
+			image: "app:2.0.0", tags: appTags, opts: Options{Pin: "1.4"},
+			want: Result{Running: "2.0.0", Source: SourceTag, Latest: "1.4.2", Class: version.None, Held: "2.1.0", HeldBy: HeldByPin},
+		},
+		{
+			name:  "pin matching no tag",
+			image: "app:1.4.0", tags: appTags, opts: Options{Pin: "3"},
+			want: Result{Running: "1.4.0", Source: SourceTag, Class: version.None, Held: "2.1.0", HeldBy: HeldByPin},
+		},
+		{
+			name:  "pin already on the newest: nothing held",
+			image: "app:2.1.0", tags: appTags, opts: Options{Pin: "2"},
+			want: Result{Running: "2.1.0", Source: SourceTag, Latest: "2.1.0", Class: version.None},
+		},
+		{
+			name:  "hold major",
+			image: "app:1.4.0", tags: appTags, opts: Options{HoldMajor: true},
+			want: Result{Running: "1.4.0", Source: SourceTag, Latest: "1.5.0", Class: version.Minor, Held: "2.1.0", HeldBy: HeldByAllowMajor},
+		},
+		{
+			name:  "hold major with prerelease",
+			image: "app:1.4.0", tags: appTags, opts: Options{HoldMajor: true, Prerelease: true},
+			want: Result{Running: "1.4.0", Source: SourceTag, Latest: "1.6.0-rc1", Class: version.Minor, Held: "2.2.0-beta.2", HeldBy: HeldByAllowMajor},
+		},
+		{
+			name:  "hold major, partial version tag",
+			image: "app:1", tags: appTags, opts: Options{HoldMajor: true},
+			want: Result{Running: "1", Source: SourceTag, Latest: "1.5.0", Class: version.Minor, Floating: true, Held: "2.1.0", HeldBy: HeldByAllowMajor},
+		},
+		{
+			name:  "hold major with an unknown running version: no hold",
+			image: "app:latest", tags: appTags, opts: Options{HoldMajor: true},
+			want: Result{Source: SourceUnknown, Latest: "2.1.0", Class: version.None, Floating: true},
+		},
+		{
+			name:  "pin applies with an unknown running version",
+			image: "app:latest", tags: appTags, opts: Options{Pin: "1.4"},
+			want: Result{Source: SourceUnknown, Latest: "1.4.2", Class: version.None, Floating: true, Held: "2.1.0", HeldBy: HeldByPin},
+		},
+		{
+			name:  "pin and hold major: both apply, pin named first",
+			image: "app:1.3.0", tags: appTags, opts: Options{Pin: "1", HoldMajor: true},
+			want: Result{Running: "1.3.0", Source: SourceTag, Latest: "1.5.0", Class: version.Minor, Held: "2.1.0", HeldBy: HeldByPin},
+		},
+		{
+			name:  "pin wider than the hold: the major hold is what keeps back",
+			image: "app:1.4.0", tags: []string{"1.4.0", "1.5.0", "11.0.0", "2.0.0"}, opts: Options{Pin: "1", HoldMajor: true},
+			want: Result{Running: "1.4.0", Source: SourceTag, Latest: "1.5.0", Class: version.Minor, Held: "11.0.0", HeldBy: HeldByPin},
+		},
+		{
+			name:  "invalid pin is ignored",
+			image: "app:1.4.0", tags: appTags, opts: Options{Pin: "x"},
+			want: Result{Running: "1.4.0", Source: SourceTag, Latest: "2.1.0", LatestInMajor: "1.5.0", Class: version.Major},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Resolve(context.Background(), &fakeRegistry{tags: tt.tags}, container(tt.image, "", nil), tt.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Errorf("got  %+v\nwant %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolveHoldKeepsDigestUpdates(t *testing.T) {
+	c := container("app:1", "app@sha256:old", nil)
+	reg := &fakeRegistry{tags: []string{"1", "1.4.0", "2.0.0"}, digests: map[string]string{"1": "sha256:new", "1.4.0": "sha256:new"}}
+	got, err := Resolve(context.Background(), reg, c, Options{Pin: "1.4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Result{Running: "1", Source: SourceTag, Latest: "1.4.0", Class: version.Minor, Floating: true, NewImage: true, Held: "2.0.0", HeldBy: HeldByPin}
+	if got != want {
+		t.Errorf("got  %+v\nwant %+v", got, want)
 	}
 }
 

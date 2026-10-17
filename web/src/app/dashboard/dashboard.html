@@ -46,12 +46,19 @@
   </div>
 </div>
 
+@if (rulesError(); as err) {
+  <tm-callout tone="attention" heading="Couldn't read the config file" class="mb-6" data-testid="rules-error">
+    Its rules aren't applied until it loads; rules from labels still are.
+    <span class="mt-1 block font-mono text-xs break-all">{{ err }}</span>
+  </tm-callout>
+}
+
 @if (list.hasValue()) {
   @if (stacks().length === 0) {
     <tm-card>
       <tm-empty-state heading="No containers found" description="Docker reported no containers on this host." />
     </tm-card>
-  } @else if (shownStacks().length === 0) {
+  } @else if (shownStacks().length === 0 && shownIgnored().length === 0) {
     <tm-card>
       <tm-empty-state
         icon="circle-check"
@@ -99,69 +106,23 @@
           [icon]="stack.name ? 'layers' : 'box'"
           [meta]="plural(stack.containers.length, 'container')"
         >
-          @if (view() === 'list') {
-            <tm-card flush>
-              <div class="overflow-x-auto">
-                <!-- Same fixed column widths as the pinned header bar, so everything lines up. -->
-                <!-- tm-table-stack: below 640px each row stacks (name, then version + update), see components.css -->
-                <table class="tm-table tm-table-stack table-fixed sm:min-w-[44rem]">
-                  <colgroup>
-                    @for (col of columns; track col.label) {
-                      <col [class]="col.width" />
-                    }
-                  </colgroup>
-                  <thead class="sm:sr-only">
-                    <tr>
-                      @for (col of columns; track col.label) {
-                        <th scope="col">{{ col.label }}</th>
-                      }
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (c of stack.containers; track c.id) {
-                      <tr class="tm-row-link">
-                        <td data-stack="full">
-                          <div class="flex items-center gap-3">
-                            <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="20" />
-                            <div class="min-w-0">
-                              <div class="flex items-center gap-2">
-                                <!-- Stretched link: the whole row opens the detail page, but stays one link for keyboards and screen readers. -->
-                                <a
-                                  [routerLink]="['/containers', c.name]"
-                                  class="truncate font-medium text-fg no-underline after:absolute after:inset-0 hover:no-underline"
-                                  [title]="c.name"
-                                  >{{ c.name }}</a
-                                >
-                                @if (c.state !== 'running') {
-                                  <tm-badge>{{ c.state }}</tm-badge>
-                                }
-                              </div>
-                              <div class="truncate text-xs text-fg-subtle" [title]="c.status">{{ c.status }}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td data-stack="hide">
-                          <div class="truncate font-mono text-sm text-fg-muted" [title]="c.image.display">
-                            {{ imageName(c) }}<span class="text-fg">:{{ c.image.tag || '—' }}</span>
-                          </div>
-                          @if (c.image.missing) {
-                            <tm-badge tone="unknown" class="mt-1">image missing</tm-badge>
-                          }
-                        </td>
-                        <td data-stack="indent"><tm-container-version [container]="c" [checking]="checking()" /></td>
-                        <td><tm-container-update [container]="c" [checking]="checking()" /></td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
-              </div>
-            </tm-card>
-          } @else {
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              @for (c of stack.containers; track c.id) {
-                <tm-container-tile [container]="c" [checking]="checking()" />
-              }
-            </div>
+          <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: stack.containers, ignored: false }" />
+        </tm-section>
+      }
+
+      @if (shownIgnored().length) {
+        <!-- Ignored containers aren't checked: collapsed and toned down, after every stack. -->
+        <tm-section
+          heading="Ignored"
+          icon="eye-off"
+          [meta]="plural(shownIgnored().length, 'container')"
+          collapsible
+          muted
+          [(open)]="ignoredOpen"
+          data-testid="ignored-section"
+        >
+          @if (ignoredOpen()) {
+            <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: shownIgnored(), ignored: true }" />
           }
         </tm-section>
       }
@@ -187,3 +148,79 @@
     </div>
   </tm-card>
 }
+
+
+<!-- One group of containers as a table (list view) or a grid of tiles. Used for each stack and for "Ignored". -->
+<ng-template #containerGroup let-containers let-ignored="ignored">
+  @if (view() === 'list') {
+    <tm-card flush>
+      <div class="overflow-x-auto">
+        <!-- Same fixed column widths as the pinned header bar, so everything lines up. -->
+        <!-- tm-table-stack: below 640px each row stacks (name, then version + update), see components.css -->
+        <table class="tm-table tm-table-stack table-fixed sm:min-w-[44rem]">
+          <colgroup>
+            @for (col of columns; track col.label) {
+              <col [class]="col.width" />
+            }
+          </colgroup>
+          <thead class="sm:sr-only">
+            <tr>
+              @for (col of columns; track col.label) {
+                <th scope="col">{{ col.label }}</th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (c of containers; track c.id) {
+              <tr class="tm-row-link">
+                <td data-stack="full">
+                  <div class="flex items-center gap-3">
+                    <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="20" />
+                    <div class="min-w-0">
+                      <div class="flex items-center gap-2">
+                        <!-- Stretched link: the whole row opens the detail page, but stays one link for keyboards and screen readers. -->
+                        <a
+                          [routerLink]="['/containers', c.name]"
+                          class="truncate font-medium no-underline after:absolute after:inset-0 hover:no-underline"
+                          [class]="ignored ? 'text-fg-muted' : 'text-fg'"
+                          [title]="c.name"
+                          >{{ c.name }}</a
+                        >
+                        @if (c.state !== 'running') {
+                          <tm-badge>{{ c.state }}</tm-badge>
+                        }
+                        <tm-rule-problems [container]="c" />
+                      </div>
+                      <div class="truncate text-xs text-fg-subtle" [title]="c.status">
+                        @if (ignored && c.stack) {
+                          {{ c.stack }} ·
+                        }
+                        {{ c.status }}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td data-stack="hide">
+                  <div class="truncate font-mono text-sm text-fg-muted" [title]="c.image.display">
+                    {{ imageName(c) }}<span [class]="ignored ? 'text-fg-muted' : 'text-fg'">:{{ c.image.tag || '—' }}</span>
+                  </div>
+                  @if (c.image.missing) {
+                    <tm-badge tone="unknown" class="mt-1">image missing</tm-badge>
+                  }
+                </td>
+                <td data-stack="indent"><tm-container-version [container]="c" [checking]="checking()" /></td>
+                <td><tm-container-update [container]="c" [checking]="checking()" /></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </tm-card>
+  } @else {
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      @for (c of containers; track c.id) {
+        <tm-container-tile [container]="c" [checking]="checking()" />
+      }
+    </div>
+  }
+</ng-template>

@@ -12,6 +12,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
+	"github.com/bartvs98/tidemark/internal/rules"
 	"github.com/bartvs98/tidemark/internal/source"
 	"github.com/bartvs98/tidemark/internal/version"
 )
@@ -31,6 +32,9 @@ type checkJSON struct {
 	Done       int        `json:"done"`
 	Total      int        `json:"total"`
 	Error      string     `json:"error,omitempty"`
+	// RulesError: the config file couldn't be loaded, so its rules aren't applied (the
+	// last good version is, if any; labels always are).
+	RulesError string `json:"rulesError,omitempty"`
 }
 
 type updateJSON struct {
@@ -41,6 +45,8 @@ type updateJSON struct {
 	Class         string    `json:"class"`                   // none | patch | minor | major | digest
 	Floating      bool      `json:"floating"`
 	NewImage      bool      `json:"newImage"`
+	Held          string    `json:"held,omitempty"`   // newest version a pin or major hold keeps back
+	HeldBy        string    `json:"heldBy,omitempty"` // pin | allow-major
 	Error         string    `json:"error,omitempty"`
 	CheckedAt     time.Time `json:"checkedAt"`
 	// Level is the breaking-change verdict (none | attention | breaking) from the version
@@ -65,7 +71,46 @@ type containerJSON struct {
 	Stack   string      `json:"stack,omitempty"`
 	Service string      `json:"service,omitempty"`
 	Icon    *iconJSON   `json:"icon,omitempty"`   // app icon, if one matched
-	Update  *updateJSON `json:"update,omitempty"` // result of the last check, if any
+	Rules   *rulesJSON  `json:"rules,omitempty"`  // only when a rule is set or one is invalid
+	Update  *updateJSON `json:"update,omitempty"` // result of the last check, if any; never when ignored
+}
+
+// rulesJSON shows only rules that differ from the defaults, plus where explicitly set
+// rules come from (rule key → label | config) and invalid values that were skipped.
+type rulesJSON struct {
+	Ignore     bool              `json:"ignore,omitempty"`
+	AllowMajor *bool             `json:"allowMajor,omitempty"` // only when false
+	Pin        string            `json:"pin,omitempty"`
+	Prerelease bool              `json:"prerelease,omitempty"`
+	TagPattern string            `json:"tagPattern,omitempty"` // regex source
+	Repo       string            `json:"repo,omitempty"`
+	From       map[string]string `json:"from"`
+	Problems   []string          `json:"problems,omitempty"`
+}
+
+func toRulesJSON(rs rules.Rules) *rulesJSON {
+	if !rs.Active() && len(rs.Problems) == 0 {
+		return nil
+	}
+	rj := &rulesJSON{Ignore: rs.Ignore, Pin: rs.Pin, Prerelease: rs.Prerelease, Repo: rs.Repo, From: rs.From, Problems: rs.Problems}
+	if !rs.AllowMajor {
+		rj.AllowMajor = new(bool)
+	}
+	if rs.TagPattern != nil {
+		rj.TagPattern = rs.TagPattern.String()
+	}
+	if rj.From == nil {
+		rj.From = map[string]string{}
+	}
+	return rj
+}
+
+// rulesFor returns a container's effective rules; without a check service only its labels.
+func (s *Server) rulesFor(c docker.Container) rules.Rules {
+	if s.checks == nil {
+		return (*rules.File)(nil).For(c.Name, c.ImageRef, c.Labels)
+	}
+	return s.checks.Rules(c)
 }
 
 // iconJSON holds icon URLs. The UI swaps to the light variant when the default icon
@@ -102,7 +147,7 @@ func (s *Server) containers(w http.ResponseWriter, r *http.Request) {
 		Containers: make([]containerJSON, 0, len(list)),
 	}
 	if s.checks != nil {
-		out.Check = toCheckJSON(s.checks.Status())
+		out.Check = s.checkJSON()
 	}
 	for _, c := range list {
 		out.Containers = append(out.Containers, s.toContainerJSON(r.Context(), c))
@@ -143,6 +188,7 @@ func (s *Server) toContainerJSON(ctx context.Context, c docker.Container) contai
 	if !c.Image.Created.IsZero() {
 		img.Created = &c.Image.Created
 	}
+	rs := s.rulesFor(c)
 	return containerJSON{
 		ID:      c.ID,
 		Name:    c.Name,
@@ -153,12 +199,13 @@ func (s *Server) toContainerJSON(ctx context.Context, c docker.Container) contai
 		Stack:   c.Project,
 		Service: c.Service,
 		Icon:    icon,
-		Update:  s.updateFor(ctx, c, ref),
+		Rules:   toRulesJSON(rs),
+		Update:  s.updateFor(ctx, c, ref, rs),
 	}
 }
 
-func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref.Ref) *updateJSON {
-	if s.checks == nil {
+func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref.Ref, rs rules.Rules) *updateJSON {
+	if s.checks == nil || rs.Ignore {
 		return nil
 	}
 	e, ok := s.checks.Result(c)
@@ -174,22 +221,25 @@ func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref
 		Class:         string(r.Class),
 		Floating:      r.Floating,
 		NewImage:      r.NewImage,
+		Held:          r.Held,
+		HeldBy:        r.HeldBy,
 		Error:         e.Err,
 		CheckedAt:     e.CheckedAt,
 	}
 	if e.Err == "" && r.Class != version.None {
-		s.assessUpdate(ctx, u, c, ref)
+		s.assessUpdate(ctx, u, c, ref, rs)
 	}
 	return u
 }
 
 // assessUpdate sets the update's level from the version jump and the release notes that
-// are already stored (the check run prefetches them). It never fetches.
-func (s *Server) assessUpdate(ctx context.Context, u *updateJSON, c docker.Container, ref imageref.Ref) {
+// are already stored (the check run prefetches them). It never fetches. Latest is already
+// within any pin or major hold, so held-back releases don't count.
+func (s *Server) assessUpdate(ctx context.Context, u *updateJSON, c docker.Container, ref imageref.Ref, rs rules.Rules) {
 	running, latest := parseVersion(u.Running), parseVersion(u.Latest)
 	var ch changelog.Changes
 	if s.changelogs != nil && ref.Repository != "" {
-		if repo, _, ok := source.Resolve(c, ref); ok {
+		if repo, _, ok := source.Resolve(c, ref, rs); ok {
 			var err error
 			if ch, err = s.changelogs.Changes(ctx, repo, running, latest); err != nil {
 				s.log.Debug("stored release notes unavailable", "repo", repo.Key(), "err", err)
@@ -208,10 +258,12 @@ func assess(class string, running, latest *version.Version, ch changelog.Changes
 	return analysis.Assess(in)
 }
 
-func toCheckJSON(st check.Status) *checkJSON {
+func (s *Server) checkJSON() *checkJSON {
+	st := s.checks.Status()
 	return &checkJSON{
 		Running: st.Running, Trigger: st.Trigger, NextRunAt: st.NextRunAt,
 		StartedAt: st.StartedAt, FinishedAt: st.FinishedAt, Done: st.Done, Total: st.Total, Error: st.Err,
+		RulesError: s.checks.RulesError(),
 	}
 }
 
@@ -222,5 +274,5 @@ func (s *Server) startCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.checks.Start(s.background, check.TriggerManual)
-	writeJSON(w, http.StatusAccepted, toCheckJSON(s.checks.Status()))
+	writeJSON(w, http.StatusAccepted, s.checkJSON())
 }
