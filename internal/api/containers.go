@@ -39,7 +39,7 @@ type checkJSON struct {
 
 type updateJSON struct {
 	Running       string    `json:"running,omitempty"`       // running version (tag text), empty if unknown
-	Source        string    `json:"source"`                  // tag | label | digest | unknown
+	Source        string    `json:"source"`                  // tag | label | digest | env | unknown
 	Latest        string    `json:"latest,omitempty"`        // newest release in the same family
 	LatestInMajor string    `json:"latestInMajor,omitempty"` // newest within the running major, for major jumps
 	Class         string    `json:"class"`                   // none | patch | minor | major | digest

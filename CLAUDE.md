@@ -34,6 +34,7 @@ cd web; npm start                                                               
 ## How we work (agreed with the owner)
 
 - **One roadmap step at a time.** Briefly state the plan, build it, verify it, then summarise. Ask only for decisions that are genuinely the owner's.
+- **Orchestrate steps over subagents** (The owner's default since step 6). Read enough to split the step, ask the owner the product decisions, then fix the contracts (Go signatures, JSON shapes) so parts run in parallel. Brief each agent need-to-know: its own files only, the contract, the relevant gotchas, no commits, no verify runs, and "stop and ask if the contract must change". Answer their questions when they fall within agreed decisions. The main session integrates: re-runs all tests, verifies visually, updates docs, commits.
 - **Each step ends with:** all tests green, docs updated (ROADMAP checkbox + a ✅ verification note, plus FEATURES / ARCHITECTURE / README config tables as relevant), then **commit and push** to `origin main` (github.com/bartvs98/Tidemark, private). Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Small fixes between steps get their own commit.
 - **UI is built only from design-system pieces** in `web/src/app/ui/`. New piece → add it there, export from `ui/index.ts`, show it on `/styleguide`, document it in DESIGN-SYSTEM.md. Colour means risk only; status always icon + word; versions/tags/digests in mono.
 - **Verify UI changes visually** with the verify skill, in both themes (and phone width when layout changes), and look at the screenshots before reporting.
@@ -42,8 +43,11 @@ cd web; npm start                                                               
 
 Use the **`verify` skill** (`.claude/skills/verify/SKILL.md`), which runs `node scripts/dev/verify.mjs`: it builds, runs the binary against the snapshot and screenshots dashboard + styleguide across browsers, themes, views and widths into `.verify/`, reporting page errors and failed requests. First time: `npm install --prefix scripts/dev`.
 
+To verify rules or other label/config-driven UI without touching the owner's snapshot: copy `snapshots/home.json` to the scratchpad with labels added (don't print its contents), put a `config.yaml` into a copy of an earlier run's data dir, and pass `--snapshot <copy> --data <dir>`. Interactive states (opened sections, other tabs) need a small Puppeteer script against `--serve` (resolve `puppeteer-core` from `scripts/dev`).
+
 ## Gotchas (learned the hard way)
 
+- **Puppeteer + Firefox** sometimes dies on the first page with `DiscardedBrowsingContextError`. That's the driver, not the app: just re-run.
 - **`ng serve` must bind `127.0.0.1`** (set in `angular.json`): bound to `[::1]` only, Firefox on Windows waits ~2 s per connection.
 - **GitHub quota:** without `TIDEMARK_GITHUB_TOKEN`, GitHub allows 60 API requests/hour per IP. Each verify run starts with an empty data dir and prefetches ~11 repos, so a few runs an hour are fine; don't loop it. When the quota runs low, reuse notes with `--data .verify/<earlier run>/data` (pick a run whose `repos` table has no rate-limit errors; `--serve` reuses `.verify/serve` and overwrites it). Without notes, levels only reflect version jumps.
 - **Bundles:** `ui/markdown` (marked + DOMPurify) is deliberately not in the `ui` barrel; import it directly, from lazy routes only.
