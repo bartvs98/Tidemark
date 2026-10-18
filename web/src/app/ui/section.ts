@@ -18,9 +18,9 @@ let nextId = 0;
   selector: 'tm-section',
   imports: [TmIcon],
   template: `
-    <header class="mb-3 flex min-h-7 items-center gap-2" [class.text-fg-muted]="muted()">
+    <header class="mb-4 flex min-h-8 items-center gap-2.5" [class.text-fg-muted]="muted()">
       @if (collapsible()) {
-        <h2 [id]="headingId" class="text-lg font-semibold tracking-tight">
+        <h2 [id]="headingId" class="text-xl font-semibold tracking-tight">
           <button
             type="button"
             class="-mx-1 flex cursor-pointer items-center gap-2 rounded-sm px-1 hover:text-fg"
@@ -39,7 +39,7 @@ let nextId = 0;
         @if (icon(); as icon) {
           <tm-icon [name]="icon" class="text-fg-subtle" />
         }
-        <h2 [id]="headingId" class="text-lg font-semibold tracking-tight">{{ heading() }}</h2>
+        <h2 [id]="headingId" class="text-xl font-semibold tracking-tight">{{ heading() }}</h2>
       }
       @if (meta()) {
         <span class="text-sm text-fg-subtle">{{ meta() }}</span>

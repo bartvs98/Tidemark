@@ -1,17 +1,56 @@
-<div class="mb-8 flex flex-wrap items-end justify-between gap-4">
-  <div>
-    <h1 class="text-2xl font-semibold tracking-tight">Containers</h1>
-    <p class="mt-1 h-5 text-fg-muted" data-testid="summary">
+<!-- Hero: the headline, the summary line, the figures and Check now; the tide gauge beside it. -->
+<section class="mb-10 grid gap-6 sm:mb-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] lg:gap-10" aria-labelledby="dashboard-heading" data-testid="hero">
+  <div class="flex min-w-0 flex-col">
+    <div class="flex flex-wrap items-center gap-3">
+      <p class="text-sm font-medium tracking-wide text-fg-muted">Containers</p>
+      @if (source(); as source) {
+        @if (source.kind === 'snapshot') {
+          <tm-badge icon="info" [tmTooltip]="source.location">
+            Snapshot{{ source.capturedAt ? ' · ' + (source.capturedAt | date: 'd MMM, HH:mm') : '' }}
+          </tm-badge>
+        }
+      }
+    </div>
+
+    <div class="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+      <h1 id="dashboard-heading" class="text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl" data-testid="headline">
+        @if (list.hasValue()) {
+          {{ headline() }}
+        } @else if (list.error()) {
+          Containers
+        } @else {
+          <span class="sr-only">Loading containers</span>
+          <tm-skeleton width="14rem" height="2.5rem" />
+        }
+      </h1>
+      <button
+        tmButton
+        variant="primary"
+        size="md"
+        icon="refresh-cw"
+        [loading]="checking() || starting()"
+        (click)="checkNow()"
+        data-testid="check-now"
+      >
+        @if (checking() && check(); as c) {
+          Checking {{ c.done }}/{{ c.total }}
+        } @else {
+          Check now
+        }
+      </button>
+    </div>
+
+    <p class="mt-2 min-h-5 text-fg-muted" data-testid="summary">
       @if (list.hasValue()) {
         {{ summary() }}
         @if (check()?.finishedAt && !checking()) {
-          <span class="text-fg-subtle" [attr.title]="check()!.finishedAt | date: 'medium'">
+          <span class="text-fg-subtle" [tmTooltip]="check()!.finishedAt | date: 'medium'">
             · checked {{ check()!.finishedAt | date: sameDay(check()!.finishedAt!) ? 'HH:mm' : 'd MMM, HH:mm' }}
           </span>
           @if (failedCount(); as n) {
             <span
               class="text-fg-subtle"
-              title="The latest attempt failed for these containers. Where an earlier result exists, it's still shown. Hover a container for the error."
+              tmTooltip="The latest attempt failed for these containers. Where an earlier result exists, it's still shown. Hover a container for the error."
               data-testid="failed-count"
             >
               · {{ n }} {{ n === 1 ? 'check' : 'checks' }} failed
@@ -19,44 +58,61 @@
           }
         }
         @if (check()?.nextRunAt; as next) {
-          <span class="text-fg-subtle" [attr.title]="next | date: 'medium'" data-testid="next-run">
+          <span class="text-fg-subtle" [tmTooltip]="next | date: 'medium'" data-testid="next-run">
             · next {{ next | date: sameDay(next) ? 'HH:mm' : 'd MMM, HH:mm' }}
           </span>
         }
+      } @else if (!list.error()) {
+        <tm-skeleton width="18rem" height="1.25rem" />
       }
     </p>
+
+    @if (list.hasValue() && containerCount()) {
+      <!-- Figures: icon + word each; only Breaking and Attention get colour, and only when there are any. -->
+      <dl class="mt-8 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4" data-testid="stats">
+        <div data-testid="stat-breaking">
+          <dt class="flex items-center gap-1.5 text-sm" [class]="stats().breaking ? 'text-breaking' : 'text-fg-muted'">
+            <tm-icon name="octagon-alert" [size]="14" />Breaking
+          </dt>
+          <dd class="mt-1 text-2xl font-semibold tabular-nums" [class.text-fg-subtle]="!stats().breaking">{{ stats().breaking }}</dd>
+        </div>
+        <div data-testid="stat-attention">
+          <dt class="flex items-center gap-1.5 text-sm" [class]="stats().attention ? 'text-attention' : 'text-fg-muted'">
+            <tm-icon name="triangle-alert" [size]="14" />Attention
+          </dt>
+          <dd class="mt-1 text-2xl font-semibold tabular-nums" [class.text-fg-subtle]="!stats().attention">{{ stats().attention }}</dd>
+        </div>
+        <div data-testid="stat-updates">
+          <dt class="flex items-center gap-1.5 text-sm text-fg-muted">
+            <span class="mx-1 size-1.5 rounded-full bg-accent" aria-hidden="true"></span>Updates
+          </dt>
+          <dd class="mt-1 text-2xl font-semibold tabular-nums" [class.text-fg-subtle]="!stats().updates">{{ stats().updates }}</dd>
+        </div>
+        <div data-testid="stat-current">
+          <dt class="flex items-center gap-1.5 text-sm text-fg-muted">
+            <tm-icon name="check" [size]="14" class="text-ok" />Up to date
+          </dt>
+          <dd class="mt-1 text-2xl font-semibold tabular-nums">{{ stats().current }}</dd>
+        </div>
+      </dl>
+    }
   </div>
 
-  <div class="flex flex-wrap items-center gap-2">
-    @if (source(); as source) {
-      @if (source.kind === 'snapshot') {
-        <tm-badge icon="info" [attr.title]="source.location">
-          Snapshot{{ source.capturedAt ? ' · ' + (source.capturedAt | date: 'd MMM, HH:mm') : '' }}
-        </tm-badge>
+  <!-- The tide gauge: the line is the latest version, the water how much of it you run. -->
+  <div class="relative h-[120px] overflow-hidden rounded-xl border border-line bg-surface sm:h-[180px] lg:h-auto lg:min-h-[180px]">
+    @if (list.hasValue() && containerCount()) {
+      <tm-tide-gauge size="hero" class="absolute inset-0 [--tm-gauge-line:56px] sm:[--tm-gauge-line:64px]" [level]="gauge().level" [label]="gauge().label" data-testid="gauge" />
+      @if (stats().checked) {
+        <p class="relative p-4 text-sm text-fg-muted tabular-nums sm:p-5" aria-hidden="true">
+          <span class="text-xl font-semibold text-fg">{{ stats().current }}/{{ stats().checked }}</span> up to date
+        </p>
       }
     }
-    <tm-segmented label="Show" [options]="filters()" [(value)]="filter" data-testid="filter" />
-    <tm-segmented label="View" iconOnly [options]="views" [(value)]="view" />
-    <button
-      tmButton
-      variant="primary"
-      size="sm"
-      icon="refresh-cw"
-      [loading]="checking() || starting()"
-      (click)="checkNow()"
-      data-testid="check-now"
-    >
-      @if (checking() && check(); as c) {
-        Checking {{ c.done }}/{{ c.total }}
-      } @else {
-        Check now
-      }
-    </button>
   </div>
-</div>
+</section>
 
 @if (rulesError(); as err) {
-  <tm-callout tone="attention" heading="Couldn't read the config file" class="mb-6" data-testid="rules-error">
+  <tm-callout tone="attention" heading="Couldn't read the config file" class="mb-8" data-testid="rules-error">
     Its rules aren't applied until it loads; rules from labels still are.
     <span class="mt-1 block font-mono text-xs break-all">{{ err }}</span>
   </tm-callout>
@@ -67,54 +123,97 @@
     <tm-card>
       <tm-empty-state heading="No containers found" description="Docker reported no containers on this host." />
     </tm-card>
-  } @else if (shownStacks().length === 0 && shownIgnored().length === 0) {
-    <tm-card>
-      <tm-empty-state
-        icon="circle-check"
-        [heading]="filter() === 'breaking' ? 'Nothing breaking' : 'No updates'"
-        [description]="
-          filter() === 'breaking'
-            ? 'None of the available updates look breaking.'
-            : checking()
-              ? 'Still checking. Updates show up here as they are found.'
-              : 'Every container runs the latest version.'
-        "
-      >
-        <button tmButton size="sm" (click)="filter.set('all')">Show all containers</button>
-      </tm-empty-state>
-    </tm-card>
   } @else {
-    @if (view() === 'list') {
-      <tm-column-bar />
-    }
-    <div class="flex flex-col gap-10" [attr.data-view]="view()">
-      @for (stack of shownStacks(); track stack.name) {
-        <tm-section
-          [heading]="stack.name ?? 'Ungrouped'"
-          [icon]="stack.name ? 'layers' : 'box'"
-          [meta]="plural(stack.containers.length, 'container')"
-        >
-          <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: stack.containers, ignored: false }" />
-        </tm-section>
-      }
-
-      @if (shownIgnored().length) {
-        <!-- Ignored containers aren't checked: collapsed and toned down, after every stack. -->
-        <tm-section
-          heading="Ignored"
-          icon="eye-off"
-          [meta]="plural(shownIgnored().length, 'container')"
-          collapsible
-          muted
-          [(open)]="ignoredOpen"
-          data-testid="ignored-section"
-        >
-          @if (ignoredOpen()) {
-            <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: shownIgnored(), ignored: true }" />
-          }
-        </tm-section>
-      }
+    <!-- One toolbar row; all controls are md, the same height as the Check now button. -->
+    <div class="mb-6 flex flex-wrap items-center gap-3" data-testid="toolbar">
+      <tm-segmented label="Show" size="md" [options]="filters()" [(value)]="filter" data-testid="filter" />
+      <div class="flex flex-wrap items-center gap-3 sm:ml-auto">
+        <tm-segmented label="Group by" size="md" [options]="groups" [(value)]="group" data-testid="group" />
+        <tm-segmented label="View" size="md" iconOnly [options]="views" [(value)]="view" />
+      </div>
     </div>
+
+    @if (nothingShown()) {
+      <tm-card>
+        <tm-empty-state
+          icon="circle-check"
+          [heading]="filter() === 'breaking' ? 'Nothing breaking' : 'No updates'"
+          [description]="
+            filter() === 'breaking'
+              ? 'None of the available updates look breaking.'
+              : checking()
+                ? 'Still checking. Updates show up here as they are found.'
+                : 'Every container runs the latest version.'
+          "
+        >
+          <button tmButton size="sm" (click)="filter.set('all')">Show all containers</button>
+        </tm-empty-state>
+      </tm-card>
+    } @else {
+      @if (view() === 'list') {
+        <tm-column-bar />
+      }
+      <div class="flex flex-col gap-12 sm:gap-14" [attr.data-view]="view()" [attr.data-group]="group()">
+        @if (group() === 'stack') {
+          @for (stack of shownStacks(); track stack.name) {
+            <tm-section
+              [heading]="stack.name ?? 'Ungrouped'"
+              [icon]="stack.name ? 'layers' : 'box'"
+              [meta]="plural(stack.containers.length, 'container')"
+              [muted]="stack.current"
+              [attr.data-current]="stack.current ? '' : null"
+            >
+              <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: stack.containers, ignored: false, showStack: false }" />
+            </tm-section>
+          }
+        } @else {
+          @for (g of shownSeverity(); track g.key) {
+            @if (g.key === 'current') {
+              <!-- Up to date: nothing to do, so collapsed and toned down like "Ignored". -->
+              <tm-section
+                [heading]="g.heading"
+                [icon]="g.icon"
+                [meta]="plural(g.containers.length, 'container')"
+                collapsible
+                muted
+                [(open)]="currentOpen"
+                data-testid="severity-current"
+              >
+                @if (currentOpen()) {
+                  <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: g.containers, ignored: false, showStack: true }" />
+                }
+              </tm-section>
+            } @else {
+              <tm-section
+                [heading]="g.heading"
+                [icon]="g.icon"
+                [meta]="plural(g.containers.length, 'container')"
+                [attr.data-testid]="'severity-' + g.key"
+              >
+                <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: g.containers, ignored: false, showStack: true }" />
+              </tm-section>
+            }
+          }
+        }
+
+        @if (shownIgnored().length) {
+          <!-- Ignored containers aren't checked: collapsed and toned down, after everything else. -->
+          <tm-section
+            heading="Ignored"
+            icon="eye-off"
+            [meta]="plural(shownIgnored().length, 'container')"
+            collapsible
+            muted
+            [(open)]="ignoredOpen"
+            data-testid="ignored-section"
+          >
+            @if (ignoredOpen()) {
+              <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: shownIgnored(), ignored: true, showStack: true }" />
+            }
+          </tm-section>
+        }
+      </div>
+    }
   }
 } @else if (list.error()) {
   <tm-card>
@@ -124,7 +223,7 @@
   </tm-card>
 } @else {
   <tm-card>
-    <div class="flex flex-col gap-4 p-2" aria-label="Loading containers">
+    <div class="flex flex-col gap-5 p-2" aria-label="Loading containers">
       @for (row of [1, 2, 3, 4, 5]; track row) {
         <div class="flex items-center gap-6">
           <tm-skeleton width="20%" />
@@ -137,14 +236,14 @@
   </tm-card>
 }
 
-<!-- One group of containers as a table (list view) or a grid of tiles. Used for each stack and for "Ignored". -->
-<ng-template #containerGroup let-containers let-ignored="ignored">
+<!-- One group of containers as a table (list view) or a grid of tiles. Used for each stack or severity section, and for "Ignored". -->
+<ng-template #containerGroup let-containers let-ignored="ignored" let-showStack="showStack">
   @if (view() === 'list') {
-    <tm-container-table [containers]="containers" [checking]="checking()" [ignored]="ignored" />
+    <tm-container-table [containers]="containers" [checking]="checking()" [ignored]="ignored" [showStack]="showStack" />
   } @else {
-    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div class="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
       @for (c of containers; track c.id) {
-        <tm-container-tile [container]="c" [checking]="checking()" />
+        <tm-container-tile [container]="c" [checking]="checking()" [showStack]="showStack" />
       }
     </div>
   }

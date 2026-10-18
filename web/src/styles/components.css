@@ -234,3 +234,98 @@
     }
   }
 }
+
+@layer components {
+  /* Tooltip (ui/tooltip.ts): a manual popover in the top layer, positioned by script. */
+  .tm-tooltip {
+    inset: auto;
+    margin: 0;
+    width: max-content;
+    max-width: 20rem;
+    overflow: visible;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 2.5);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-md);
+    background-color: var(--color-raised);
+    color: var(--color-fg);
+    box-shadow: var(--shadow-overlay);
+    font-size: var(--text-xs);
+    line-height: var(--text-xs--line-height);
+  }
+  .tm-tooltip:popover-open {
+    animation: tm-tooltip-in 120ms ease-out;
+  }
+  @keyframes tm-tooltip-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tm-tooltip:popover-open {
+      animation: none;
+    }
+  }
+}
+
+/* ── Severity frame ──────────────────────────────────── */
+/* A card-shaped element (border + border-radius) whose border becomes a calm, slowly circling
+   highlight in its level's colour: data-level="breaking" | "attention". The resting border is
+   the level's soft line colour; with reduced motion only that stays. Status is never colour
+   alone, so pair it with the level badge. Used for the detail page header. */
+@property --tm-frame-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@layer components {
+  .tm-severity-frame {
+    position: relative;
+    --tm-frame-color: var(--color-breaking);
+    border-color: var(--color-breaking-line);
+  }
+  .tm-severity-frame[data-level='attention'] {
+    --tm-frame-color: var(--color-attention);
+    border-color: var(--color-attention-line);
+  }
+  .tm-severity-frame::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    padding: 1.5px;
+    border-radius: inherit;
+    pointer-events: none;
+    /* Two soft arcs on opposite sides, fading to transparent. */
+    background-image: conic-gradient(
+      from var(--tm-frame-angle),
+      transparent 0deg,
+      var(--tm-frame-color) 50deg,
+      transparent 120deg,
+      transparent 180deg,
+      var(--tm-frame-color) 230deg,
+      transparent 300deg
+    );
+    opacity: 0.85;
+    /* Keep only the ring between the padding box and the border box. */
+    -webkit-mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+    -webkit-mask-clip: content-box, border-box;
+    -webkit-mask-composite: xor;
+    mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+    mask-clip: content-box, border-box;
+    mask-composite: exclude;
+    animation: tm-frame-turn 12s linear infinite;
+  }
+  @keyframes tm-frame-turn {
+    to {
+      --tm-frame-angle: 360deg;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tm-severity-frame::before {
+      display: none;
+    }
+  }
+}

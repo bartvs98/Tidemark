@@ -211,6 +211,81 @@ describe('ContainerDetail', () => {
     });
   });
 
+  describe('Header tide gauge', () => {
+    const behind = (el: HTMLElement) => el.querySelector('header [data-testid="behind"]');
+    function withReleases(n: number, partial = false): ContainerDetailData {
+      const d = detail();
+      const r = d.changelog!.releases[0];
+      d.changelog = { ...d.changelog!, partial, releases: Array.from({ length: n }, (_, i) => ({ ...r, tag: `v${i}` })) };
+      return d;
+    }
+
+    it('says how many releases behind, singular and plural', async () => {
+      let el = await render('one', (req) => req.flush(withReleases(1)));
+      expect(behind(el)?.textContent?.trim()).toBe('1 release behind');
+      expect(behind(el)?.querySelector('tm-tide-gauge')?.getAttribute('aria-label')).toBe('1 release behind');
+
+      el = await render('six', (req) => req.flush(withReleases(6)));
+      expect(behind(el)?.textContent?.trim()).toBe('6 releases behind');
+      expect((behind(el)?.querySelector('tm-tide-gauge') as HTMLElement).style.getPropertyValue('--tm-level')).toBe('0.5');
+    });
+
+    it('adds "+" when the list may be cut off', async () => {
+      let el = await render('partial', (req) => req.flush(withReleases(30, true)));
+      expect(behind(el)?.textContent?.trim()).toBe('30+ releases behind');
+      // Far behind still leaves some water.
+      expect((behind(el)?.querySelector('tm-tide-gauge') as HTMLElement).style.getPropertyValue('--tm-level')).toBe('0.15');
+
+      el = await render('partial-one', (req) => req.flush(withReleases(1, true)));
+      expect(behind(el)?.textContent?.trim()).toBe('1+ releases behind');
+    });
+
+    it('is hidden without releases, without an update or with an unknown running version', async () => {
+      let el = await render('none', (req) => req.flush(withReleases(0)));
+      expect(behind(el)).toBeNull();
+
+      const current = withReleases(2);
+      current.container.update = { ...current.container.update!, class: 'none', level: 'none', latest: undefined };
+      el = await render('current', (req) => req.flush(current));
+      expect(behind(el)).toBeNull();
+
+      const unknown = withReleases(2);
+      unknown.container.update = { ...unknown.container.update!, running: undefined, source: 'unknown' };
+      el = await render('unknown', (req) => req.flush(unknown));
+      expect(behind(el)).toBeNull();
+    });
+  });
+
+  describe('Severity frame', () => {
+    const header = (el: HTMLElement) => el.querySelector('[data-testid="detail-header"]')!;
+    async function withLevel(level: 'none' | 'attention' | 'breaking') {
+      const d = detail();
+      d.container.update = { ...d.container.update!, level };
+      return render(`level-${level}`, (req) => req.flush(d));
+    }
+
+    it('frames the header for breaking and attention, next to the level badge', async () => {
+      for (const level of ['breaking', 'attention'] as const) {
+        const el = await withLevel(level);
+        expect(header(el).classList).toContain('tm-severity-frame');
+        expect(header(el).getAttribute('data-level')).toBe(level);
+        expect(header(el).querySelector('[data-testid="level"]')?.textContent).toContain(level === 'breaking' ? 'Breaking' : 'Attention');
+      }
+    });
+
+    it('has no frame otherwise', async () => {
+      const el = await withLevel('none');
+      expect(header(el).classList).not.toContain('tm-severity-frame');
+      expect(header(el).hasAttribute('data-level')).toBe(false);
+    });
+  });
+
+  it('shows hover help as tooltips, not native titles', async () => {
+    const el = await render('homeassistant', (req) => req.flush(detail()));
+    expect(el.querySelector('header [data-tooltip="homeassistant/home-assistant:latest"]')).not.toBeNull();
+    expect(el.querySelector('[title]')).toBeNull();
+  });
+
   it('shows a not-found state for unknown containers', async () => {
     const el = await render('ghost', (req) => req.flush({ error: 'no container named ghost' }, { status: 404, statusText: 'Not Found' }));
     expect(el.textContent).toContain('No container named ghost');

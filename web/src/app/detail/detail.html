@@ -1,34 +1,51 @@
-<a routerLink="/" class="mb-6 inline-flex items-center gap-1.5 text-sm text-fg-muted no-underline hover:text-fg hover:no-underline">
+<a routerLink="/" class="mb-8 inline-flex items-center gap-1.5 text-sm text-fg-muted no-underline hover:text-fg hover:no-underline">
   <tm-icon name="arrow-left" [size]="14" />Containers
 </a>
 
 @if (data(); as d) {
   <!-- ── Header ─────────────────────────────────────────── -->
-  <header class="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
-    <div class="flex min-w-0 items-center gap-4">
-      <tm-app-icon [icon]="d.container.icon" [name]="d.container.name" [size]="40" />
-      <div class="min-w-0">
-        <div class="flex items-center gap-2">
-          <h1 class="truncate text-2xl font-semibold tracking-tight">{{ d.container.name }}</h1>
-          @if (d.container.state !== 'running') {
-            <tm-badge>{{ d.container.state }}</tm-badge>
-          }
-          <tm-rule-problems [container]="d.container" />
+  <!-- A card; for breaking/attention its border becomes the slowly moving severity frame (the level badge still says it in words). -->
+  <header
+    class="mb-8 rounded-xl border bg-surface px-5 py-6 shadow-raised sm:px-8 sm:py-8"
+    [class.border-line]="!frameLevel()"
+    [class.tm-severity-frame]="!!frameLevel()"
+    [attr.data-level]="frameLevel()"
+    data-testid="detail-header"
+  >
+    <div class="flex flex-wrap items-start justify-between gap-x-10 gap-y-6">
+      <div class="flex min-w-0 items-center gap-4 sm:gap-6">
+        <tm-app-icon [icon]="d.container.icon" [name]="d.container.name" [size]="64" />
+        <div class="flex min-w-0 flex-col gap-1.5">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 class="min-w-0 truncate text-3xl font-semibold tracking-tight sm:text-4xl">{{ d.container.name }}</h1>
+            @if (d.container.state !== 'running') {
+              <tm-badge>{{ d.container.state }}</tm-badge>
+            }
+            <tm-rule-problems [container]="d.container" />
+          </div>
+          <p class="truncate font-mono text-sm text-fg-muted" [tmTooltip]="d.container.image.display">
+            {{ imageName(d.container) }}<span class="text-fg">:{{ d.container.image.tag || '—' }}</span>
+          </p>
         </div>
-        <p class="truncate font-mono text-sm text-fg-muted" [title]="d.container.image.display">
-          {{ imageName(d.container) }}<span class="text-fg">:{{ d.container.image.tag || '—' }}</span>
-        </p>
       </div>
-    </div>
-    <div class="flex items-start gap-4">
-      <tm-container-version [container]="d.container" class="text-right" />
-      <tm-container-update [container]="d.container" />
+      <div class="flex flex-col gap-4 sm:items-end">
+        <div class="flex items-start gap-4">
+          <tm-container-version [container]="d.container" class="sm:text-right" />
+          <tm-container-update [container]="d.container" />
+        </div>
+        @if (behind(); as b) {
+          <div class="flex items-center gap-3" data-testid="behind">
+            <tm-tide-gauge [level]="b.level" [label]="b.text" />
+            <span class="text-sm text-fg-muted">{{ b.text }}</span>
+          </div>
+        }
+      </div>
     </div>
   </header>
 
   <!-- ── Ignored by a rule ──────────────────────────────── -->
   @if (ignored(); as ig) {
-    <div class="mb-6" data-testid="ignored-notice">
+    <div class="mb-8" data-testid="ignored-notice">
       <tm-callout heading="Ignored">
         Tidemark doesn't check this container for updates.
         @if (ig.origin?.label; as label) {
@@ -43,7 +60,7 @@
   <!-- ── Why it's flagged (internal/analysis) ───────────── -->
   @if (result(); as u) {
     @if (u.level !== 'none' && u.reasons?.length) {
-      <div class="mb-6" data-testid="reasons">
+      <div class="mb-8" data-testid="reasons">
         <tm-callout [tone]="u.level" [heading]="u.level === 'breaking' ? 'Read before updating' : 'Worth a look before updating'">
           <ul class="mt-1 flex list-disc flex-col gap-1 pl-5">
             @for (reason of u.reasons; track $index) {
@@ -57,7 +74,7 @@
 
   <!-- ── Links ──────────────────────────────────────────── -->
   @if (changelog(); as cl) {
-    <div class="mb-6 flex flex-wrap gap-2" data-testid="links">
+    <div class="mb-10 flex flex-wrap gap-2" data-testid="links">
       @if (cl.links.compare) {
         <a tmButton variant="secondary" size="sm" icon="git-compare" [href]="cl.links.compare" target="_blank" rel="noopener noreferrer">
           Compare {{ update()?.running }} → {{ update()?.latest }}
@@ -72,7 +89,7 @@
           [href]="cl.links.inList"
           target="_blank"
           rel="noopener noreferrer"
-          title="Opens the GitHub release list at your version, so you can see what came after it"
+          tmTooltip="Opens the GitHub release list at your version, so you can see what came after it"
         >
           {{ update()?.running }} in releases
         </a>
@@ -107,7 +124,7 @@
 
     <div ngTabPanel value="changes">
       <ng-template ngTabContent>
-        <div class="flex flex-col gap-3" data-testid="changes">
+        <div class="flex flex-col gap-4 pt-2" data-testid="changes">
           @if (changelog(); as cl) {
             @if (cl.error) {
               <tm-callout tone="attention" heading="Couldn't refresh the release notes">
@@ -132,8 +149,8 @@
 
             @for (r of cl.releases; track r.tag; let first = $first) {
               <!-- Open: the newest and the breaking ones. Attention ones stay closed (traefik flags most releases) but show their badge. -->
-              <details class="group rounded-lg border border-line bg-surface shadow-raised" [open]="first || r.level === 'breaking'">
-                <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 select-none [&::-webkit-details-marker]:hidden">
+              <details class="group rounded-xl border border-line bg-surface shadow-raised" [open]="first || r.level === 'breaking'">
+                <summary class="flex cursor-pointer list-none items-center gap-2.5 px-5 py-4 select-none [&::-webkit-details-marker]:hidden">
                   <tm-icon name="chevron-right" [size]="14" class="text-fg-subtle transition-transform group-open:rotate-90" />
                   <span class="font-mono font-medium">{{ r.tag }}</span>
                   @if (r.name && r.name !== r.tag) {
@@ -151,7 +168,7 @@
                     }
                   </span>
                 </summary>
-                <div class="border-t border-line px-4 py-4">
+                <div class="border-t border-line px-5 py-5 sm:px-6">
                   @if (!r.body.trim()) {
                     <p class="text-fg-subtle">No notes for this release.</p>
                   } @else if (r.hits.length) {
@@ -199,7 +216,7 @@
       <ng-template ngTabContent>
         @if (rules(); as rules) {
           <!-- Per-container rules, from labels (tidemark.*) or the config file. -->
-          <tm-card heading="Rules" class="mb-4" data-testid="rules">
+          <tm-card heading="Rules" class="mb-6" data-testid="rules">
             <div class="flex flex-col gap-3">
               @if (ruleLines().length) {
                 <ul class="flex flex-col divide-y divide-line">
@@ -240,7 +257,7 @@
           </tm-card>
         }
         <tm-card>
-          <dl class="grid gap-x-6 gap-y-3 sm:grid-cols-[12rem_1fr]" data-testid="details">
+          <dl class="grid gap-x-8 gap-y-3.5 sm:grid-cols-[12rem_1fr]" data-testid="details">
             <dt class="text-fg-muted">Image</dt>
             <dd class="font-mono text-sm break-all">{{ d.container.image.ref }}</dd>
 
@@ -256,7 +273,7 @@
             <dd>
               <span class="font-mono text-sm">{{ ignored() ? 'not checked' : update()?.latest || '—' }}</span>
               @if (held(); as h) {
-                <span class="text-sm text-fg-subtle" [attr.title]="h.title">
+                <span class="text-sm text-fg-subtle" [tmTooltip]="h.title">
                   · <span class="font-mono">{{ update()?.held }}</span> {{ h.text }}
                   @if (h.value) {
                     <span class="font-mono">{{ h.value }}</span>
@@ -321,7 +338,7 @@
             }
 
             @for (l of labelEntries(d.image.labels); track l[0]) {
-              <dt class="truncate font-mono text-xs text-fg-subtle" [title]="l[0]">{{ l[0].replace('org.opencontainers.image.', '') }}</dt>
+              <dt class="truncate font-mono text-xs text-fg-subtle" [tmTooltip]="l[0]">{{ l[0].replace('org.opencontainers.image.', '') }}</dt>
               <dd class="font-mono text-xs break-all text-fg-muted">{{ l[1] }}</dd>
             }
           </dl>
@@ -342,11 +359,11 @@
     </tm-empty-state>
   </tm-card>
 } @else {
-  <div class="flex flex-col gap-4" aria-label="Loading">
-    <div class="flex items-center gap-4">
-      <tm-skeleton width="40px" height="40px" />
+  <div class="flex flex-col gap-8" aria-label="Loading">
+    <div class="flex items-center gap-4 rounded-xl border border-line bg-surface px-5 py-6 sm:gap-6 sm:px-8 sm:py-8">
+      <tm-skeleton width="64px" height="64px" />
       <div class="flex flex-1 flex-col gap-2">
-        <tm-skeleton width="30%" height="1.5rem" />
+        <tm-skeleton width="30%" height="2.5rem" />
         <tm-skeleton width="45%" />
       </div>
     </div>

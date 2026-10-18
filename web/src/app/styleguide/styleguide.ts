@@ -15,6 +15,8 @@ import {
   TmSegmented,
   TmSkeleton,
   TmThemeSwitch,
+  TmTideGauge,
+  TmTooltip,
   SegmentOption,
   TmUpdateClass,
   TmVersionDiff,
@@ -86,6 +88,8 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
     TmSegmented,
     TmSkeleton,
     TmThemeSwitch,
+    TmTideGauge,
+    TmTooltip,
     TmUpdateClass,
     TmVersionDiff,
     ...TM_TABS,
@@ -261,7 +265,19 @@ export class Styleguide {
   /** Tiles: the same containers, one of each state. */
   protected readonly tiles = this.stacks
     .flatMap((s) => s.containers)
-    .filter((c) => ['jellyfin', 'immich-server', 'redis', 'radarr', 'private-app'].includes(c.name));
+    .filter((c) => ['jellyfin', 'sonarr', 'immich-server', 'redis', 'radarr', 'private-app'].includes(c.name));
+
+  /** An updatable and an up-to-date container, with the stack name shown (the "group by severity" layout). */
+  protected readonly stackSamples = this.stacks.flatMap((s) => s.containers).filter((c) => ['jellyfin', 'sonarr'].includes(c.name));
+
+  protected readonly multiLineTip = 'Breaking: config key renamed\nCheck the release notes first';
+  protected readonly heroLevels = [1, 0.55, 0.15];
+  protected readonly compactLevels = [
+    { level: 1, text: 'Up to date' },
+    { level: 0.55, text: '3 releases behind' },
+    { level: 0.15, text: '12 releases behind' },
+  ];
+  protected readonly frameLevels = ['attention', 'breaking'] as const;
 
   /** Sample rows and tiles link back here instead of to a detail page that doesn't exist. */
   protected readonly sampleLink: ContainerLink = () => ['/styleguide'];

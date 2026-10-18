@@ -4,7 +4,20 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { Dashboard } from './dashboard';
-import { ContainerList, ContainerSummary, groupByStack, hasResult, hasUpdate, imageName, refreshFailed, splitIgnored, UpdateInfo } from './containers';
+import {
+  ContainerList,
+  ContainerSummary,
+  groupBySeverity,
+  groupByStack,
+  hasResult,
+  hasUpdate,
+  imageName,
+  isCurrent,
+  orderStacks,
+  refreshFailed,
+  splitIgnored,
+  UpdateInfo,
+} from './containers';
 
 function container(name: string, stack?: string, extra: Partial<ContainerSummary> = {}): ContainerSummary {
   return {
@@ -68,6 +81,80 @@ describe('imageName', () => {
       image: { ...container('cup').image, registry: 'ghcr.io', repository: 'sergi0g/cup' },
     });
     expect(imageName(ghcr)).toBe('ghcr.io/sergi0g/cup');
+  });
+});
+
+/** A result from a successful check: up to date (class none) or an update at the given level. */
+function checked(cls: UpdateInfo['class'], level: UpdateInfo['level'] = 'none', extra: Partial<UpdateInfo> = {}): UpdateInfo {
+  return {
+    running: '1.0.0', source: 'tag', latest: cls === 'none' ? '1.0.0' : '2.0.0', class: cls, floating: false, newImage: false,
+    checkedAt: '2026-10-16T13:00:00Z', level, ...extra,
+  };
+}
+const neverChecked: UpdateInfo = {
+  source: 'unknown', class: 'none', floating: false, newImage: false, level: 'none', error: 'no such host', failedAt: '2026-10-16T13:00:00Z',
+};
+
+describe('groupBySeverity', () => {
+  it('orders sections by severity, leaves out empty ones and sorts containers by name', () => {
+    const groups = groupBySeverity([
+      container('zz-current', 'a', { update: checked('none') }),
+      container('patchy', 'a', { update: checked('patch') }),
+      container('jelly', 'b', { update: checked('major', 'breaking') }),
+      container('abc', 'b', { update: checked('major', 'breaking') }),
+      container('never', 'b', { update: neverChecked }),
+      container('pending', 'b'),
+      container('kept', 'c', { update: checked('none', 'none', { error: 'timeout', failedAt: '2026-10-16T14:00:00Z' }) }),
+      container('ignored', 'c', { rules: { ignore: true, from: { ignore: 'label' } } }),
+    ]);
+    expect(groups.map((g) => [g.key, g.heading, g.icon])).toEqual([
+      ['breaking', 'Breaking', 'octagon-alert'],
+      ['updates', 'Updates', 'git-compare'],
+      ['failed', 'Check failed', 'circle-help'],
+      ['unchecked', 'Not checked yet', 'loader'],
+      ['current', 'Up to date', 'circle-check'],
+    ]);
+    expect(groups[0].containers.map((c) => c.name)).toEqual(['abc', 'jelly']);
+    // A kept result that's up to date stays up to date; only "never checked" is "Check failed".
+    expect(groups[4].containers.map((c) => c.name)).toEqual(['kept', 'zz-current']);
+  });
+
+  it('puts attention between breaking and plain updates', () => {
+    const groups = groupBySeverity([
+      container('a', undefined, { update: checked('minor', 'attention') }),
+      container('b', undefined, { update: checked('minor') }),
+    ]);
+    expect(groups.map((g) => g.key)).toEqual(['attention', 'updates']);
+  });
+});
+
+describe('orderStacks', () => {
+  it('puts stacks that need a look first and fully up-to-date stacks after, each A→Z', () => {
+    const stacks = orderStacks([
+      container('a1', 'alpha', { update: checked('none') }),
+      container('z1', 'zulu', { update: checked('patch') }),
+      container('z2', 'zulu', { update: checked('none') }),
+      container('m1', 'mike', { update: neverChecked }),
+      container('b1', 'bravo', { update: checked('none') }),
+      container('u1', undefined, { update: checked('none') }),
+      container('p1', 'papa'), // not checked yet: no result, so not "up to date"
+    ]);
+    expect(stacks.map((s) => [s.name, s.current])).toEqual([
+      ['mike', false],
+      ['papa', false],
+      ['zulu', false],
+      ['alpha', true],
+      ['bravo', true],
+      [null, true],
+    ]);
+  });
+
+  it('only calls a checked container without an update current', () => {
+    expect(isCurrent(container('a', undefined, { update: checked('none') }))).toBe(true);
+    expect(isCurrent(container('a', undefined, { update: checked('patch') }))).toBe(false);
+    expect(isCurrent(container('a', undefined, { update: neverChecked }))).toBe(false);
+    expect(isCurrent(container('a'))).toBe(false);
+    expect(isCurrent(container('a', undefined, { update: checked('none'), rules: { ignore: true, from: {} } }))).toBe(false);
   });
 });
 
@@ -167,7 +254,7 @@ describe('Dashboard', () => {
     expect(rows[0]).toContain('minor');
     expect(rows[1]).toContain('check failed'); // rows sort by name: jellyfin, private, sonarr
     expect(rows[2]).toContain('Up to date');
-    expect(el.querySelector('[data-testid="summary"]')?.textContent).toContain('1 update');
+    expect(el.querySelector('[data-testid="headline"]')?.textContent?.trim()).toBe('1 update');
     expect(el.querySelector('[data-testid="next-run"]')?.textContent).toContain('next');
   });
 
@@ -190,11 +277,11 @@ describe('Dashboard', () => {
 
     const levels = [...el.querySelectorAll('[data-testid="level"]')];
     expect(levels.map((l) => l.textContent?.trim())).toEqual(['Breaking', 'Attention']); // mkvtoolnix is up to date: no badge
-    expect(levels[0].getAttribute('title')).toBe('Major version: 1.0.0 → 2.0.0');
+    expect(levels[0].getAttribute('data-tooltip')).toBe('Major version: 1.0.0 → 2.0.0');
 
     const buttons = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="filter"] button')];
     expect(buttons.map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['All', 'Updates 2', 'Breaking 1']);
-    expect(rowNames()).toEqual(['mkvtoolnix', 'jellyfin', 'sonarr']);
+    expect(rowNames()).toEqual(['jellyfin', 'sonarr', 'mkvtoolnix']); // the up-to-date stack drops to the bottom
 
     buttons[2].click();
     await TestBed.inject(ApplicationRef).whenStable();
@@ -242,13 +329,13 @@ describe('Dashboard', () => {
       expect(text(note)).toBe('refresh failed');
       expect(note.querySelector('tm-icon')).not.toBeNull();
       expect(note.closest('tm-badge')).toBeNull(); // not a badge: it isn't a risk
-      expect(note.getAttribute('title')).toContain('Showing the result from');
-      expect(note.getAttribute('title')).toContain(failed.error);
+      expect(note.getAttribute('data-tooltip')).toContain('Showing the result from');
+      expect(note.getAttribute('data-tooltip')).toContain(failed.error);
 
       // No result + error: the dashed badge, the error on hover, and just the tag as version.
       const badge = rows[2].querySelector('[data-testid="check-failed"]')!;
       expect(text(badge)).toBe('check failed');
-      expect(badge.getAttribute('title')).toBe(failed.error);
+      expect(badge.getAttribute('data-tooltip')).toBe(failed.error);
       expect(rows[2].querySelector('[data-testid="refresh-failed"]')).toBeNull();
       expect(text(rows[2].querySelector('tm-container-version'))).toBe('1.0');
     });
@@ -257,7 +344,7 @@ describe('Dashboard', () => {
       const el = await render((req) => req.flush(list()));
       const buttons = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="filter"] button')];
       expect(buttons.map(text)).toEqual(['All', 'Updates 2', 'Breaking 1']);
-      expect(el.querySelector('[data-testid="summary"]')?.textContent).toContain('2 updates');
+      expect(el.querySelector('[data-testid="headline"]')?.textContent?.trim()).toBe('2 updates');
       expect(text(el.querySelector('[data-testid="failed-count"]'))).toBe('· 2 checks failed');
 
       buttons[2].click();
@@ -377,8 +464,8 @@ describe('Dashboard', () => {
       expect(text(rows[1])).toContain('media · Up 2 days'); // its stack, since it's not in that section
       const marks = [...ignored.querySelectorAll('[data-testid="ignored"]')];
       expect(marks.map(text)).toEqual(['Ignored', 'Ignored']);
-      expect(marks[0].getAttribute('title')).toBe('Not checked for updates: ignored in the config file.');
-      expect(marks[1].getAttribute('title')).toBe('Not checked for updates: ignored by the tidemark.ignore label.');
+      expect(marks[0].getAttribute('data-tooltip')).toBe('Not checked for updates: ignored in the config file.');
+      expect(marks[1].getAttribute('data-tooltip')).toBe('Not checked for updates: ignored by the tidemark.ignore label.');
       expect(ignored.querySelector('tm-update-class')).toBeNull();
     });
 
@@ -398,7 +485,7 @@ describe('Dashboard', () => {
       const el = await render((req) => req.flush(list));
       const buttons = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="filter"] button')];
       expect(buttons.map(text)).toEqual(['All', 'Updates 1', 'Breaking 1']);
-      expect(el.querySelector('[data-testid="summary"]')?.textContent).toContain('1 update');
+      expect(el.querySelector('[data-testid="headline"]')?.textContent?.trim()).toBe('1 update');
 
       buttons[1].click();
       await TestBed.inject(ApplicationRef).whenStable();
@@ -440,7 +527,7 @@ describe('Dashboard', () => {
       const marks = [...el.querySelectorAll('[data-testid="rule-problems"]')];
       expect(marks.length).toBe(1);
       expect(text(marks[0])).toBe('rule skipped');
-      expect(marks[0].getAttribute('title')).toContain('"maybe" is not true or false');
+      expect(marks[0].getAttribute('data-tooltip')).toContain('"maybe" is not true or false');
     });
 
     it('says when the config file could not be read', async () => {
@@ -455,6 +542,114 @@ describe('Dashboard', () => {
     it('shows no config notice when the file loaded', async () => {
       const el = await render((req) => req.flush(body()));
       expect(el.querySelector('[data-testid="rules-error"]')).toBeNull();
+    });
+  });
+
+  describe('hero and grouping', () => {
+    const text = (e: Element | null | undefined) => e?.textContent?.replace(/\s+/g, ' ').trim();
+    function body(): ContainerList {
+      return {
+        source: { kind: 'docker', location: 'x' },
+        check: { running: false, done: 6, total: 6, finishedAt: '2026-10-16T13:00:00Z' },
+        containers: [
+          container('jellyfin', 'media', { update: checked('major', 'breaking') }),
+          container('sonarr', 'media', { update: checked('none') }),
+          container('vault', 'secrets', { update: checked('minor', 'attention') }),
+          container('adguard', 'networking', { update: checked('none') }),
+          container('stirling', 'recipes', { update: checked('patch') }),
+          container('private', 'recipes', { update: neverChecked }),
+          container('filebrowser', 'tools', { rules: { ignore: true, from: { ignore: 'label' } } }),
+        ],
+      };
+    }
+    const sectionNames = (el: HTMLElement) => [...el.querySelectorAll('tm-section')].map((s) => text(s.querySelector('h2')));
+    const settle = () => TestBed.inject(ApplicationRef).whenStable();
+
+    it('shows the headline, the figures and the gauge', async () => {
+      const el = await render((req) => req.flush(body()));
+      expect(text(el.querySelector('[data-testid="headline"]'))).toBe('3 updates');
+      expect(text(el.querySelector('[data-testid="stat-breaking"]'))).toBe('Breaking 1');
+      expect(text(el.querySelector('[data-testid="stat-attention"]'))).toBe('Attention 1');
+      expect(text(el.querySelector('[data-testid="stat-updates"]'))).toBe('Updates 3');
+      expect(text(el.querySelector('[data-testid="stat-current"]'))).toBe('Up to date 2');
+      // 5 checked (ignored and never-checked containers don't count), 2 of them up to date.
+      expect(el.querySelector('[data-testid="gauge"]')!.getAttribute('aria-label')).toBe('2 of 5 checked containers up to date');
+    });
+
+    it('says "All up to date" when nothing is newer', async () => {
+      const list = body();
+      list.containers = list.containers.filter((c) => hasResult(c.update) && c.update.class === 'none');
+      const el = await render((req) => req.flush(list));
+      expect(text(el.querySelector('[data-testid="headline"]'))).toBe('All up to date');
+      expect(el.querySelector('[data-testid="gauge"]')!.getAttribute('aria-label')).toBe('2 of 2 checked containers up to date');
+    });
+
+    it('shows progress in the headline while checking, and does not tone down containers without a result', async () => {
+      const el = await render((req) =>
+        req.flush({
+          source: { kind: 'docker', location: 'x' },
+          check: { running: true, done: 0, total: 2 },
+          containers: [container('a', 's'), container('b', 's')],
+        }),
+      );
+      expect(text(el.querySelector('[data-testid="headline"]'))).toBe('Checking 0/2');
+      expect(el.querySelector('[data-testid="gauge"]')!.getAttribute('aria-label')).toBe('No containers checked yet');
+      expect(el.querySelectorAll('tr[data-current]').length).toBe(0);
+    });
+
+    it('in stack mode, keeps stacks whole, drops fully up-to-date ones to the bottom and tones down current rows', async () => {
+      const el = await render((req) => req.flush(body()));
+      expect(sectionNames(el)).toEqual(['media', 'recipes', 'secrets', 'networking', 'Ignored']);
+      const current = [...el.querySelectorAll('tbody tr')].filter((r) => r.hasAttribute('data-current')).map((r) => text(r.querySelector('a')));
+      expect(current).toEqual(['sonarr', 'adguard']);
+      expect(text(el.querySelector('tm-section[data-current] h2'))).toBe('networking');
+      expect(el.querySelector('[data-testid="row-stack"]')).toBeNull(); // the heading already says it
+    });
+
+    it("groups by severity, remembers it, and shows each container's stack", async () => {
+      const el = await render((req) => req.flush(body()));
+      const group = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="group"] button')];
+      expect(group.map(text)).toEqual(['Stack', 'Severity']);
+      group[1].click();
+      await settle();
+      expect(localStorage.getItem('tidemark.group')).toBe('severity');
+
+      expect(sectionNames(el)).toEqual(['Breaking', 'Attention', 'Updates', 'Check failed', 'Up to date', 'Ignored']);
+      expect(text(el.querySelector('[data-testid="severity-breaking"] [data-testid="row-stack"]'))).toBe('media');
+
+      // Up to date is collapsed by default, like Ignored.
+      const current = el.querySelector('[data-testid="severity-current"]')!;
+      const toggle = current.querySelector<HTMLButtonElement>('h2 button')!;
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(current.querySelectorAll('tbody tr').length).toBe(0);
+      toggle.click();
+      await settle();
+      expect([...current.querySelectorAll('tbody tr a')].map(text)).toEqual(['adguard', 'sonarr']);
+      expect([...current.querySelectorAll('tbody tr')].every((r) => r.hasAttribute('data-current'))).toBe(true);
+    });
+
+    it('applies the filter on top of the severity groups', async () => {
+      localStorage.setItem('tidemark.group', 'severity');
+      localStorage.setItem('tidemark.filter', 'updates');
+      const el = await render((req) => req.flush(body()));
+      expect(sectionNames(el)).toEqual(['Breaking', 'Attention', 'Updates']);
+    });
+
+    it('shows the stack on tiles in severity mode', async () => {
+      localStorage.setItem('tidemark.group', 'severity');
+      localStorage.setItem('tidemark.view', 'tiles');
+      const el = await render((req) => req.flush(body()));
+      const tile = el.querySelector('[data-testid="severity-attention"] tm-container-tile')!;
+      expect(text(tile.querySelector('[data-testid="tile-stack"]'))).toBe('secrets');
+      expect(tile.hasAttribute('data-current')).toBe(false);
+    });
+
+    it('tones down up-to-date tiles in stack mode', async () => {
+      localStorage.setItem('tidemark.view', 'tiles');
+      const el = await render((req) => req.flush(body()));
+      const tiles = [...el.querySelectorAll('tm-container-tile')];
+      expect(tiles.filter((t) => t.hasAttribute('data-current')).map((t) => text(t.querySelector('h3 a')))).toEqual(['sonarr', 'adguard']);
+      expect(el.querySelector('[data-testid="tile-stack"]')).toBeNull();
     });
   });
 

@@ -1,0 +1,86 @@
+import { Component } from '@angular/core';
+import { tideWavePath } from './tide-gauge';
+
+// Back to front: long, low swells that drift very slowly. Paths are 6000 px long, which covers
+// any screen plus one period.
+const WAVES = [
+  { period: 820, amp: 16, top: 0, seconds: 90, reverse: true, opacity: 0.25 },
+  { period: 620, amp: 12, top: 26, seconds: 70, reverse: false, opacity: 0.32 },
+  { period: 480, amp: 9, top: 52, seconds: 55, reverse: true, opacity: 0.4 },
+].map((w) => ({ ...w, ...tideWavePath(w.period, w.amp, 6000) }));
+
+/**
+ * A very faint, slowly drifting tide along the bottom of the viewport, behind all page content.
+ * Mounted once in the app shell. Decorative only: fixed, no pointer events, painted below
+ * in-flow content (cards and the header cover it, the canvas colour shows through), and
+ * still under reduced motion.
+ *
+ *   <tm-tide-backdrop />
+ */
+@Component({
+  selector: 'tm-tide-backdrop',
+  template: `
+    @for (w of waves; track $index) {
+      <div
+        class="tm-backdrop-wave"
+        [class.tm-backdrop-reverse]="w.reverse"
+        [style.top.px]="w.top"
+        [style.--tm-wave-period.px]="w.period"
+        [style.animation-duration.s]="w.seconds"
+      >
+        <svg width="100%" height="100%" focusable="false">
+          <path [attr.d]="w.fill" [attr.fill-opacity]="w.opacity" />
+        </svg>
+      </div>
+    }
+  `,
+  styles: `
+    /* In the components layer, so utilities on the host (absolute, h-48 …) win. */
+    @layer components {
+      :host {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        /* Below in-flow content; the body's canvas background is painted on the root canvas, under this. */
+        z-index: -1;
+        height: clamp(8rem, 24vh, 15rem);
+        overflow: hidden;
+        pointer-events: none;
+        /* Fades in from the top, so there's no hard edge where it starts. */
+        mask-image: linear-gradient(to bottom, transparent 0, #000 35%);
+      }
+      .tm-backdrop-wave {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: calc(100% + var(--tm-wave-period));
+        animation: tm-backdrop-flow linear infinite;
+        will-change: transform;
+      }
+      .tm-backdrop-reverse {
+        animation-direction: reverse;
+      }
+      svg {
+        display: block;
+      }
+      path {
+        fill: var(--color-water);
+      }
+      @keyframes tm-backdrop-flow {
+        to {
+          transform: translateX(calc(-1 * var(--tm-wave-period)));
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .tm-backdrop-wave {
+          animation: none;
+        }
+      }
+    }
+  `,
+  host: { 'aria-hidden': 'true' },
+})
+export class TmTideBackdrop {
+  protected readonly waves = WAVES;
+}

@@ -3,9 +3,9 @@ import { DatePipe } from '@angular/common';
 import { HttpErrorResponse, httpResource } from '@angular/common/http';
 import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
-import { TM_TABS, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmClamp, TmEmptyState, TmIcon, TmLevel, TmSkeleton } from '../ui';
+import { TM_TABS, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmClamp, TmEmptyState, TmIcon, TmLevel, TmSkeleton, TmTideGauge, TmTooltip } from '../ui';
 import { TmMarkdown } from '../ui/markdown';
-import { hasResult, imageName, isIgnored, ruleOrigin } from '../dashboard/containers';
+import { hasResult, hasUpdate, imageName, isIgnored, ruleOrigin } from '../dashboard/containers';
 import { ContainerRuleProblems, ContainerUpdate, ContainerVersion, heldText } from '../dashboard/update-info';
 import { ContainerDetailData } from './detail-types';
 import { describeRules } from './rules';
@@ -46,6 +46,8 @@ const SOURCE: Record<string, string> = {
     TmLevel,
     TmMarkdown,
     TmSkeleton,
+    TmTideGauge,
+    TmTooltip,
     ...TM_TABS,
   ],
   templateUrl: './detail.html',
@@ -75,6 +77,21 @@ export class ContainerDetail {
   protected readonly held = computed(() => {
     const c = this.data()?.container;
     return c?.update?.held ? heldText(c.update, c) : undefined;
+  });
+  /** Releases between running and latest, for the header's tide gauge. Absent when there's nothing to count. */
+  protected readonly behind = computed(() => {
+    const c = this.data()?.container;
+    const cl = this.changelog();
+    const n = cl?.releases?.length ?? 0;
+    if (!c || !hasUpdate(c) || !c.update?.running || !n) return undefined;
+    const partial = !!cl?.partial;
+    const text = `${n}${partial ? '+' : ''} ${n === 1 && !partial ? 'release' : 'releases'} behind`;
+    return { text, level: n === 0 ? 1 : Math.max(0.15, 1 - n / 12) };
+  });
+  /** The header gets the animated severity frame only for these levels. */
+  protected readonly frameLevel = computed(() => {
+    const level = this.ignored() ? undefined : this.result()?.level;
+    return level === 'breaking' || level === 'attention' ? level : null;
   });
   protected readonly githubRepo = computed(() => {
     const url = this.changelog()?.repo.url;

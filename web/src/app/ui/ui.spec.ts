@@ -1,6 +1,6 @@
 import { ApplicationRef, Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { AppIconSources, Level, Theme, THEME_COLORS, TmAppIcon, TmButton, TmLevel, TmToaster, TmUpdateClass, Toasts, UpdateClass } from './index';
+import { AppIconSources, Level, Theme, THEME_COLORS, TmAppIcon, TmButton, TmLevel, TmSegmented, TmToaster, TmTooltip, TmUpdateClass, Toasts, UpdateClass } from './index';
 
 describe('Toasts', () => {
   afterEach(() => vi.useRealTimers());
@@ -185,5 +185,184 @@ describe('Theme', () => {
     await TestBed.inject(ApplicationRef).whenStable();
     expect(theme.isDark()).toBe(false);
     expect(meta()?.content).toBe(THEME_COLORS.light);
+  });
+});
+
+describe('TmTooltip', () => {
+  @Component({
+    imports: [TmTooltip],
+    template: `<button [tmTooltip]="text()" aria-describedby="other">Go</button>`,
+  })
+  class TipHost {
+    text = signal<string | null>('Pinned to 1.4');
+  }
+
+  async function render() {
+    const fixture = TestBed.createComponent(TipHost);
+    await fixture.whenStable();
+    const button = (fixture.nativeElement as HTMLElement).querySelector('button')!;
+    return { fixture, button, host: fixture.componentInstance };
+  }
+  const tip = () => document.body.querySelector<HTMLElement>('[role="tooltip"]');
+
+  afterEach(() => vi.useRealTimers());
+
+  // jsdom doesn't implement :focus-visible or PointerEvent.pointerType.
+  const keyboardFocus = (button: HTMLElement) => {
+    vi.spyOn(button, 'matches').mockReturnValue(true);
+    button.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+  };
+  const mouseEnter = (button: HTMLElement) => {
+    const e = new Event('pointerenter');
+    Object.defineProperty(e, 'pointerType', { value: 'mouse' });
+    button.dispatchEvent(e);
+  };
+
+  it('reflects the text as data-tooltip and never sets a native title', async () => {
+    const { button } = await render();
+    expect(button.getAttribute('data-tooltip')).toBe('Pinned to 1.4');
+    expect(button.hasAttribute('title')).toBe(false);
+  });
+
+  it('has no tooltip when the text is empty', async () => {
+    const { fixture, button, host } = await render();
+    host.text.set('');
+    await fixture.whenStable();
+    expect(button.hasAttribute('data-tooltip')).toBe(false);
+    button.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    expect(tip()).toBeNull();
+  });
+
+  it('shows on focus, links aria-describedby and hides on Escape and blur', async () => {
+    const { fixture, button } = await render();
+    keyboardFocus(button);
+    const el = tip()!;
+    expect(el.textContent).toBe('Pinned to 1.4');
+    expect(el.hasAttribute('data-open')).toBe(true);
+    expect(button.getAttribute('aria-describedby')).toBe(`other ${el.id}`);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(el.hasAttribute('data-open')).toBe(false);
+
+    keyboardFocus(button);
+    expect(el.hasAttribute('data-open')).toBe(true);
+    button.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    expect(el.hasAttribute('data-open')).toBe(false);
+    fixture.destroy();
+  });
+
+  it('shows after the hover delay for mouse pointers only', async () => {
+    const { fixture, button } = await render();
+    vi.useFakeTimers();
+    mouseEnter(button);
+    vi.advanceTimersByTime(500);
+    expect(tip()).not.toBeNull();
+    expect(tip()!.hasAttribute('data-open')).toBe(true);
+    button.dispatchEvent(new MouseEvent('pointerleave'));
+    vi.advanceTimersByTime(200);
+    expect(tip()!.hasAttribute('data-open')).toBe(false);
+    fixture.destroy();
+  });
+
+  it('is removed on destroy and restores aria-describedby', async () => {
+    const { fixture, button } = await render();
+    keyboardFocus(button);
+    expect(tip()).not.toBeNull();
+    fixture.destroy();
+    expect(tip()).toBeNull();
+  });
+});
+
+describe('TmSegmented size', () => {
+  @Component({
+    imports: [TmSegmented],
+    template: `<tm-segmented label="View" size="md" [options]="options" [(value)]="value" />`,
+  })
+  class SegHost {
+    options = [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }];
+    value = signal('a');
+  }
+
+  it('md is 36 px: h-9 host, h-8 buttons', async () => {
+    const fixture = TestBed.createComponent(SegHost);
+    await fixture.whenStable();
+    const seg = (fixture.nativeElement as HTMLElement).querySelector('tm-segmented')!;
+    expect(seg.classList.contains('h-9')).toBe(true);
+    expect(seg.classList.contains('p-0.5')).toBe(false);
+    expect(seg.querySelector('button')!.classList.contains('h-8')).toBe(true);
+  });
+});
+
+// Tide gauge + backdrop (own import, so this block can be added without touching the one above).
+import { TideGaugeSize, tideWavePath, TmTideBackdrop, TmTideGauge } from './index';
+
+describe('TmTideGauge', () => {
+  @Component({
+    imports: [TmTideGauge],
+    template: `<tm-tide-gauge [level]="level()" [size]="size()" [label]="label()" />`,
+  })
+  class GaugeHost {
+    level = signal(0.5);
+    size = signal<TideGaugeSize>('compact');
+    label = signal('18 of 25 containers up to date');
+  }
+
+  async function gauge() {
+    const fixture = TestBed.createComponent(GaugeHost);
+    await fixture.whenStable();
+    const el = (fixture.nativeElement as HTMLElement).querySelector('tm-tide-gauge') as HTMLElement;
+    return { fixture, host: fixture.componentInstance, el, level: () => el.style.getPropertyValue('--tm-level') };
+  }
+
+  it('is an image named by its label, with no text inside', async () => {
+    const { fixture, host, el } = await gauge();
+    expect(el.getAttribute('role')).toBe('img');
+    expect(el.getAttribute('aria-label')).toBe('18 of 25 containers up to date');
+    expect(el.textContent?.trim()).toBe('');
+
+    host.label.set('3 releases behind');
+    await fixture.whenStable();
+    expect(el.getAttribute('aria-label')).toBe('3 releases behind');
+  });
+
+  it('clamps the level to 0 … 1', async () => {
+    const { fixture, host, level } = await gauge();
+    expect(level()).toBe('0.5');
+    for (const [input, used] of [[1.7, '1'], [-0.3, '0'], [NaN, '0'], [Infinity, '1'], [0.25, '0.25']] as const) {
+      host.level.set(input);
+      await fixture.whenStable();
+      expect(level()).toBe(used);
+    }
+  });
+
+  it('has a hero size that fills its parent and a compact one', async () => {
+    const { fixture, host, el } = await gauge();
+    expect(el.classList).toContain('tm-gauge-compact');
+    expect(el.querySelectorAll('.tm-gauge-wave').length).toBe(2);
+
+    host.size.set('hero');
+    await fixture.whenStable();
+    expect(el.classList).toContain('tm-gauge-hero');
+    expect(el.classList).not.toContain('tm-gauge-compact');
+    expect(el.querySelectorAll('.tm-gauge-wave').length).toBe(3);
+    expect(el.querySelectorAll('.tm-gauge-crest').length).toBe(1); // only the front wave
+  });
+
+  it('draws seamless waves: whole periods, closed below the crest', () => {
+    const { crest, fill } = tideWavePath(100, 5, 300);
+    expect(crest.startsWith('M0 5 Q25 -5 50 5')).toBe(true);
+    expect(crest.endsWith('T400 5')).toBe(true); // one period past the width, for the loop
+    expect(fill).toBe(`${crest} V2000 H0Z`);
+  });
+});
+
+describe('TmTideBackdrop', () => {
+  it('is decorative', async () => {
+    const fixture = TestBed.createComponent(TmTideBackdrop);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.getAttribute('aria-hidden')).toBe('true');
+    expect(el.querySelectorAll('path').length).toBe(3);
+    expect(el.textContent?.trim()).toBe('');
   });
 });

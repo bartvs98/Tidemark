@@ -13,7 +13,10 @@ export * from './segmented';
 export * from './skeleton';
 export * from './status';
 export * from './theme';
+export * from './tide-backdrop';
+export * from './tide-gauge';
 export * from './toast';
+export * from './tooltip';
 
 // Not re-exported: ./markdown pulls in marked + DOMPurify and registers a sanitiser hook,
 // so it would land in the main bundle. Import it directly (from lazy routes only).

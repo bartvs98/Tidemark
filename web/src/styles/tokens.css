@@ -14,7 +14,7 @@
   --font-sans: 'Geist Variable', system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
 
-  /* ── Type scale: 12 · 13 · 14 (base) · 16 · 20 · 24 · 32 ── */
+  /* ── Type scale: 12 · 13 · 14 (base) · 16 · 20 · 24 · 32 · 40 ── */
   --text-xs: 0.75rem;
   --text-xs--line-height: 1rem;
   --text-sm: 0.8125rem;
@@ -29,6 +29,8 @@
   --text-2xl--line-height: 2rem;
   --text-3xl: 2rem;
   --text-3xl--line-height: 2.5rem;
+  --text-4xl: 2.5rem;
+  --text-4xl--line-height: 3rem;
 
   /* ── Radius ────────────────────────────────────────── */
   --radius-sm: 4px;
@@ -81,6 +83,7 @@
   --color-accent-text: light-dark(#0f766e, #5eead4); /* links, active tab */
   --color-accent-soft: light-dark(#dcf3ef, rgb(45 212 191 / 0.12));
   --color-focus: light-dark(#0d9488, #2dd4bf);
+  --color-water: light-dark(rgb(15 118 110 / 0.1), rgb(45 212 191 / 0.06)); /* tide gauge + backdrop water, layered */
 
   /* ── Semantic: status (colour = risk only) ─────────── */
   --color-ok: light-dark(#1f7a4d, #3fb97f);

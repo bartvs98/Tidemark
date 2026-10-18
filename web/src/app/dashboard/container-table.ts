@@ -1,7 +1,7 @@
 import { booleanAttribute, Component, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TmAppIcon, TmBadge, TmCard } from '../ui';
-import { ContainerSummary, imageName } from './containers';
+import { ContainerSummary, hasUpdate, imageName, isCurrent } from './containers';
 import { ContainerRuleProblems, ContainerUpdate, ContainerVersion } from './update-info';
 
 /** List columns. The pinned column bar and every stack's table share these widths. */
@@ -42,7 +42,7 @@ export const DETAIL_LINK: ContainerLink = (c) => ['/containers', c.name];
     </div>
   `,
   host: {
-    class: 'sticky top-14 z-30 -mx-4 mb-1 hidden bg-canvas/95 px-4 backdrop-blur sm:-mx-6 sm:block sm:px-6',
+    class: 'sticky top-16 z-30 -mx-4 mb-1 hidden bg-canvas/95 px-4 backdrop-blur sm:-mx-8 sm:block sm:px-8',
     'aria-hidden': 'true',
     'data-testid': 'column-bar',
   },
@@ -77,18 +77,18 @@ export class ContainerColumnBar {
           </thead>
           <tbody>
             @for (c of containers(); track c.id) {
-              <tr class="tm-row-link">
-                <td data-stack="full">
+              <!-- data-current: up to date, so the row is toned down; rows with an update stay prominent. -->
+              <tr class="tm-row-link" [attr.data-current]="isCurrent(c) ? '' : null">
+                <td data-stack="full" class="sm:py-3.5">
                   <div class="flex items-center gap-3">
-                    <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="20" />
+                    <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="20" [class.opacity-50]="quiet(c)" [class.grayscale]="quiet(c)" />
                     <div class="min-w-0">
                       <div class="flex items-center gap-2">
                         <!-- Stretched link: the whole row opens the detail page, but stays one link for keyboards and screen readers. -->
                         <a
                           [routerLink]="link()(c)"
-                          class="truncate font-medium no-underline after:absolute after:inset-0 hover:no-underline"
-                          [class]="ignored() ? 'text-fg-muted' : 'text-fg'"
-                          [title]="c.name"
+                          class="truncate no-underline after:absolute after:inset-0 hover:no-underline"
+                          [class]="nameClass(c)"
                           >{{ c.name }}</a
                         >
                         @if (c.state !== 'running') {
@@ -96,25 +96,25 @@ export class ContainerColumnBar {
                         }
                         <tm-rule-problems [container]="c" />
                       </div>
-                      <div class="truncate text-xs text-fg-subtle" [title]="c.status">
-                        @if (ignored() && c.stack) {
-                          {{ c.stack }} ·
+                      <div class="truncate text-xs text-fg-subtle">
+                        @if ((ignored() || showStack()) && c.stack) {
+                          <span data-testid="row-stack">{{ c.stack }}</span> ·
                         }
                         {{ c.status }}
                       </div>
                     </div>
                   </div>
                 </td>
-                <td data-stack="hide">
-                  <div class="truncate font-mono text-sm text-fg-muted" [title]="c.image.display">
-                    {{ imageName(c) }}<span [class]="ignored() ? 'text-fg-muted' : 'text-fg'">:{{ c.image.tag || '—' }}</span>
+                <td data-stack="hide" class="sm:py-3.5">
+                  <div class="truncate font-mono text-sm text-fg-muted">
+                    {{ imageName(c) }}<span [class]="quiet(c) ? 'text-fg-muted' : 'text-fg'">:{{ c.image.tag || '—' }}</span>
                   </div>
                   @if (c.image.missing) {
                     <tm-badge tone="unknown" class="mt-1">image missing</tm-badge>
                   }
                 </td>
-                <td data-stack="indent"><tm-container-version [container]="c" [checking]="checking()" /></td>
-                <td><tm-container-update [container]="c" [checking]="checking()" /></td>
+                <td data-stack="indent" class="sm:py-3.5"><tm-container-version [container]="c" [checking]="checking()" /></td>
+                <td class="sm:py-3.5"><tm-container-update [container]="c" [checking]="checking()" /></td>
               </tr>
             }
           </tbody>
@@ -129,9 +129,22 @@ export class ContainerTable {
   readonly checking = input(false);
   /** Rows of the "Ignored" section: names toned down, and the stack shown before the status. */
   readonly ignored = input(false, { transform: booleanAttribute });
+  /** Show each container's stack before its status, e.g. when grouped by severity. */
+  readonly showStack = input(false, { transform: booleanAttribute });
   /** Where each row links to; the styleguide points this somewhere harmless. */
   readonly link = input<ContainerLink>(DETAIL_LINK);
 
   protected readonly columns = COLUMNS;
   protected readonly imageName = imageName;
+  protected readonly isCurrent = isCurrent;
+
+  /** Ignored or up to date: toned down, so rows with an update stand out. */
+  protected quiet(c: ContainerSummary): boolean {
+    return this.ignored() || isCurrent(c);
+  }
+
+  protected nameClass(c: ContainerSummary): string {
+    if (this.quiet(c)) return 'font-medium text-fg-muted';
+    return hasUpdate(c) ? 'font-semibold text-fg' : 'font-medium text-fg';
+  }
 }

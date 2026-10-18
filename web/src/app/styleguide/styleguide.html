@@ -149,7 +149,9 @@
       (scroll to see it stick); each table keeps a <span class="font-mono text-sm">sm:sr-only</span> header for screen
       readers. Rows are <span class="font-mono text-sm">tr.tm-row-link</span>: the name is a stretched link, so the whole
       row is clickable (here it stays on this page). Below 640px, <span class="font-mono text-sm">tm-table-stack</span>
-      stacks each row: name first, then version and update.
+      stacks each row: name first, then version and update. Rows that are up to date are toned down
+      automatically (<span class="font-mono text-sm">data-current</span>), so the ones with an update stand out. With
+      <span class="font-mono text-sm">showStack</span> the stack name sits before the status, for lists that aren't grouped by stack.
     </p>
     <tm-column-bar />
     <div class="flex flex-col gap-10">
@@ -158,6 +160,9 @@
           <tm-container-table [containers]="stack.containers" [link]="sampleLink" />
         </tm-section>
       }
+      <tm-section heading="With showStack" icon="layers" meta="2 containers">
+        <tm-container-table [containers]="stackSamples" [link]="sampleLink" showStack />
+      </tm-section>
     </div>
   </section>
 
@@ -166,11 +171,92 @@
     <h2 class="mb-1 text-xl font-semibold">Tiles</h2>
     <p class="mb-4 text-fg-muted">
       <span class="font-mono text-sm">tm-container-tile</span>: the dashboard's tile view. The whole tile is a stretched
-      link; keyboard focus outlines it.
+      link; keyboard focus outlines it. Up-to-date tiles are quiet (no surface, muted name); tiles with an update stay
+      prominent. <span class="font-mono text-sm">showStack</span> adds the stack name before the status.
     </p>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       @for (c of tiles; track c.id) {
         <tm-container-tile [container]="c" [link]="sampleLink" />
+      }
+    </div>
+    <h3 class="mt-6 mb-2 text-sm font-medium text-fg-muted">With showStack</h3>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      @for (c of stackSamples; track c.id) {
+        <tm-container-tile [container]="c" [link]="sampleLink" showStack />
+      }
+    </div>
+  </section>
+
+  <!-- ── Tooltips ───────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Tooltips</h2>
+    <p class="mb-4 text-fg-muted">
+      <span class="font-mono text-sm">[tmTooltip]</span> replaces the native <span class="font-mono text-sm">title</span>. It
+      appears after a short hover or on keyboard focus, closes on Escape, and the pointer can move onto it. A newline in the
+      text gives a second line. Empty text shows nothing.
+    </p>
+    <tm-card>
+      <div class="flex flex-wrap items-center gap-6">
+        <button tmButton variant="secondary" tmTooltip="Check every container now">Button</button>
+        <tm-icon name="circle-help" [size]="20" class="text-fg-muted" tabindex="0" tmTooltip="Running version detected from the image label" />
+        <tm-badge tone="attention" icon="triangle-alert" tabindex="0" [tmTooltip]="multiLineTip">Multi-line</tm-badge>
+      </div>
+    </tm-card>
+  </section>
+
+  <!-- ── Tide gauge ─────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Tide gauge</h2>
+    <p class="mb-4 text-fg-muted">
+      <span class="font-mono text-sm">tm-tide-gauge</span>: the logo as a meter. The line is the latest versions; the water
+      is where you are. <span class="font-mono text-sm">level</span> runs from 0 to 1, and
+      <span class="font-mono text-sm">label</span> is the accessible name (there is no text inside). Accent colour only. Override
+      <span class="font-mono text-sm">--tm-gauge-line</span> and <span class="font-mono text-sm">--tm-gauge-floor</span> to move the
+      line and the lowest water. The waves stop under reduced motion.
+    </p>
+    <div class="grid gap-4 md:grid-cols-3">
+      @for (level of heroLevels; track level) {
+        <div>
+          <div class="relative h-[180px] overflow-hidden rounded-xl border border-line bg-surface">
+            <tm-tide-gauge size="hero" [level]="level" [label]="'Level ' + level" class="absolute inset-0 [--tm-gauge-line:64px]" />
+          </div>
+          <p class="mt-1 font-mono text-xs text-fg-muted">hero · level {{ level }}</p>
+        </div>
+      }
+    </div>
+    <tm-card class="mt-4">
+      <div class="flex flex-wrap items-center gap-x-8 gap-y-3">
+        @for (c of compactLevels; track c.level) {
+          <div class="flex items-center gap-3">
+            <tm-tide-gauge size="compact" [level]="c.level" [label]="c.text" />
+            <span class="text-sm text-fg-muted">{{ c.text }}</span>
+          </div>
+        }
+      </div>
+    </tm-card>
+    <p class="mt-3 text-fg-muted">
+      <span class="font-mono text-sm">tm-tide-backdrop</span> is mounted once in the app shell: a quiet wash of water behind
+      the whole page. It has no inputs and isn't repeated here; it is the background of this page.
+    </p>
+  </section>
+
+  <!-- ── Severity frame ─────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Severity frame</h2>
+    <p class="mb-4 text-fg-muted">
+      <span class="font-mono text-sm">tm-severity-frame</span> with <span class="font-mono text-sm">data-level</span> gives a
+      card the level's border, with two soft arcs of its colour slowly circling it (static under reduced motion). The detail page's
+      header uses it for breaking and attention; the level badge stays.
+    </p>
+    <div class="grid gap-4 md:grid-cols-2">
+      @for (level of frameLevels; track level) {
+        <div class="tm-severity-frame rounded-xl border bg-surface p-5" [attr.data-level]="level">
+          <div class="flex flex-wrap items-center gap-3">
+            <span class="text-lg font-semibold">jellyfin</span>
+            <tm-level [level]="level" />
+          </div>
+          <p class="mt-2 text-sm text-fg-muted">data-level="{{ level }}"</p>
+        </div>
       }
     </div>
   </section>
@@ -278,6 +364,13 @@
           <tm-segmented label="View" [options]="views" [(value)]="view" />
           <tm-segmented label="View" iconOnly [options]="views" [(value)]="view" />
           <span class="text-sm text-fg-muted">Segmented control: <span class="font-mono">{{ view() }}</span></span>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <tm-segmented label="View" size="md" [options]="views" [(value)]="view" />
+          <button tmButton variant="secondary" size="md" icon="refresh-cw">Check now</button>
+          <span class="text-sm text-fg-muted">
+            <span class="font-mono">size="md"</span>: 36 px, level with a md button in a toolbar (default <span class="font-mono">sm</span> is 32 px)
+          </span>
         </div>
         <div class="flex flex-wrap items-center gap-3">
           <tm-theme-switch />

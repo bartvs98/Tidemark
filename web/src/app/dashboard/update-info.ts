@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, LOCALE_ID } from '@angular/core';
 import { formatDate } from '@angular/common';
-import { TmBadge, TmIcon, TmLevel, TmSkeleton, TmUpdateClass, TmVersionDiff, UpdateClass } from '../ui';
+import { TmBadge, TmIcon, TmLevel, TmSkeleton, TmTooltip, TmUpdateClass, TmVersionDiff, UpdateClass } from '../ui';
 import { ContainerSummary, hasResult, isIgnored, refreshFailed, ruleOrigin, UpdateInfo, UpdateSource } from './containers';
 
 const SOURCE_HINT: Record<UpdateSource, string> = {
@@ -33,7 +33,7 @@ export function heldText(u: UpdateInfo, c: ContainerSummary): { text: string; va
 /** Running → latest version, how the running version was found, and the in-major option. */
 @Component({
   selector: 'tm-container-version',
-  imports: [TmVersionDiff, TmSkeleton],
+  imports: [TmVersionDiff, TmSkeleton, TmTooltip],
   template: `
     @if (ignored()) {
       <!-- Ignored: not checked, so there's no version change to show. -->
@@ -55,7 +55,7 @@ export function heldText(u: UpdateInfo, c: ContainerSummary): { text: string; va
         </div>
       }
       @if (held(); as h) {
-        <div class="truncate text-xs text-fg-subtle" [attr.title]="h.title" data-testid="held">
+        <div class="truncate text-xs text-fg-subtle" [tmTooltip]="h.title" data-testid="held">
           <span class="font-mono">{{ u.held }}</span> {{ h.text }}
           @if (h.value) {
             <span class="font-mono">{{ h.value }}</span>
@@ -109,11 +109,11 @@ export function shortTime(iso: string, locale: string): string {
  */
 @Component({
   selector: 'tm-refresh-failed',
-  imports: [TmIcon],
+  imports: [TmIcon, TmTooltip],
   template: `
     @if (title(); as t) {
       <!-- relative z-10: hoverable above a stretched link, so the error shows -->
-      <span class="relative z-10 inline-flex items-center gap-1 text-xs whitespace-nowrap text-fg-muted" [attr.title]="t" data-testid="refresh-failed">
+      <span class="relative z-10 inline-flex items-center gap-1 text-xs whitespace-nowrap text-fg-muted" [tmTooltip]="t" data-testid="refresh-failed">
         <tm-icon name="history" [size]="12" />refresh failed
       </span>
     }
@@ -135,24 +135,24 @@ export class ContainerRefreshFailed {
 /** The update class and risk level badges, "check failed", or a placeholder while checking. */
 @Component({
   selector: 'tm-container-update',
-  imports: [ContainerRefreshFailed, TmBadge, TmIcon, TmLevel, TmSkeleton, TmUpdateClass],
+  imports: [ContainerRefreshFailed, TmBadge, TmIcon, TmLevel, TmSkeleton, TmTooltip, TmUpdateClass],
   template: `
     @if (ignored()) {
       <!-- relative z-10: hoverable above a stretched link, so the origin shows -->
-      <span class="relative z-10 inline-flex items-center gap-1 text-sm text-fg-subtle" [attr.title]="ignoredTitle()" data-testid="ignored">
+      <span class="relative z-10 inline-flex items-center gap-1 text-sm text-fg-subtle" [tmTooltip]="ignoredTitle()" data-testid="ignored">
         <tm-icon name="eye-off" [size]="14" />Ignored
       </span>
     } @else if (result(); as u) {
       <tm-update-class [kind]="kind()" />
       @if (kind() !== 'none') {
         <!-- relative z-10: hoverable above a stretched link, so the reasons tooltip shows -->
-        <tm-level [level]="u.level" [attr.title]="reasons()" class="relative z-10" data-testid="level" />
+        <tm-level [level]="u.level" [tmTooltip]="reasons()" class="relative z-10" data-testid="level" />
       }
       <!-- The result above is kept from an earlier check; this says the latest refresh failed. -->
       <tm-refresh-failed [container]="container()" />
     } @else if (error(); as err) {
       <!-- No result at all yet. relative z-10: stays hoverable above the row's stretched link, so the reason shows -->
-      <tm-badge tone="unknown" icon="circle-help" [attr.title]="err" class="relative z-10" data-testid="check-failed">check failed</tm-badge>
+      <tm-badge tone="unknown" icon="circle-help" [tmTooltip]="err" class="relative z-10" data-testid="check-failed">check failed</tm-badge>
     } @else if (checking()) {
       <tm-skeleton width="4.5rem" height="1.25rem" />
     }
@@ -186,11 +186,11 @@ export class ContainerUpdate {
  */
 @Component({
   selector: 'tm-rule-problems',
-  imports: [TmBadge],
+  imports: [TmBadge, TmTooltip],
   template: `
     @if (problems().length; as n) {
       <!-- relative z-10: hoverable above a stretched link, so the problems show -->
-      <tm-badge tone="unknown" icon="info" class="relative z-10" [attr.title]="title()" data-testid="rule-problems">
+      <tm-badge tone="unknown" icon="info" class="relative z-10" [tmTooltip]="title()" data-testid="rule-problems">
         {{ n === 1 ? 'rule skipped' : n + ' rules skipped' }}
       </tm-badge>
     }

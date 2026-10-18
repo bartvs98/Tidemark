@@ -1,4 +1,4 @@
-import { AppIconSources, Level } from '../ui';
+import { AppIconSources, IconName, Level } from '../ui';
 
 /** Shapes of GET /api/containers (internal/api/containers.go). */
 export interface ContainerList {
@@ -183,4 +183,64 @@ export function matchesFilter(c: ContainerSummary, filter: Filter): boolean {
   if (filter === 'updates') return hasUpdate(c);
   if (filter === 'breaking') return hasUpdate(c) && c.update!.level === 'breaking';
   return true;
+}
+
+/** Dashboard grouping: by Compose stack (default) or by severity. */
+export type Grouping = 'stack' | 'severity';
+
+/** Checked successfully and nothing newer: shown toned down, and sorted after the rest. */
+export function isCurrent(c: ContainerSummary): boolean {
+  return !isIgnored(c) && hasResult(c.update) && c.update.class === 'none';
+}
+
+export interface StackGroup extends Stack {
+  /** Every container in it is up to date: the stack drops below the ones that need a look. */
+  current: boolean;
+}
+
+/**
+ * Stack mode: stacks with something to look at (an update, a failed or pending check) first,
+ * then fully up-to-date stacks; A→Z within each, ungrouped last. Pass non-ignored containers.
+ */
+export function orderStacks(containers: ContainerSummary[]): StackGroup[] {
+  const stacks = groupByStack(containers).map((s) => ({ ...s, current: s.containers.every(isCurrent) }));
+  return [...stacks.filter((s) => !s.current), ...stacks.filter((s) => s.current)];
+}
+
+export type SeverityKey = 'breaking' | 'attention' | 'updates' | 'failed' | 'unchecked' | 'current';
+
+export interface SeverityGroup {
+  key: SeverityKey;
+  heading: string;
+  icon: IconName;
+  containers: ContainerSummary[];
+}
+
+const SEVERITY_GROUPS: Omit<SeverityGroup, 'containers'>[] = [
+  { key: 'breaking', heading: 'Breaking', icon: 'octagon-alert' },
+  { key: 'attention', heading: 'Attention', icon: 'triangle-alert' },
+  { key: 'updates', heading: 'Updates', icon: 'git-compare' },
+  { key: 'failed', heading: 'Check failed', icon: 'circle-help' },
+  { key: 'unchecked', heading: 'Not checked yet', icon: 'loader' },
+  { key: 'current', heading: 'Up to date', icon: 'circle-check' },
+];
+
+/** Which severity section a (non-ignored) container belongs in. */
+export function severityOf(c: ContainerSummary): SeverityKey {
+  const u = c.update;
+  if (!hasResult(u)) return u?.error ? 'failed' : 'unchecked';
+  if (u.class === 'none') return 'current';
+  return u.level === 'breaking' ? 'breaking' : u.level === 'attention' ? 'attention' : 'updates';
+}
+
+/**
+ * Severity mode: Breaking, Attention, Updates, Check failed (never checked successfully),
+ * Not checked yet, Up to date; empty sections left out, containers A→Z. Ignored containers
+ * are skipped (they have their own section).
+ */
+export function groupBySeverity(containers: ContainerSummary[]): SeverityGroup[] {
+  const sorted = containers.filter((c) => !isIgnored(c)).sort((a, b) => a.name.localeCompare(b.name));
+  return SEVERITY_GROUPS.map((g) => ({ ...g, containers: sorted.filter((c) => severityOf(c) === g.key) })).filter(
+    (g) => g.containers.length > 0,
+  );
 }

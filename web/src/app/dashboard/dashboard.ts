@@ -9,24 +9,47 @@ import {
   TmCallout,
   TmCard,
   TmEmptyState,
+  TmIcon,
   TmSection,
   TmSegmented,
   TmSkeleton,
+  TmTideGauge,
+  TmTooltip,
   Toasts,
 } from '../ui';
 import { ContainerColumnBar, ContainerTable } from './container-table';
 import { ContainerTile } from './container-tile';
-import { checkFailed, ContainerList, countUpdates, Filter, groupByStack, hasUpdate, matchesFilter, splitIgnored } from './containers';
+import {
+  checkFailed,
+  ContainerList,
+  countUpdates,
+  Filter,
+  Grouping,
+  groupBySeverity,
+  groupByStack,
+  hasResult,
+  hasUpdate,
+  isCurrent,
+  matchesFilter,
+  orderStacks,
+  splitIgnored,
+} from './containers';
 
 export type ViewMode = 'list' | 'tiles';
 
 const VIEW_KEY = 'tidemark.view';
 const FILTER_KEY = 'tidemark.filter';
+const GROUP_KEY = 'tidemark.group';
 const POLL_MS = 1500;
 
 const VIEWS: SegmentOption<ViewMode>[] = [
   { value: 'list', label: 'List', icon: 'list' },
   { value: 'tiles', label: 'Tiles', icon: 'layout-grid' },
+];
+
+const GROUPS: SegmentOption<Grouping>[] = [
+  { value: 'stack', label: 'Stack', icon: 'layers' },
+  { value: 'severity', label: 'Severity', icon: 'arrow-down-wide-narrow' },
 ];
 
 @Component({
@@ -42,9 +65,12 @@ const VIEWS: SegmentOption<ViewMode>[] = [
     TmCallout,
     TmCard,
     TmEmptyState,
+    TmIcon,
     TmSection,
     TmSegmented,
     TmSkeleton,
+    TmTideGauge,
+    TmTooltip,
   ],
   templateUrl: './dashboard.html',
 })
@@ -57,22 +83,33 @@ export class Dashboard {
   protected readonly views = VIEWS;
   protected readonly view = signal<ViewMode>(readStored(VIEW_KEY, ['list', 'tiles'], 'list'));
   protected readonly filter = signal<Filter>(readStored(FILTER_KEY, ['all', 'updates', 'breaking'], 'all'));
+  protected readonly groups = GROUPS;
+  protected readonly group = signal<Grouping>(readStored(GROUP_KEY, ['stack', 'severity'], 'stack'));
   protected readonly starting = signal(false);
 
   // value() throws while the resource is in an error state, so always go through hasValue().
   private readonly data = computed(() => (this.list.hasValue() ? this.list.value() : undefined));
 
   private readonly containers = computed(() => this.data()?.containers ?? []);
+  protected readonly containerCount = computed(() => this.containers().length);
   /** Ignored containers leave their stack for the collapsed "Ignored" section at the bottom. */
   private readonly split = computed(() => splitIgnored(this.containers()));
-  /** All stacks (for the summary), and the ones shown under the current filter. */
+  /** All stacks (for the summary). */
   protected readonly stacks = computed(() => groupByStack(this.containers()));
-  protected readonly shownStacks = computed(() => {
+  /** Non-ignored containers under the current filter. */
+  private readonly shown = computed(() => {
     const filter = this.filter();
-    return groupByStack(this.split().active.filter((c) => matchesFilter(c, filter)));
+    return this.split().active.filter((c) => matchesFilter(c, filter));
   });
+  /** Stack mode: stacks that need a look first, fully up-to-date stacks after. */
+  protected readonly shownStacks = computed(() => orderStacks(this.shown()));
+  /** Severity mode: Breaking, Attention, Updates, Check failed, Not checked yet, Up to date. */
+  protected readonly shownSeverity = computed(() => groupBySeverity(this.shown()));
   /** Ignored containers have no update, so they only show under "All". */
   protected readonly shownIgnored = computed(() => (this.filter() === 'all' ? this.split().ignored : []));
+  protected readonly nothingShown = computed(() => this.shown().length === 0 && this.shownIgnored().length === 0);
+  /** Severity mode's "Up to date" section: collapsed by default, like "Ignored". */
+  protected readonly currentOpen = signal(false);
   protected readonly ignoredOpen = signal(false);
   protected readonly filters = computed<SegmentOption<Filter>[]>(() => {
     const updates = this.containers().filter(hasUpdate);
@@ -95,11 +132,40 @@ export class Dashboard {
     const stacks = this.stacks().filter((s) => s.name !== null).length;
     const parts = [plural(containers.length, 'container'), plural(stacks, 'stack')];
     if (running !== containers.length) parts.push(`${containers.length - running} not running`);
-    if (this.check()?.finishedAt && !this.checking()) {
-      const updates = countUpdates(containers);
-      parts.push(updates === 0 ? 'all up to date' : plural(updates, 'update'));
-    }
     return parts.join(' · ');
+  });
+
+  /** Hero figures. Ignored containers aren't checked, so they count nowhere. */
+  protected readonly stats = computed(() => {
+    const active = this.split().active;
+    const updates = active.filter(hasUpdate);
+    return {
+      breaking: updates.filter((c) => c.update!.level === 'breaking').length,
+      attention: updates.filter((c) => c.update!.level === 'attention').length,
+      updates: updates.length,
+      current: active.filter(isCurrent).length,
+      /** Containers with a result from a successful check. */
+      checked: active.filter((c) => hasResult(c.update)).length,
+    };
+  });
+
+  /** The hero's big line: progress while checking, otherwise the number of updates. */
+  protected readonly headline = computed(() => {
+    const check = this.check();
+    if (check?.running) return `Checking ${check.done}/${check.total}`;
+    const { updates, checked } = this.stats();
+    if (updates) return plural(updates, 'update');
+    if (checked) return 'All up to date';
+    return plural(this.containers().length, 'container');
+  });
+
+  /** Gauge: up to date ÷ checked (1 while nothing is checked, so it doesn't read as "far behind"). */
+  protected readonly gauge = computed(() => {
+    const { current, checked } = this.stats();
+    return {
+      level: checked ? current / checked : 1,
+      label: checked ? `${current} of ${plural(checked, 'checked container')} up to date` : 'No containers checked yet',
+    };
   });
 
   protected readonly errorMessage = computed(() => {
@@ -119,6 +185,7 @@ export class Dashboard {
   constructor() {
     effect(() => store(VIEW_KEY, this.view()));
     effect(() => store(FILTER_KEY, this.filter()));
+    effect(() => store(GROUP_KEY, this.group()));
 
     // While a check runs, poll so results appear as they come in. Depend on the status
     // object (new on every response), not the boolean, which stays `true` between polls.
