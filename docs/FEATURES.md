@@ -18,7 +18,7 @@ Status legend: **MVP** = first usable version · **Later** = on the roadmap, aft
 - **List and tile views**, remembered per browser.
 - **Group by stack or severity**, remembered per browser. By stack, stacks with something to do come first and fully up-to-date stacks go last. By severity, sections run Breaking, Attention, Updates, Check failed (never checked successfully), Not checked yet, Up to date (collapsed) and Ignored (collapsed), each row naming its stack. A kept result whose refresh failed counts by that result.
 - **Up-to-date containers stay quiet**: muted name, greyed icon and flat tiles, so the ones with an update stand out (their names are bold).
-- **Tide gauge**: the dashboard opens with a hero ("11 updates", the summary, the Breaking / Attention / Updates / Up to date figures and Check now) beside a gauge drawn like the logo: the line is the latest version, the water how many of the checked containers are up to date. Each detail page shows a small gauge with the number of releases you're behind. A very faint tide moves along the bottom of every page. All motion stops when the OS asks for reduced motion.
+- **Tide gauge**: the dashboard opens with a hero ("11 updates", the summary, the Breaking / Attention / Updates / Up to date figures and Check now) beside a gauge drawn like the logo: the line is the latest version, the water how many of the checked containers are up to date (ignored and not-yet-checked ones aren't counted: the summary line says how many are ignored, and hovering the count explains it). Each detail page shows a small gauge with the number of releases you're behind. A very faint tide moves along the bottom of every page. All motion stops when the OS asks for reduced motion.
 - **App icons** from [selfh.st/icons](https://selfh.st/icons/) (CC BY 4.0). Matched from the image name first (exact, alias like `postgres` → `postgresql`, trimmed like `woodpecker-agent` → `uptime-kuma`, unique prefix like `stirling` → `stirling-pdf`), then the image namespace (`vaultwarden/server` → `vaultwarden`), then the Compose service and container name; generic words (`server`, `app`, `agent`, …) are skipped. Override with the `tidemark.icon=<reference>` label (an unknown reference falls back to automatic matching), or turn it off for one container with `tidemark.icon=none`. No match gives a letter avatar. The icon index is refreshed daily. Near-black icons swap to their light variant on the dark theme, and near-white icons to their dark variant on the light theme.
 
 ## 2. Running version resolution — MVP
@@ -32,13 +32,15 @@ Many images run as `:latest` or a floating tag (`:1`, `:1.4`), so the tag alone 
 5. A partial version tag (`16-alpine`, `8.3`) as-is.
 6. Unknown → still report "new image" if the floating tag's digest moved.
 
+**Channel tags** (`nightly`, `dev`, `edge`, `beta`, … : a pre-release word as the whole tag) follow builds, not releases, and are usually ahead of the newest stable release. So they're never compared with it: the running version stays unknown, the only update is "new image" when the tag's digest moved ("new build available"), and there's no breaking verdict from stable release notes. The newest stable release is shown as a quiet line ("newest stable v2.36.0"); the detail page shows its notes for reference.
+
 The UI shows *how* the version was determined (tag / label / digest match / `*_VERSION` variable / unknown) so you know how much to trust it.
 
 ## 3. Latest version lookup — MVP
 
 - List tags from the registry (Docker Hub, GHCR, Quay, lscr.io, GitLab, generic OCI v2 registries), anonymously: only public images for now.
 - Keep only tags that parse as versions **and share the same variant** as the running tag: `1.4-alpine` is only compared with `x.y-alpine`, never with `x.y` or `x.y-debian`. The word tags `latest`, `stable`, `release`, `main` and `master` follow the plain (unsuffixed) family.
-- Ignore pre-releases (e.g. `-rc`, `-beta`, `-alpha`, `-dev`, `nightly`, `canary`, `edge`; full list in `internal/version`) unless enabled for that container (`prerelease` rule, §8). Pre-releases order by stage (`nightly`/`dev` < `alpha` < `beta` < `pre`/`preview` < `rc`), then by number (`rc.2` < `rc.10`).
+- Ignore pre-releases (e.g. `-rc`, `-beta`, `-alpha`, `-dev`, `nightly`, `canary`, `edge`; full list in `internal/version`) unless enabled for that container (`prerelease` rule, §8). Pre-releases order by stage (`nightly`/`dev` < `alpha` < `beta` < `pre`/`preview` < `rc`), then by number (`rc.2` < `rc.10`). A tag that is only such a word (`nightly`) is a channel, see §2.
 - Classify the update: **patch / minor / major / digest** (same tag with a new image, or a packaging-build bump like `-ls174` → `-ls175`). A missing component counts as 0 (`16` → `16.4` is minor); a pre-release → its release counts as patch.
 - Also report the newest version *within the current major*, so a "major available" container can still show "1.9.3 is a safe step". Not shown while a pin or `allow-major=false` is active (§8).
 - "New image, same tag" detection for floating tags needs the image's registry digest (`RepoDigests`, set when the image was pulled).

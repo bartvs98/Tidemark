@@ -39,6 +39,8 @@ export interface UpdateInfo {
   latest?: string;
   latestInMajor?: string;
   class: 'none' | 'patch' | 'minor' | 'major' | 'digest';
+  /** Pre-release channel tag (nightly, dev, edge): not compared with releases; `latest` is just the newest stable one. */
+  channel?: string;
   floating: boolean;
   newImage: boolean;
   /** When the last successful check was; absent if there never was one. */

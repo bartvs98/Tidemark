@@ -574,6 +574,25 @@ describe('Dashboard', () => {
       expect(text(el.querySelector('[data-testid="stat-current"]'))).toBe('Up to date 2');
       // 5 checked (ignored and never-checked containers don't count), 2 of them up to date.
       expect(el.querySelector('[data-testid="gauge"]')!.getAttribute('aria-label')).toBe('2 of 5 checked containers up to date');
+      // The summary explains why the gauge total (5) is lower than the container count (7).
+      expect(text(el.querySelector('[data-testid="summary"]'))).toContain('7 containers · 5 stacks · 1 ignored ·');
+      expect(text(el.querySelector('[data-testid="gauge-count"]'))).toBe('2/5 up to date');
+    });
+
+    it('shows a channel build (nightly) without comparing it to the newest stable release', async () => {
+      const list = body();
+      list.containers = [
+        container('mealie', 'streams', {
+          update: checked('digest', 'none', { running: undefined, source: 'unknown', channel: 'nightly', latest: 'v2.36.0', floating: true, newImage: true }),
+        }),
+      ];
+      const el = await render((req) => req.flush(list));
+      const row = text(el.querySelector('tm-container-version'));
+      expect(row).toContain('nightly');
+      expect(row).toContain('new build available');
+      expect(row).toContain('newest stable v2.36.0');
+      expect(row).not.toContain('?');
+      expect(row).not.toContain('running version unknown');
     });
 
     it('says "All up to date" when nothing is newer', async () => {

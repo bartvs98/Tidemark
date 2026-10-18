@@ -39,14 +39,21 @@ export function heldText(u: UpdateInfo, c: ContainerSummary): { text: string; va
       <!-- Ignored: not checked, so there's no version change to show. -->
       <span class="font-mono text-sm text-fg-muted">{{ container().image.tag || '—' }}</span>
     } @else if (update(); as u) {
-      @if (u.running) {
+      @if (u.channel) {
+        <!-- A channel build is usually ahead of the newest stable release, so no arrow between them. -->
+        <span class="font-mono text-sm" data-testid="channel">{{ u.channel }}</span>
+        <div class="truncate text-xs text-fg-subtle">{{ u.newImage ? 'new build available' : 'latest build' }}</div>
+        @if (u.latest) {
+          <div class="truncate text-xs text-fg-subtle">newest stable <span class="font-mono">{{ u.latest }}</span></div>
+        }
+      } @else if (u.running) {
         <tm-version-diff [from]="u.running" [to]="showLatest() ? u.latest : null" />
       } @else if (u.latest) {
         <span class="font-mono text-sm text-fg-muted">? <span class="text-fg-subtle">→</span> {{ u.latest }}</span>
       } @else {
         <span class="font-mono text-sm text-fg-muted">{{ container().image.tag || '—' }}</span>
       }
-      @if (hint()) {
+      @if (hint() && !u.channel) {
         <div class="truncate text-xs text-fg-subtle">{{ hint() }}</div>
       }
       @if (u.latestInMajor) {

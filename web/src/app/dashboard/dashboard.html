@@ -104,7 +104,9 @@
       <tm-tide-gauge size="hero" class="absolute inset-0 [--tm-gauge-line:56px] sm:[--tm-gauge-line:64px]" [level]="gauge().level" [label]="gauge().label" data-testid="gauge" />
       @if (stats().checked) {
         <p class="relative p-4 text-sm text-fg-muted tabular-nums sm:p-5" aria-hidden="true">
-          <span class="text-xl font-semibold text-fg">{{ stats().current }}/{{ stats().checked }}</span> up to date
+          <span class="cursor-default" [tmTooltip]="gauge().note" data-testid="gauge-count">
+            <span class="text-xl font-semibold text-fg">{{ stats().current }}/{{ stats().checked }}</span> up to date
+          </span>
         </p>
       }
     }

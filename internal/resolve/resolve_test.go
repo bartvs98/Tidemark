@@ -338,3 +338,14 @@ func TestLocalDigestsFiltersRepository(t *testing.T) {
 		t.Errorf("got %v", got)
 	}
 }
+
+func TestChannel(t *testing.T) {
+	for tag, want := range map[string]string{
+		"nightly": "nightly", "Dev": "dev", "edge": "edge", "beta": "beta", "develop": "develop",
+		"latest": "", "stable": "", "main": "", "alpine": "", "16-alpine": "", "1.4.2": "", "v2.0.0-rc1": "", "": "",
+	} {
+		if got := Channel(tag); got != want {
+			t.Errorf("Channel(%q) = %q, want %q", tag, got, want)
+		}
+	}
+}

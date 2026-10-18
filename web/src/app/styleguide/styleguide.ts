@@ -217,6 +217,12 @@ export class Styleguide {
       }),
     },
     {
+      label: 'Channel build (nightly), new build available',
+      container: sample('mealie', 'ghcr.io/mealie-recipes/mealie:nightly', {
+        update: { ...UPDATE, source: 'unknown', channel: 'nightly', latest: 'v2.36.0', class: 'digest', newImage: true },
+      }),
+    },
+    {
       label: 'Refresh failed, earlier result kept',
       container: sample('immich-server', 'ghcr.io/immich-app/immich-server:v1.135.3', {
         update: { ...UPDATE, running: 'v1.135.3', latest: 'v2.0.1', class: 'major', level: 'breaking', reasons: ['Major version: v1.135.3 → v2.0.1'], ...REFRESH_FAILED },

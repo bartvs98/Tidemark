@@ -132,6 +132,8 @@ export class Dashboard {
     const stacks = this.stacks().filter((s) => s.name !== null).length;
     const parts = [plural(containers.length, 'container'), plural(stacks, 'stack')];
     if (running !== containers.length) parts.push(`${containers.length - running} not running`);
+    const ignored = this.split().ignored.length;
+    if (ignored) parts.push(`${ignored} ignored`);
     return parts.join(' · ');
   });
 
@@ -165,6 +167,8 @@ export class Dashboard {
     return {
       level: checked ? current / checked : 1,
       label: checked ? `${current} of ${plural(checked, 'checked container')} up to date` : 'No containers checked yet',
+      /** Why the total can be lower than the container count. */
+      note: 'Counts checked containers only: ignored ones and ones not checked yet are left out.',
     };
   });
 

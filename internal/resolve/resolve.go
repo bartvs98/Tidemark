@@ -208,6 +208,24 @@ func Resolve(ctx context.Context, reg Registry, c docker.Container, opts Options
 	return r, nil
 }
 
+// Channel returns the tag, lower-cased, when it follows a pre-release channel
+// (nightly, dev, edge, beta, …) rather than releases; empty otherwise. Such a build is
+// usually ahead of the newest stable release, so the two aren't compared: only a new
+// build under the same tag (NewImage) counts as an update.
+func Channel(tag string) string {
+	if tag == "" {
+		return ""
+	}
+	if _, ok := version.Parse(tag); ok {
+		return ""
+	}
+	word := strings.ToLower(tag)
+	if plainTags[word] || wordFamily(word).Stable() {
+		return ""
+	}
+	return word
+}
+
 // wordFamily maps a non-version tag to the family it follows: "alpine" → variant alpine,
 // "latest" → plain stable releases, "nightly" → a pre-release family (never matched).
 func wordFamily(word string) version.Version {

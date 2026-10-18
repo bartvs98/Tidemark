@@ -143,6 +143,11 @@
                 <span class="font-mono">{{ cl.repo.name }}</span> has no releases and no CHANGELOG.md.
                 Check the <a [href]="cl.repo.url" target="_blank" rel="noopener noreferrer">repository</a> for news.
               </tm-callout>
+            } @else if (update()?.channel && cl.releases.length) {
+              <tm-callout data-testid="channel-callout">
+                <span class="font-mono">{{ update()?.channel }}</span> builds aren't releases, so there are no notes for them.
+                This is the newest stable release, for reference.
+              </tm-callout>
             } @else if (!update()?.running && cl.releases.length) {
               <tm-callout>The running version is unknown, so this is just the latest release.</tm-callout>
             }

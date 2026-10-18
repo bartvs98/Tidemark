@@ -127,7 +127,7 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 	// The notes may be fresher than what the list endpoint saw, so assess again.
 	if u := out.Container.Update; u != nil && u.CheckedAt != nil { // a result, possibly kept after a failed refresh
 		res := assess(u.Class, running, latest, ch)
-		if u.Class != string(version.None) {
+		if u.Class != string(version.None) && u.Channel == "" { // a channel build isn't judged by stable notes
 			u.Level, u.Reasons = res.Level, res.Reasons
 		}
 		for i, rel := range res.Releases {

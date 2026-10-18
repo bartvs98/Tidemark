@@ -47,6 +47,7 @@ type updateJSON struct {
 	Latest        string     `json:"latest,omitempty"`        // newest release in the same family
 	LatestInMajor string     `json:"latestInMajor,omitempty"` // newest within the running major, for major jumps
 	Class         string     `json:"class"`                   // none | patch | minor | major | digest
+	Channel       string     `json:"channel,omitempty"`       // pre-release channel tag (nightly, dev, edge): Latest is only the newest stable release
 	Floating      bool       `json:"floating"`
 	NewImage      bool       `json:"newImage"`
 	Held          string     `json:"held,omitempty"`   // newest version a pin or major hold keeps back
@@ -224,6 +225,7 @@ func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref
 		Latest:        r.Latest,
 		LatestInMajor: r.LatestInMajor,
 		Class:         string(cmp.Or(r.Class, version.None)),
+		Channel:       resolve.Channel(ref.Tag),
 		Floating:      r.Floating,
 		NewImage:      r.NewImage,
 		Held:          r.Held,
@@ -232,7 +234,8 @@ func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref
 		CheckedAt:     timeOrNil(e.CheckedAt),
 		FailedAt:      timeOrNil(e.FailedAt),
 	}
-	if !e.CheckedAt.IsZero() && r.Class != version.None {
+	// A channel build isn't compared with stable releases, so their notes say nothing about it.
+	if !e.CheckedAt.IsZero() && r.Class != version.None && u.Channel == "" {
 		s.assessUpdate(ctx, u, c, ref, rs)
 	}
 	return u

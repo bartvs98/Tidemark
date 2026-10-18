@@ -175,3 +175,42 @@ func TestIgnoredDetailMakesNoOutsideCalls(t *testing.T) {
 		t.Errorf("container = %v", c)
 	}
 }
+
+// channelRegistry: a nightly tag that moved on, next to a stable major jump.
+type channelRegistry struct{ majorRegistry }
+
+func (channelRegistry) Digest(_ context.Context, _ imageref.Ref, tag string) (string, error) {
+	if tag == "nightly" {
+		return "sha256:new", nil
+	}
+	return "", errors.New("unused")
+}
+
+// A channel build (nightly) is never compared with stable releases: no verdict from
+// their notes, only "new image" when the tag moved.
+func TestChannelUpdateJSON(t *testing.T) {
+	src := staticSource{{ID: "n", Name: "n", ImageRef: "team/app:nightly",
+		Image: docker.Image{ID: "sha256:1", RepoDigests: []string{"team/app@sha256:old"}}}}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	db, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	checks := check.New(src, channelRegistry{}, db, log)
+	h := New(Deps{Version: "t", Log: log, Source: src, Checks: checks}).Handler(fstest.MapFS{})
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/checks", nil))
+	for deadline := time.Now().Add(5 * time.Second); checks.Status().Running && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	var body containerList
+	if err := json.Unmarshal(do(t, h, "/api/containers").Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	u := body.Containers[0].Update
+	if u == nil || u.Channel != "nightly" || u.Running != "" || u.Latest != "2.0.0" || u.Class != "digest" ||
+		!u.NewImage || u.Level != 0 || len(u.Reasons) != 0 {
+		t.Errorf("update = %+v", u)
+	}
+}
