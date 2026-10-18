@@ -28,13 +28,15 @@ Run locally without Docker, against a snapshot of a real host (PowerShell):
 
 ```powershell
 $env:TIDEMARK_DOCKER_SNAPSHOT = "snapshots/home.json"; go run ./cmd/tidemark   # :8080
-cd web; npm start                                                                # :4200, proxies /api
+cd web; npm start                                                              # :4200, proxies /api
 ```
 
 ## How we work (agreed with the owner)
 
 - **One roadmap step at a time.** Briefly state the plan, build it, verify it, then summarise. Ask only for decisions that are genuinely the owner's.
 - **Orchestrate steps over subagents** (The owner's default since step 6). Read enough to split the step, ask the owner the product decisions, then fix the contracts (Go signatures, JSON shapes) so parts run in parallel. Brief each agent need-to-know: its own files only, the contract, the relevant gotchas, no commits, no verify runs, and "stop and ask if the contract must change". Answer their questions when they fall within agreed decisions. The main session integrates: re-runs all tests, verifies visually, updates docs, commits.
+  - **Small tasks stay inline.** If a task (or part) is quicker to do than to brief, e.g. a few-line fix, one file, or no parallelism to gain, the main session does it itself.
+  - **Model per subagent** (set `model` on each spawn): **Opus 5.5** for contract-heavy or tricky parts (Go pipeline, complex Angular state); **Sonnet 5.5** for well-specified parts that follow existing patterns (new `ui/` pieces, tests, styleguide entries) and for the read-only docs-sync check.
 - **Each step ends with:** all tests green, docs updated (ROADMAP checkbox + a ✅ verification note, plus FEATURES / ARCHITECTURE / README config tables as relevant) and a docs-sync check (next rule), then commit and push.
 - **Docs stay in sync, every step and every fix.** Docs describe what's built, not what was planned. Before committing, a read-only agent compares the diff against README, FEATURES, ARCHITECTURE (pipeline, data model, API, config, frontend), DESIGN-SYSTEM (+ `/styleguide`) and BRAND and lists what's now wrong or missing. Fix that in the same commit. Plans for later steps stay, marked "later". (A full audit in Oct 2026 found ~60 drifts, including a documented env var that was never built.)
 - **Commit and push** to `origin main` (github.com/bartvs98/Tidemark, private). Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Small fixes between steps get their own commit.
@@ -54,7 +56,7 @@ To verify rules or other label/config-driven UI without touching the owner's sna
 - **GitHub quota:** without `TIDEMARK_GITHUB_TOKEN`, GitHub allows 60 API requests/hour per IP. Each verify run starts with an empty data dir and prefetches ~11 repos, so a few runs an hour are fine; don't loop it. When the quota runs low, reuse notes with `--data .verify/<earlier run>/data` (pick a run whose `repos` table has no rate-limit errors; `--serve` reuses `.verify/serve` and overwrites it). Without notes, levels only reflect version jumps.
 - **Bundles:** `ui/markdown` (marked + DOMPurify) is deliberately not in the `ui` barrel; import it directly, from lazy routes only.
 - **CSS build (lightningcss):** a declaration using `color-mix(... var())` gets an `@supports` copy containing only that declaration. With a `background` shorthand that copy resets `background-size`/`-position` (this froze the skeleton shimmer for a whole step). Use longhands (`background-image`).
-- **Angular:** `httpResource.value()` throws in the error state, so go through `hasValue()`. Effects only re-run when a read signal *changes*: depend on objects that change per response, not on a boolean that stays `true` (this broke polling once; there's a regression test).
+- **Angular:** `httpResource.value()` throws in the error state, so go through `hasValue()`. Effects only re-run when a read signal _changes_: depend on objects that change per response, not on a boolean that stays `true` (this broke polling once; there's a regression test).
 - **Privacy rules (don't break):** never call Docker's `GET /containers/{id}/json` (it exposes env vars; a test enforces this). From image env only `*_VERSION` variables are read. `snapshots/` is git-ignored and must never be committed; don't print non-essential labels from it.
 - **Versions:** image labels can be inherited from base images (`mongo:8.3` says `24.04`), so a label only counts if the registry has that exact tag. Official images are rebuilt under the same tags, so old digests stop matching (hence the `*_VERSION` fallback).
 - Docker isn't installed on the dev machine, so the Docker image build is unverified until step 7 (deploy to the home server). The snapshot may be stale: the owner can re-run `scripts/snapshot.sh` on the server.
