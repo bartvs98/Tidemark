@@ -1,11 +1,9 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
-import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import {
   SegmentOption,
-  TmAppIcon,
   TmBadge,
   TmButton,
   TmCallout,
@@ -16,23 +14,15 @@ import {
   TmSkeleton,
   Toasts,
 } from '../ui';
+import { ContainerColumnBar, ContainerTable } from './container-table';
 import { ContainerTile } from './container-tile';
-import { ContainerList, countUpdates, Filter, groupByStack, hasUpdate, imageName, matchesFilter, splitIgnored } from './containers';
-import { ContainerRuleProblems, ContainerUpdate, ContainerVersion } from './update-info';
+import { checkFailed, ContainerList, countUpdates, Filter, groupByStack, hasUpdate, matchesFilter, splitIgnored } from './containers';
 
 export type ViewMode = 'list' | 'tiles';
 
 const VIEW_KEY = 'tidemark.view';
 const FILTER_KEY = 'tidemark.filter';
 const POLL_MS = 1500;
-
-/** List columns. The pinned header bar and every stack's table share these widths. */
-const COLUMNS = [
-  { label: 'Container', width: 'w-[25%]' },
-  { label: 'Image', width: 'w-[28%]' },
-  { label: 'Version', width: 'w-[26%]' },
-  { label: 'Update', width: 'w-[21%]' },
-];
 
 const VIEWS: SegmentOption<ViewMode>[] = [
   { value: 'list', label: 'List', icon: 'list' },
@@ -44,12 +34,9 @@ const VIEWS: SegmentOption<ViewMode>[] = [
   imports: [
     DatePipe,
     NgTemplateOutlet,
-    RouterLink,
-    ContainerRuleProblems,
+    ContainerColumnBar,
+    ContainerTable,
     ContainerTile,
-    ContainerUpdate,
-    ContainerVersion,
-    TmAppIcon,
     TmBadge,
     TmButton,
     TmCallout,
@@ -68,7 +55,6 @@ export class Dashboard {
   protected readonly list = httpResource<ContainerList>(() => '/api/containers');
 
   protected readonly views = VIEWS;
-  protected readonly columns = COLUMNS;
   protected readonly view = signal<ViewMode>(readStored(VIEW_KEY, ['list', 'tiles'], 'list'));
   protected readonly filter = signal<Filter>(readStored(FILTER_KEY, ['all', 'updates', 'breaking'], 'all'));
   protected readonly starting = signal(false);
@@ -100,6 +86,8 @@ export class Dashboard {
   protected readonly check = computed(() => this.data()?.check);
   protected readonly checking = computed(() => this.check()?.running ?? false);
   protected readonly rulesError = computed(() => this.check()?.rulesError);
+  /** Containers whose latest check attempt failed (an earlier result may still be shown). */
+  protected readonly failedCount = computed(() => this.containers().filter(checkFailed).length);
 
   protected readonly summary = computed(() => {
     const containers = this.containers();
@@ -121,8 +109,6 @@ export class Dashboard {
     }
     return err ? String(err) : '';
   });
-
-  protected readonly imageName = imageName;
 
   /** Times today show as "15:21"; other days add the date. */
   protected sameDay(iso: string): boolean {

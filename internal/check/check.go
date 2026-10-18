@@ -31,13 +31,22 @@ const (
 	TriggerManual   = "manual"
 )
 
+// Entry is a container's latest result. A failed check doesn't replace a good result:
+// Result and CheckedAt stay those of the last successful check, and Err and FailedAt
+// say that refreshing it failed. CheckedAt is zero if no check ever succeeded.
 type Entry struct {
 	ImageRef  string // what was checked: a result only applies while the
 	ImageID   string // container still runs this exact image
 	Rules     string // with these rules (fingerprint, "" for none)
 	Result    resolve.Result
-	Err       string
-	CheckedAt time.Time
+	Err       string    // the last attempt failed with this, "" if it succeeded
+	CheckedAt time.Time // last successful check
+	FailedAt  time.Time // the failed attempt Err is from
+}
+
+// valid says whether the entry applies to a container running image ref/id with rules fp.
+func (e Entry) valid(ref, id, fp string) bool {
+	return e.ImageRef == ref && e.ImageID == id && e.Rules == fp
 }
 
 type Status struct {
@@ -206,7 +215,7 @@ func (s *Service) Result(c docker.Container) (Entry, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	e, ok := s.results[c.Name]
-	if !ok || rs.Ignore || e.ImageRef != c.ImageRef || e.ImageID != c.Image.ID || e.Rules != rs.Fingerprint() {
+	if !ok || rs.Ignore || !e.valid(c.ImageRef, c.Image.ID, rs.Fingerprint()) {
 		return Entry{}, false
 	}
 	return e, true
@@ -214,6 +223,8 @@ func (s *Service) Result(c docker.Container) (Entry, bool) {
 
 // Unchecked counts the containers that should have a result but have no valid one:
 // never checked, or checked against another image or other rules. Ignored ones don't count.
+// A failed check counts as checked, whether or not it kept an earlier result, so a
+// failing refresh doesn't force a check at every startup.
 func (s *Service) Unchecked(ctx context.Context) (int, error) {
 	list, err := s.source.Containers(ctx)
 	if err != nil {
@@ -321,19 +332,20 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 }
 
 func (s *Service) checkOne(ctx context.Context, c docker.Container, rs rules.Rules) Entry {
-	entry := Entry{ImageRef: c.ImageRef, ImageID: c.Image.ID, Rules: rs.Fingerprint(), CheckedAt: time.Now()}
+	entry := Entry{ImageRef: c.ImageRef, ImageID: c.Image.ID, Rules: rs.Fingerprint()}
 	if c.Image.Missing {
-		entry.Err = "the container's image is no longer on this host"
+		entry.Err, entry.FailedAt = "the container's image is no longer on this host", time.Now()
 		return entry
 	}
 	ctx, cancel := context.WithTimeout(ctx, containerTimeout)
 	defer cancel()
 	r, err := resolve.Resolve(ctx, s.reg, c, resolveOptions(rs))
 	if err != nil {
-		entry.Err = err.Error()
+		entry.Err, entry.FailedAt = err.Error(), time.Now()
 		s.log.Debug("check: container failed", "container", c.Name, "err", err)
+		return entry
 	}
-	entry.Result = r
+	entry.Result, entry.CheckedAt = r, time.Now()
 	return entry
 }
 
@@ -343,6 +355,12 @@ func resolveOptions(rs rules.Rules) resolve.Options {
 
 func (s *Service) save(ctx context.Context, name string, e Entry, runID int64) {
 	s.mu.Lock()
+	// A failure (e.g. no network yet after waking from sleep) keeps the last good result
+	// for this image and rules, and only records that refreshing it failed.
+	if prev, ok := s.results[name]; ok && e.Err != "" && !prev.CheckedAt.IsZero() && prev.valid(e.ImageRef, e.ImageID, e.Rules) {
+		prev.Err, prev.FailedAt = e.Err, e.FailedAt
+		e = prev
+	}
 	s.results[name] = e
 	s.mu.Unlock()
 	if err := s.store.SaveResult(ctx, toRow(name, e, runID)); err != nil {
@@ -372,13 +390,13 @@ func toRow(name string, e Entry, runID int64) store.Result {
 		Running: r.Running, Source: string(r.Source), Latest: r.Latest, LatestInMajor: r.LatestInMajor,
 		Class: string(r.Class), Floating: r.Floating, NewImage: r.NewImage,
 		Held: r.Held, HeldBy: r.HeldBy, Rules: e.Rules,
-		Error: e.Err, CheckedAt: e.CheckedAt, RunID: runID,
+		Error: e.Err, CheckedAt: e.CheckedAt, FailedAt: e.FailedAt, RunID: runID,
 	}
 }
 
 func fromRow(r store.Result) Entry {
 	return Entry{
-		ImageRef: r.ImageRef, ImageID: r.ImageID, Rules: r.Rules, Err: r.Error, CheckedAt: r.CheckedAt,
+		ImageRef: r.ImageRef, ImageID: r.ImageID, Rules: r.Rules, Err: r.Error, CheckedAt: r.CheckedAt, FailedAt: r.FailedAt,
 		Result: resolve.Result{
 			Running: r.Running, Source: resolve.Source(r.Source), Latest: r.Latest, LatestInMajor: r.LatestInMajor,
 			Class: version.Class(r.Class), Floating: r.Floating, NewImage: r.NewImage, Held: r.Held, HeldBy: r.HeldBy,

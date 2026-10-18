@@ -1,6 +1,7 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, inject, input, LOCALE_ID } from '@angular/core';
+import { formatDate } from '@angular/common';
 import { TmBadge, TmIcon, TmLevel, TmSkeleton, TmUpdateClass, TmVersionDiff, UpdateClass } from '../ui';
-import { ContainerSummary, isIgnored, ruleOrigin, UpdateInfo, UpdateSource } from './containers';
+import { ContainerSummary, hasResult, isIgnored, refreshFailed, ruleOrigin, UpdateInfo, UpdateSource } from './containers';
 
 const SOURCE_HINT: Record<UpdateSource, string> = {
   tag: '',
@@ -61,7 +62,7 @@ export function heldText(u: UpdateInfo, c: ContainerSummary): { text: string; va
           }
         </div>
       }
-    } @else if (checking()) {
+    } @else if (checking() && !failed()) {
       <tm-skeleton width="7rem" height="0.875rem" />
     } @else {
       <span class="font-mono text-sm text-fg-muted">{{ container().image.tag || '—' }}</span>
@@ -74,7 +75,13 @@ export class ContainerVersion {
   readonly checking = input(false);
 
   protected readonly ignored = computed(() => isIgnored(this.container()));
-  protected readonly update = computed(() => this.container().update);
+  /** The last successful result; a failed attempt without one shows just the tag. */
+  protected readonly update = computed(() => {
+    const u = this.container().update;
+    return hasResult(u) ? u : undefined;
+  });
+  /** The only attempt so far failed: no skeleton, "check failed" next to it says why. */
+  protected readonly failed = computed(() => !!this.container().update?.error);
   protected readonly held = computed(() => {
     const u = this.update();
     return u?.held ? heldText(u, this.container()) : undefined;
@@ -85,31 +92,67 @@ export class ContainerVersion {
   });
   protected readonly hint = computed(() => {
     const u = this.update();
-    return u && !u.error ? SOURCE_HINT[u.source] : '';
+    return u ? SOURCE_HINT[u.source] : '';
+  });
+}
+
+/** When a date-time is today, just the time ("07:02"); otherwise with the date ("17 Oct, 23:00"). */
+export function shortTime(iso: string, locale: string): string {
+  const today = new Date(iso).toDateString() === new Date().toDateString();
+  return formatDate(iso, today ? 'HH:mm' : 'd MMM, HH:mm', locale);
+}
+
+/**
+ * Quiet note that the result shown is from an earlier check, because the latest refresh failed.
+ * Not a risk, so no colour and no badge: icon + "refresh failed", details on hover.
+ * Renders nothing unless there's a kept result and an error.
+ */
+@Component({
+  selector: 'tm-refresh-failed',
+  imports: [TmIcon],
+  template: `
+    @if (title(); as t) {
+      <!-- relative z-10: hoverable above a stretched link, so the error shows -->
+      <span class="relative z-10 inline-flex items-center gap-1 text-xs whitespace-nowrap text-fg-muted" [attr.title]="t" data-testid="refresh-failed">
+        <tm-icon name="history" [size]="12" />refresh failed
+      </span>
+    }
+  `,
+  host: { class: 'inline-flex empty:hidden' },
+})
+export class ContainerRefreshFailed {
+  readonly container = input.required<ContainerSummary>();
+  private readonly locale = inject(LOCALE_ID);
+
+  protected readonly title = computed(() => {
+    const u = this.container().update;
+    if (!u || !hasResult(u) || !refreshFailed(u)) return null;
+    const failed = u.failedAt ? ` at ${shortTime(u.failedAt, this.locale)}` : '';
+    return `Showing the result from ${shortTime(u.checkedAt, this.locale)}. The refresh${failed} failed:\n${u.error}`;
   });
 }
 
 /** The update class and risk level badges, "check failed", or a placeholder while checking. */
 @Component({
   selector: 'tm-container-update',
-  imports: [TmBadge, TmIcon, TmLevel, TmSkeleton, TmUpdateClass],
+  imports: [ContainerRefreshFailed, TmBadge, TmIcon, TmLevel, TmSkeleton, TmUpdateClass],
   template: `
     @if (ignored()) {
       <!-- relative z-10: hoverable above a stretched link, so the origin shows -->
       <span class="relative z-10 inline-flex items-center gap-1 text-sm text-fg-subtle" [attr.title]="ignoredTitle()" data-testid="ignored">
         <tm-icon name="eye-off" [size]="14" />Ignored
       </span>
-    } @else if (update(); as u) {
-      @if (u.error) {
-        <!-- relative z-10: stays hoverable above the row's stretched link, so the reason shows -->
-        <tm-badge tone="unknown" icon="circle-help" [attr.title]="u.error" class="relative z-10">check failed</tm-badge>
-      } @else {
-        <tm-update-class [kind]="kind()" />
-        @if (kind() !== 'none') {
-          <!-- relative z-10: hoverable above a stretched link, so the reasons tooltip shows -->
-          <tm-level [level]="u.level" [attr.title]="reasons()" class="relative z-10" data-testid="level" />
-        }
+    } @else if (result(); as u) {
+      <tm-update-class [kind]="kind()" />
+      @if (kind() !== 'none') {
+        <!-- relative z-10: hoverable above a stretched link, so the reasons tooltip shows -->
+        <tm-level [level]="u.level" [attr.title]="reasons()" class="relative z-10" data-testid="level" />
       }
+      <!-- The result above is kept from an earlier check; this says the latest refresh failed. -->
+      <tm-refresh-failed [container]="container()" />
+    } @else if (error(); as err) {
+      <!-- No result at all yet. relative z-10: stays hoverable above the row's stretched link, so the reason shows -->
+      <tm-badge tone="unknown" icon="circle-help" [attr.title]="err" class="relative z-10" data-testid="check-failed">check failed</tm-badge>
     } @else if (checking()) {
       <tm-skeleton width="4.5rem" height="1.25rem" />
     }
@@ -127,9 +170,14 @@ export class ContainerUpdate {
     const by = origin?.label ? ` by the ${origin.label} label` : origin ? ' in the config file' : '';
     return `Not checked for updates: ignored${by}.`;
   });
-  protected readonly update = computed(() => this.container().update);
-  protected readonly kind = computed(() => (this.update()?.class ?? 'none') as UpdateClass);
-  protected readonly reasons = computed(() => this.update()?.reasons?.join('\n') || null);
+  /** The last successful result (kept when a later refresh failed). */
+  protected readonly result = computed(() => {
+    const u = this.container().update;
+    return hasResult(u) ? u : undefined;
+  });
+  protected readonly error = computed(() => this.container().update?.error);
+  protected readonly kind = computed(() => (this.result()?.class ?? 'none') as UpdateClass);
+  protected readonly reasons = computed(() => this.result()?.reasons?.join('\n') || null);
 }
 
 /**

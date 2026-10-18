@@ -41,7 +41,7 @@
   }
 
   <!-- ── Why it's flagged (internal/analysis) ───────────── -->
-  @if (update(); as u) {
+  @if (result(); as u) {
     @if (u.level !== 'none' && u.reasons?.length) {
       <div class="mb-6" data-testid="reasons">
         <tm-callout [tone]="u.level" [heading]="u.level === 'breaking' ? 'Read before updating' : 'Worth a look before updating'">
@@ -169,9 +169,9 @@
                 <tm-card>
                   <tm-empty-state
                     icon="circle-check"
-                    [heading]="update()?.class === 'none' ? 'Up to date' : 'No release notes in this range'"
+                    [heading]="result()?.class === 'none' ? 'Up to date' : 'No release notes in this range'"
                     [description]="
-                      update()?.class === 'none'
+                      result()?.class === 'none'
                         ? 'Nothing new since ' + (update()?.running ?? 'your version') + '.'
                         : 'The repository has no notes between your version and the latest.'
                     "
@@ -247,7 +247,7 @@
             <dt class="text-fg-muted">Running version</dt>
             <dd>
               <span class="font-mono text-sm">{{ update()?.running || 'unknown' }}</span>
-              @if (update(); as u) {
+              @if (result(); as u) {
                 <span class="text-sm text-fg-subtle"> · from {{ sourceLabel[u.source] }}</span>
               }
             </dd>
@@ -265,9 +265,25 @@
               }
             </dd>
 
-            @if (update()?.checkedAt; as at) {
+            @if (update(); as u) {
               <dt class="text-fg-muted">Checked</dt>
-              <dd class="text-sm">{{ at | date: 'medium' }}</dd>
+              <dd class="text-sm" data-testid="checked">
+                @if (u.checkedAt) {
+                  {{ u.checkedAt | date: 'medium' }}
+                } @else {
+                  <span class="text-fg-muted">No successful check yet</span>
+                }
+                @if (u.error) {
+                  <!-- The latest attempt failed; the result above (if any) is from the last check that worked. -->
+                  <div class="mt-1 flex items-start gap-1.5 text-fg-muted" data-testid="check-attempt-failed">
+                    <tm-icon [name]="u.checkedAt ? 'history' : 'circle-help'" [size]="14" class="mt-0.5 shrink-0" />
+                    <div class="min-w-0">
+                      {{ u.checkedAt ? 'Refresh failed' : 'Check failed' }}{{ u.failedAt ? ' ' + (u.failedAt | date: 'medium') : '' }}
+                      <span class="block font-mono text-xs break-all">{{ u.error }}</span>
+                    </div>
+                  </div>
+                }
+              </dd>
             }
 
             @if (changelog(); as cl) {

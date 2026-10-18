@@ -162,6 +162,55 @@ describe('ContainerDetail', () => {
     expect(text(el2.querySelector('[data-testid="ignored-notice"]'))).toContain('Set in the config file.');
   });
 
+  describe('Checked row', () => {
+    const text = (e: Element | null | undefined) => e?.textContent?.replace(/\s+/g, ' ').trim();
+    async function details(d: ContainerDetailData) {
+      const el = await render('homeassistant', (req) => req.flush(d));
+      (el.querySelector('[ngTab][value="details"]') as HTMLElement | null)?.click();
+      await TestBed.inject(ApplicationRef).whenStable();
+      return el;
+    }
+
+    it('shows the last check, and no failure when it worked', async () => {
+      const el = await details(detail());
+      expect(el.querySelector('[data-testid="checked"]')).not.toBeNull();
+      expect(el.querySelector('[data-testid="check-attempt-failed"]')).toBeNull();
+      expect(el.querySelector('header [data-testid="refresh-failed"]')).toBeNull();
+    });
+
+    it('keeps the last result and adds the failed refresh', async () => {
+      const d = detail();
+      d.container.update = { ...d.container.update!, error: 'dial tcp: i/o timeout', failedAt: '2026-10-17T07:02:00Z' };
+      const el = await details(d);
+
+      // Header: the result stays, with the quiet note.
+      expect(text(el.querySelector('header tm-container-version'))?.replace(/ /g, '')).toContain('2026.9.0→2026.10.1');
+      expect(text(el.querySelector('header [data-testid="level"]'))).toBe('Breaking');
+      expect(text(el.querySelector('header [data-testid="refresh-failed"]'))).toBe('refresh failed');
+      expect(el.querySelector('header [data-testid="check-failed"]')).toBeNull();
+      expect(el.querySelector('[data-testid="reasons"]')).not.toBeNull();
+
+      const checked = el.querySelector('[data-testid="checked"]')!;
+      expect(text(checked)).toMatch(/^Oct 16, 2026/); // the last successful check
+      const failed = checked.querySelector('[data-testid="check-attempt-failed"]')!;
+      expect(text(failed)).toContain('Refresh failed Oct 17, 2026');
+      expect(failed.querySelector('.font-mono')?.textContent).toBe('dial tcp: i/o timeout');
+    });
+
+    it('says there was no successful check when the only attempt failed', async () => {
+      const d = detail();
+      d.container.update = { source: 'unknown', class: 'none', floating: false, newImage: false, level: 'none', error: 'not found, or private', failedAt: '2026-10-17T07:02:00Z' };
+      const el = await details(d);
+
+      expect(text(el.querySelector('header [data-testid="check-failed"]'))).toBe('check failed');
+      expect(el.querySelector('header [data-testid="refresh-failed"]')).toBeNull();
+      const checked = el.querySelector('[data-testid="checked"]')!;
+      expect(text(checked)).toContain('No successful check yet');
+      expect(text(checked.querySelector('[data-testid="check-attempt-failed"]'))).toContain('Check failed Oct 17, 2026');
+      expect(text(el.querySelector('[data-testid="details"]'))).not.toContain('from unknown');
+    });
+  });
+
   it('shows a not-found state for unknown containers', async () => {
     const el = await render('ghost', (req) => req.flush({ error: 'no container named ghost' }, { status: 404, statusText: 'Not Found' }));
     expect(el.textContent).toContain('No container named ghost');

@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { Dashboard } from './dashboard';
-import { ContainerList, ContainerSummary, groupByStack, hasUpdate, imageName, splitIgnored, UpdateInfo } from './containers';
+import { ContainerList, ContainerSummary, groupByStack, hasResult, hasUpdate, imageName, refreshFailed, splitIgnored, UpdateInfo } from './containers';
 
 function container(name: string, stack?: string, extra: Partial<ContainerSummary> = {}): ContainerSummary {
   return {
@@ -55,7 +55,7 @@ describe('splitIgnored', () => {
   });
 
   it('never counts an ignored container as an update', () => {
-    const u: UpdateInfo = { running: '1', source: 'tag', latest: '2', class: 'major', floating: false, newImage: false, checkedAt: '', level: 'breaking' };
+    const u: UpdateInfo = { running: '1', source: 'tag', latest: '2', class: 'major', floating: false, newImage: false, checkedAt: '2026-10-16T13:00:00Z', level: 'breaking' };
     expect(hasUpdate(container('a', undefined, { update: u }))).toBe(true);
     expect(hasUpdate(container('a', undefined, { update: u, rules: { ignore: true, from: {} } }))).toBe(false);
   });
@@ -150,13 +150,13 @@ describe('Dashboard', () => {
       check: { running: false, done: 3, total: 3, finishedAt: '2026-10-16T13:00:00Z', nextRunAt: '2026-10-16T18:00:00Z' },
       containers: [
         container('jellyfin', 'media', {
-          update: { running: '10.9.11', source: 'label', latest: '10.10.7', class: 'minor', floating: true, newImage: true, checkedAt: '', level: 'none' },
+          update: { running: '10.9.11', source: 'label', latest: '10.10.7', class: 'minor', floating: true, newImage: true, checkedAt: '2026-10-16T13:00:00Z', level: 'none' },
         }),
         container('sonarr', 'media', {
-          update: { running: '4.0.14', source: 'tag', latest: '4.0.14', class: 'none', floating: false, newImage: false, checkedAt: '', level: 'none' },
+          update: { running: '4.0.14', source: 'tag', latest: '4.0.14', class: 'none', floating: false, newImage: false, checkedAt: '2026-10-16T13:00:00Z', level: 'none' },
         }),
         container('private', 'media', {
-          update: { source: 'unknown', class: 'none', floating: false, newImage: false, error: 'not found, or private', checkedAt: '', level: 'none' },
+          update: { source: 'unknown', class: 'none', floating: false, newImage: false, error: 'not found, or private', failedAt: '2026-10-16T13:00:00Z', level: 'none' },
         }),
       ],
     };
@@ -174,7 +174,7 @@ describe('Dashboard', () => {
   it('shows the risk level with its reasons, and filters to updates or breaking ones', async () => {
     const update = (cls: 'none' | 'minor' | 'major', level: 'none' | 'attention' | 'breaking', reasons?: string[]) => ({
       running: '1.0.0', source: 'tag' as const, latest: cls === 'none' ? '1.0.0' : '2.0.0', class: cls,
-      floating: false, newImage: false, checkedAt: '', level, reasons,
+      floating: false, newImage: false, checkedAt: '2026-10-16T13:00:00Z', level, reasons,
     });
     const body: ContainerList = {
       source: { kind: 'docker', location: 'x' },
@@ -204,6 +204,81 @@ describe('Dashboard', () => {
     buttons[1].click();
     await TestBed.inject(ApplicationRef).whenStable();
     expect(rowNames()).toEqual(['jellyfin', 'sonarr']);
+  });
+
+  describe('when a check fails', () => {
+    const result = (extra: Partial<UpdateInfo> = {}): UpdateInfo => ({
+      running: '1.0.0', source: 'tag', latest: '2.0.0', class: 'major', floating: false, newImage: false,
+      checkedAt: '2026-10-15T23:00:00Z', level: 'breaking', reasons: ['Major version: 1.0.0 → 2.0.0'], ...extra,
+    });
+    const failed = { error: 'dial tcp: lookup registry-1.docker.io: no such host', failedAt: '2026-10-16T07:02:00Z' };
+    const text = (e: Element | null | undefined) => e?.textContent?.replace(/\s+/g, ' ').trim();
+
+    function list(): ContainerList {
+      return {
+        source: { kind: 'docker', location: 'x' },
+        check: { running: false, done: 3, total: 3, finishedAt: '2026-10-16T07:02:00Z' },
+        containers: [
+          container('fresh', 'media', { update: result({ class: 'minor', level: 'none', reasons: undefined }) }),
+          container('kept', 'media', { update: result(failed) }),
+          container('never', 'media', { update: { source: 'unknown', class: 'none', floating: false, newImage: false, level: 'none', ...failed } }),
+        ],
+      };
+    }
+
+    it('keeps the last result with a quiet note, and shows "check failed" only without one', async () => {
+      const el = await render((req) => req.flush(list()));
+      const rows = [...el.querySelectorAll('tbody tr')]; // fresh, kept, never
+
+      // Result: no failure note.
+      expect(rows[0].querySelector('[data-testid="refresh-failed"]')).toBeNull();
+      expect(text(rows[0])).toContain('minor');
+
+      // Result + error: the result stays (versions, class, level), plus the note.
+      expect(text(rows[1])?.replace(/ /g, '')).toContain('1.0.0→2.0.0');
+      expect(text(rows[1].querySelector('[data-testid="level"]'))).toBe('Breaking');
+      expect(rows[1].querySelector('[data-testid="check-failed"]')).toBeNull();
+      const note = rows[1].querySelector('[data-testid="refresh-failed"]')!;
+      expect(text(note)).toBe('refresh failed');
+      expect(note.querySelector('tm-icon')).not.toBeNull();
+      expect(note.closest('tm-badge')).toBeNull(); // not a badge: it isn't a risk
+      expect(note.getAttribute('title')).toContain('Showing the result from');
+      expect(note.getAttribute('title')).toContain(failed.error);
+
+      // No result + error: the dashed badge, the error on hover, and just the tag as version.
+      const badge = rows[2].querySelector('[data-testid="check-failed"]')!;
+      expect(text(badge)).toBe('check failed');
+      expect(badge.getAttribute('title')).toBe(failed.error);
+      expect(rows[2].querySelector('[data-testid="refresh-failed"]')).toBeNull();
+      expect(text(rows[2].querySelector('tm-container-version'))).toBe('1.0');
+    });
+
+    it('still counts and filters a kept result', async () => {
+      const el = await render((req) => req.flush(list()));
+      const buttons = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="filter"] button')];
+      expect(buttons.map(text)).toEqual(['All', 'Updates 2', 'Breaking 1']);
+      expect(el.querySelector('[data-testid="summary"]')?.textContent).toContain('2 updates');
+      expect(text(el.querySelector('[data-testid="failed-count"]'))).toBe('· 2 checks failed');
+
+      buttons[2].click();
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect([...el.querySelectorAll('tbody tr a')].map(text)).toEqual(['kept']);
+    });
+
+    it('shows the note on tiles too', async () => {
+      localStorage.setItem('tidemark.view', 'tiles');
+      const el = await render((req) => req.flush(list()));
+      const tiles = [...el.querySelectorAll('tm-container-tile')];
+      expect(tiles.map((t) => !!t.querySelector('[data-testid="refresh-failed"]'))).toEqual([false, true, false]);
+    });
+
+    it('has helpers for the three states', () => {
+      const kept = container('a', undefined, { update: result(failed) });
+      const never = container('b', undefined, { update: { ...result(failed), checkedAt: undefined } });
+      expect([hasResult(kept.update), refreshFailed(kept.update), hasUpdate(kept)]).toEqual([true, true, true]);
+      expect([hasResult(never.update), refreshFailed(never.update), hasUpdate(never)]).toEqual([false, false, false]);
+      expect(hasResult(undefined)).toBe(false);
+    });
   });
 
   it('says so when the filter leaves nothing to show', async () => {
@@ -264,7 +339,7 @@ describe('Dashboard', () => {
 
   describe('rules', () => {
     const update = (extra: Partial<UpdateInfo> = {}): UpdateInfo => ({
-      running: '1.4.2', source: 'tag', latest: '1.4.7', class: 'patch', floating: false, newImage: false, checkedAt: '', level: 'none', ...extra,
+      running: '1.4.2', source: 'tag', latest: '1.4.7', class: 'patch', floating: false, newImage: false, checkedAt: '2026-10-16T13:00:00Z', level: 'none', ...extra,
     });
     const breaking = update({ latest: '2.0.0', class: 'major', level: 'breaking' });
     const text = (e: Element | null | undefined) => e?.textContent?.replace(/\s+/g, ' ').trim();

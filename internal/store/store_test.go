@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"slices"
@@ -39,23 +40,37 @@ func TestMigrationsAreIdempotent(t *testing.T) {
 // A database from before the rules migration keeps its results, which count as
 // checked without rules.
 func TestRulesMigrationOnExistingDB(t *testing.T) {
+	s := openOld(t, 2, `INSERT INTO results (container_name, image_ref, image_id, latest, class, checked_at)
+		VALUES ('redis', 'redis:7.2', 'sha256:r', '7.4.1', 'minor', '2026-10-01T00:00:00Z')`)
+	got, err := s.Results(context.Background())
+	if err != nil || len(got) != 1 {
+		t.Fatalf("results = %+v, %v", got, err)
+	}
+	if r := got[0]; r.Latest != "7.4.1" || r.Held != "" || r.HeldBy != "" || r.Rules != "" {
+		t.Errorf("migrated row = %+v", r)
+	}
+}
+
+// openOld creates a database with the first n migrations, runs the statements on it,
+// then opens it, which applies the remaining migrations.
+func openOld(t *testing.T, n int, stmts ...string) *Store {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "old.db")
 	old, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
 	if err != nil {
 		t.Fatal(err)
 	}
-	stmts := []string{`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)`}
-	for _, f := range []string{"migrations/0001_init.sql", "migrations/0002_changelogs.sql"} {
+	all := []string{`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY)`}
+	files, _ := fs.Glob(migrations, "migrations/*.sql")
+	slices.Sort(files)
+	for i, f := range files[:n] {
 		body, err := migrations.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
 		}
-		stmts = append(stmts, string(body))
+		all = append(all, string(body), fmt.Sprintf(`INSERT INTO schema_migrations (version) VALUES (%d)`, i+1))
 	}
-	stmts = append(stmts, `INSERT INTO schema_migrations (version) VALUES (1), (2)`,
-		`INSERT INTO results (container_name, image_ref, image_id, latest, class, checked_at)
-		 VALUES ('redis', 'redis:7.2', 'sha256:r', '7.4.1', 'minor', '2026-10-01T00:00:00Z')`)
-	for _, q := range stmts {
+	for _, q := range append(all, stmts...) {
 		if _, err := old.Exec(q); err != nil {
 			t.Fatal(err)
 		}
@@ -66,13 +81,27 @@ func TestRulesMigrationOnExistingDB(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
+	t.Cleanup(func() { s.Close() })
+	return s
+}
+
+// Before failed_at, a failed check replaced the result, so an existing error row never
+// succeeded: its checked_at becomes failed_at. Good rows stay as they were.
+func TestFailedAtMigrationOnExistingDB(t *testing.T) {
+	s := openOld(t, 3, `INSERT INTO results (container_name, image_ref, image_id, latest, class, checked_at)
+		VALUES ('redis', 'redis:7.2', 'sha256:r', '7.4.1', 'minor', '2026-10-01T00:00:00Z')`,
+		`INSERT INTO results (container_name, image_ref, image_id, error, checked_at)
+		VALUES ('app', 'team/app:1', 'sha256:a', 'no such host', '2026-10-02T00:00:00Z')`)
 	got, err := s.Results(context.Background())
-	if err != nil || len(got) != 1 {
+	if err != nil || len(got) != 2 {
 		t.Fatalf("results = %+v, %v", got, err)
 	}
-	if r := got[0]; r.Latest != "7.4.1" || r.Held != "" || r.HeldBy != "" || r.Rules != "" {
-		t.Errorf("migrated row = %+v", r)
+	byName := map[string]Result{got[0].ContainerName: got[0], got[1].ContainerName: got[1]}
+	if r := byName["redis"]; r.Latest != "7.4.1" || !r.CheckedAt.Equal(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)) || !r.FailedAt.IsZero() {
+		t.Errorf("good row = %+v", r)
+	}
+	if r := byName["app"]; r.Error != "no such host" || !r.CheckedAt.IsZero() || !r.FailedAt.Equal(time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("error row = %+v", r)
 	}
 }
 
@@ -108,8 +137,10 @@ func TestResults(t *testing.T) {
 	a := Result{ContainerName: "jellyfin", ImageRef: "jellyfin/jellyfin:10.9.11", ImageID: "sha256:a", Running: "10.9.11",
 		Source: "tag", Latest: "10.10.7", Class: "minor", Floating: false, NewImage: true,
 		Held: "11.0.0", HeldBy: "allow-major", Rules: "ignore=false;allow-major=false", CheckedAt: at, RunID: runID}
-	b := Result{ContainerName: "redis", ImageRef: "redis:latest", ImageID: "sha256:b", Error: "rate limited", CheckedAt: at}
-	for _, r := range []Result{a, b} {
+	b := Result{ContainerName: "redis", ImageRef: "redis:latest", ImageID: "sha256:b", Error: "rate limited", FailedAt: at} // never succeeded
+	c := a
+	c.ContainerName, c.Error, c.FailedAt = "kept", "no such host", at.Add(time.Hour) // failed, kept its result
+	for _, r := range []Result{a, b, c} {
 		if err := s.SaveResult(ctx, r); err != nil {
 			t.Fatal(err)
 		}
@@ -120,15 +151,17 @@ func TestResults(t *testing.T) {
 	}
 
 	got, err := s.Results(ctx)
-	if err != nil || len(got) != 2 {
+	if err != nil || len(got) != 3 {
 		t.Fatalf("results = %v, %v", got, err)
 	}
-	byName := map[string]Result{got[0].ContainerName: got[0], got[1].ContainerName: got[1]}
-	if r := byName["jellyfin"]; r != a {
-		t.Errorf("jellyfin round trip:\n got %+v\nwant %+v", r, a)
+	byName := map[string]Result{}
+	for _, r := range got {
+		byName[r.ContainerName] = r
 	}
-	if r := byName["redis"]; r.Error != "rate limited" || r.RunID != 0 {
-		t.Errorf("redis = %+v", r)
+	for _, want := range []Result{a, b, c} {
+		if r := byName[want.ContainerName]; r != want {
+			t.Errorf("%s round trip:\n got %+v\nwant %+v", want.ContainerName, r, want)
+		}
 	}
 
 	if err := s.KeepResults(ctx, []string{"redis"}); err != nil {

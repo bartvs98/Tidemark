@@ -6,9 +6,16 @@ export type ThemePreference = 'dark' | 'light' | 'system';
 const STORAGE_KEY = 'tidemark.theme';
 
 /**
+ * The page background (`--color-canvas` in styles/tokens.css) per resolved theme, for
+ * <meta name="theme-color"> (the browser bar on phones). index.html's pre-paint script has a copy.
+ */
+export const THEME_COLORS = { light: '#f4f7fa', dark: '#070d17' } as const;
+
+/**
  * Holds the theme preference and reflects it as <html data-theme="…">.
  * tokens.css maps that attribute to `color-scheme`, which flips every light-dark() token.
  * index.html sets the attribute before Angular boots, so there is no flash on load.
+ * It also keeps <meta name="theme-color"> on the resolved theme's page background.
  */
 @Injectable({ providedIn: 'root' })
 export class Theme {
@@ -40,6 +47,18 @@ export class Theme {
       } catch {
         // storage blocked (private mode): the preference just won't persist
       }
+    });
+
+    // isDark() also changes when "system" flips with the OS setting.
+    effect(() => {
+      const color = this.isDark() ? THEME_COLORS.dark : THEME_COLORS.light;
+      let meta = this.document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+      if (!meta) {
+        meta = this.document.createElement('meta');
+        meta.name = 'theme-color';
+        this.document.head.appendChild(meta);
+      }
+      meta.content = color;
     });
   }
 

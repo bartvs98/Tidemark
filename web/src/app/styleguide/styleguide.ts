@@ -1,7 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import {
   ICON_NAMES,
-  Level,
   TM_TABS,
   TmAppIcon,
   TmBadge,
@@ -15,21 +14,28 @@ import {
   TmSection,
   TmSegmented,
   TmSkeleton,
+  TmThemeSwitch,
   SegmentOption,
   TmUpdateClass,
   TmVersionDiff,
   Toasts,
-  UpdateClass,
 } from '../ui';
 import { MarkdownFlag, TmMarkdown } from '../ui/markdown';
-import { ContainerSummary } from '../dashboard/containers';
+import { ContainerColumnBar, ContainerLink, ContainerTable } from '../dashboard/container-table';
+import { ContainerTile } from '../dashboard/container-tile';
+import { ContainerSummary, groupByStack, UpdateInfo } from '../dashboard/containers';
 import { ContainerRuleProblems, ContainerUpdate, ContainerVersion } from '../dashboard/update-info';
 
-function sample(name: string, extra: Partial<ContainerSummary>): ContainerSummary {
+/** A sample container from an image ref ("jellyfin/jellyfin:10.9.11", "ghcr.io/owner/app:v1"). */
+function sample(name: string, ref: string, extra: Partial<ContainerSummary> = {}): ContainerSummary {
+  const [path, tag = 'latest'] = ref.split(':');
+  const first = path.split('/')[0];
+  const registry = path.includes('/') && first.includes('.') ? first : 'docker.io';
+  const repository = registry !== 'docker.io' ? path.slice(first.length + 1) : path.includes('/') ? path : `library/${path}`;
   return {
     id: name,
     name,
-    image: { ref: `${name}:1`, display: `${name}:1`, registry: 'docker.io', repository: name, tag: '1', id: 'sha256:x' },
+    image: { ref, display: ref, registry, repository, tag, id: 'sha256:x' },
     state: 'running',
     status: 'Up 2 days',
     created: '',
@@ -37,16 +43,24 @@ function sample(name: string, extra: Partial<ContainerSummary>): ContainerSummar
   };
 }
 
-const UPDATE = { source: 'tag' as const, floating: false, newImage: false, checkedAt: '', level: 'none' as const };
-
-interface SampleContainer {
-  name: string;
-  image: string;
-  from: string;
-  to: string | null;
-  kind: UpdateClass;
-  level: Level;
-}
+const CHECKED_AT = '2026-10-17T23:00:00Z';
+const UPDATE = { source: 'tag' as const, floating: false, newImage: false, checkedAt: CHECKED_AT, level: 'none' as const };
+/** The latest attempt failed; spread over a result, that result is kept from CHECKED_AT. */
+const REFRESH_FAILED = {
+  error: 'registry-1.docker.io: dial tcp: lookup registry-1.docker.io: no such host',
+  failedAt: '2026-10-18T07:02:00Z',
+};
+/** No check ever succeeded: only the error. */
+const NO_RESULT: UpdateInfo = {
+  source: 'unknown',
+  class: 'none',
+  floating: false,
+  newImage: false,
+  level: 'none',
+  error: 'ghcr.io/me/private-app: not found, or private',
+  failedAt: REFRESH_FAILED.failedAt,
+};
+const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
 
 /** Living reference for the design system: every token and component in both themes. */
 @Component({
@@ -55,6 +69,9 @@ interface SampleContainer {
     ContainerRuleProblems,
     ContainerUpdate,
     ContainerVersion,
+    ContainerColumnBar,
+    ContainerTable,
+    ContainerTile,
     TmAppIcon,
     TmBadge,
     TmButton,
@@ -68,6 +85,7 @@ interface SampleContainer {
     TmSection,
     TmSegmented,
     TmSkeleton,
+    TmThemeSwitch,
     TmUpdateClass,
     TmVersionDiff,
     ...TM_TABS,
@@ -153,25 +171,25 @@ export class Styleguide {
   protected readonly ruleSamples: { label: string; container: ContainerSummary }[] = [
     {
       label: 'Pinned to 1.4, newer major held back',
-      container: sample('immich', {
+      container: sample('immich', 'ghcr.io/immich-app/immich-server:v1.4', {
         rules: { pin: '1.4', from: { pin: 'label' } },
         update: { ...UPDATE, running: '1.4.2', latest: '1.4.7', class: 'patch', held: '2.1.0', heldBy: 'pin' },
       }),
     },
     {
       label: 'Major updates off',
-      container: sample('postgres', {
+      container: sample('postgres', 'postgres:16', {
         rules: { allowMajor: false, from: { 'allow-major': 'config' } },
         update: { ...UPDATE, running: '16.4', latest: '16.10', class: 'minor', held: '18.0', heldBy: 'allow-major' },
       }),
     },
     {
       label: 'Ignored',
-      container: sample('watchtower', { rules: { ignore: true, from: { ignore: 'label' } } }),
+      container: sample('watchtower', 'containrrr/watchtower:latest', { rules: { ignore: true, from: { ignore: 'label' } } }),
     },
     {
       label: 'A rule was skipped',
-      container: sample('redis', {
+      container: sample('redis', 'redis:7.4-alpine', {
         rules: { from: {}, problems: ['tidemark.allow-major: "maybe" is not true or false'] },
         update: { ...UPDATE, running: '7.4.2', latest: '7.4.6', class: 'patch' },
       }),
@@ -180,30 +198,73 @@ export class Styleguide {
 
   protected readonly radii = ['rounded-sm', 'rounded-md', 'rounded-lg', 'rounded-xl'];
 
-  protected readonly stacks: { name: string; containers: SampleContainer[] }[] = [
+  /** Every state tm-container-version + tm-container-update can be in. */
+  protected readonly updateStates: { label: string; container: ContainerSummary; checking?: boolean }[] = [
     {
-      name: 'media',
-      containers: [
-        { name: 'jellyfin', image: 'jellyfin/jellyfin:10.9.11', from: '10.9.11', to: '10.10.7', kind: 'minor', level: 'attention' },
-        { name: 'sonarr', image: 'lscr.io/linuxserver/sonarr:latest', from: '4.0.14', to: null, kind: 'none', level: 'none' },
-        { name: 'radarr', image: 'lscr.io/linuxserver/radarr:latest', from: '5.21.1', to: '5.22.4', kind: 'minor', level: 'none' },
-      ],
+      label: 'Up to date',
+      container: sample('sonarr', 'lscr.io/linuxserver/sonarr:latest', {
+        update: { ...UPDATE, source: 'label', running: '4.0.14', latest: '4.0.14', class: 'none' },
+      }),
     },
     {
-      name: 'photos',
-      containers: [
-        { name: 'immich-server', image: 'ghcr.io/immich-app/immich-server:v1.135.3', from: 'v1.135.3', to: 'v2.0.1', kind: 'major', level: 'breaking' },
-        { name: 'redis', image: 'redis:7.4-alpine', from: '7.4.2', to: '7.4.6', kind: 'patch', level: 'none' },
-      ],
+      label: 'Update, with a risk level',
+      container: sample('jellyfin', 'jellyfin/jellyfin:10.9.11', {
+        update: { ...UPDATE, source: 'label', running: '10.9.11', latest: '10.10.7', class: 'minor', level: 'attention', reasons: ['10.10.0: clients older than 10.9 can no longer connect'] },
+      }),
     },
     {
-      name: 'Ungrouped',
-      containers: [
-        { name: 'pihole', image: 'pihole/pihole:latest', from: '2025.08.0', to: '2025.08.0', kind: 'digest', level: 'none' },
-        { name: 'uptime-kuma', image: 'louislam/uptime-kuma:1', from: '1', to: null, kind: 'none', level: 'unknown' },
-      ],
+      label: 'Refresh failed, earlier result kept',
+      container: sample('immich-server', 'ghcr.io/immich-app/immich-server:v1.135.3', {
+        update: { ...UPDATE, running: 'v1.135.3', latest: 'v2.0.1', class: 'major', level: 'breaking', reasons: ['Major version: v1.135.3 → v2.0.1'], ...REFRESH_FAILED },
+      }),
     },
+    { label: 'Check failed, no result yet', container: sample('private-app', 'ghcr.io/me/private-app:2.1', { update: NO_RESULT }) },
+    { label: 'Checking, no result yet', container: sample('radarr', 'lscr.io/linuxserver/radarr:latest'), checking: true },
+    { label: 'Ignored', container: sample('watchtower', 'containrrr/watchtower:latest', { rules: { ignore: true, from: { ignore: 'label' } } }) },
   ];
+
+  /** A small home server, laid out exactly like the dashboard's list view. */
+  protected readonly stacks = groupByStack([
+    sample('jellyfin', 'jellyfin/jellyfin:10.9.11', {
+      stack: 'media',
+      icon: icon('jellyfin'),
+      update: { ...UPDATE, source: 'label', running: '10.9.11', latest: '10.10.7', class: 'minor', level: 'attention', reasons: ['10.10.0: clients older than 10.9 can no longer connect'] },
+    }),
+    sample('sonarr', 'lscr.io/linuxserver/sonarr:latest', {
+      stack: 'media',
+      icon: icon('sonarr'),
+      update: { ...UPDATE, source: 'label', running: '4.0.14', latest: '4.0.14', class: 'none' },
+    }),
+    sample('radarr', 'lscr.io/linuxserver/radarr:latest', {
+      stack: 'media',
+      icon: icon('radarr'),
+      state: 'exited',
+      status: 'Exited (0) 3 hours ago',
+      update: { ...UPDATE, source: 'label', running: '5.21.1', latest: '5.22.4', class: 'minor' },
+    }),
+    sample('immich-server', 'ghcr.io/immich-app/immich-server:v1.135.3', {
+      stack: 'photos',
+      icon: icon('immich'),
+      update: { ...UPDATE, running: 'v1.135.3', latest: 'v2.0.1', latestInMajor: 'v1.135.4', class: 'major', level: 'breaking', reasons: ['Major version: v1.135.3 → v2.0.1'] },
+    }),
+    sample('redis', 'redis:7.4-alpine', {
+      stack: 'photos',
+      icon: icon('redis'),
+      update: { ...UPDATE, source: 'env', running: '7.4.2', latest: '7.4.6', class: 'patch', ...REFRESH_FAILED },
+    }),
+    sample('pihole', 'pihole/pihole:latest', {
+      update: { ...UPDATE, source: 'label', running: '2025.08.0', latest: '2025.08.0', class: 'digest', newImage: true },
+    }),
+    sample('private-app', 'ghcr.io/me/private-app:2.1', { update: NO_RESULT }),
+  ]);
+
+  /** Tiles: the same containers, one of each state. */
+  protected readonly tiles = this.stacks
+    .flatMap((s) => s.containers)
+    .filter((c) => ['jellyfin', 'immich-server', 'redis', 'radarr', 'private-app'].includes(c.name));
+
+  /** Sample rows and tiles link back here instead of to a detail page that doesn't exist. */
+  protected readonly sampleLink: ContainerLink = () => ['/styleguide'];
 
   protected fakeLoad(): void {
     this.loading.set(true);

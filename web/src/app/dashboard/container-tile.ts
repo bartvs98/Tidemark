@@ -1,6 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TmAppIcon, TmBadge } from '../ui';
+import { ContainerLink, DETAIL_LINK } from './container-table';
 import { ContainerSummary, imageName, isIgnored } from './containers';
 import { ContainerRuleProblems, ContainerUpdate, ContainerVersion } from './update-info';
 
@@ -16,7 +17,7 @@ import { ContainerRuleProblems, ContainerUpdate, ContainerVersion } from './upda
           <h3 class="truncate font-medium" [title]="container().name">
             <!-- Stretched link: the whole tile is clickable, but it stays one link for keyboards and screen readers. -->
             <a
-              [routerLink]="['/containers', container().name]"
+              [routerLink]="link()(container())"
               class="no-underline after:absolute after:inset-0 after:rounded-lg hover:no-underline"
               [class]="ignored() ? 'text-fg-muted' : 'text-fg'"
               >{{ container().name }}</a
@@ -49,6 +50,8 @@ import { ContainerRuleProblems, ContainerUpdate, ContainerVersion } from './upda
 export class ContainerTile {
   readonly container = input.required<ContainerSummary>();
   readonly checking = input(false);
+  /** Where the tile links to; the styleguide points this somewhere harmless. */
+  readonly link = input<ContainerLink>(DETAIL_LINK);
   protected readonly image = computed(() => imageName(this.container()));
   protected readonly ignored = computed(() => isIgnored(this.container()));
 }

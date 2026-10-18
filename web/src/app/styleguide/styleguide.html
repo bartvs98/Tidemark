@@ -100,65 +100,100 @@
     </tm-card>
   </section>
 
+  <!-- ── Update states ────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Update states</h2>
+    <p class="mb-4 text-fg-muted">
+      <span class="font-mono text-sm">tm-container-version</span> and <span class="font-mono text-sm">tm-container-update</span>
+      for every state a container can be in. When a refresh fails, the last good result stays and
+      <span class="font-mono text-sm">tm-refresh-failed</span> says so quietly (not a risk, so no colour); only a container
+      that was never checked successfully gets the dashed "check failed" badge. Hover them for the error.
+    </p>
+    <tm-card flush>
+      <table class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]" data-testid="update-states">
+        <colgroup>
+          <col class="w-[40%]" />
+          <col class="w-[30%]" />
+          <col class="w-[30%]" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">Case</th>
+            <th scope="col">Version</th>
+            <th scope="col">Update</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (s of updateStates; track s.label) {
+            <tr>
+              <td data-stack="full">
+                <div class="truncate font-medium">{{ s.container.name }}</div>
+                <div class="truncate text-xs text-fg-subtle">{{ s.label }}</div>
+              </td>
+              <td data-stack="indent"><tm-container-version [container]="s.container" [checking]="!!s.checking" /></td>
+              <td><tm-container-update [container]="s.container" [checking]="!!s.checking" /></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </tm-card>
+  </section>
+
   <!-- ── Stacks ─────────────────────────────────────────── -->
   <section>
     <h2 class="mb-1 text-xl font-semibold">Stack sections</h2>
     <p class="mb-4 text-fg-muted">
-      Each Compose stack is a <span class="font-mono text-sm">tm-section</span> with its own card, so it's obvious where a
-      stack starts and ends. Tables use fixed column widths so columns line up across stacks; headers show once.
-      Below 640px, <span class="font-mono text-sm">tm-table-stack</span> stacks each row: name first, then the rest.
+      The dashboard's list view, built from the same pieces. Each Compose stack is a
+      <span class="font-mono text-sm">tm-section</span> with a <span class="font-mono text-sm">tm-container-table</span>. All
+      tables share fixed column widths, so one sticky <span class="font-mono text-sm">tm-column-bar</span> labels them all
+      (scroll to see it stick); each table keeps a <span class="font-mono text-sm">sm:sr-only</span> header for screen
+      readers. Rows are <span class="font-mono text-sm">tr.tm-row-link</span>: the name is a stretched link, so the whole
+      row is clickable (here it stays on this page). Below 640px, <span class="font-mono text-sm">tm-table-stack</span>
+      stacks each row: name first, then version and update.
     </p>
+    <tm-column-bar />
     <div class="flex flex-col gap-10">
-      @for (stack of stacks; track stack.name; let first = $first) {
-        <tm-section [heading]="stack.name" [icon]="stack.name === 'Ungrouped' ? 'box' : 'layers'" [meta]="stack.containers.length + ' containers'">
-          @if (first) {
-            <button tmSectionActions tmButton variant="primary" size="sm" icon="refresh-cw" [loading]="loading()" (click)="fakeLoad()">
-              Check now
-            </button>
-          }
-          <tm-card flush>
-            <div class="overflow-x-auto">
-              <table class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]">
-                <colgroup>
-                  <col class="w-[30%]" />
-                  <col class="w-[28%]" />
-                  <col class="w-[16%]" />
-                  <col class="w-[14%]" />
-                  <col class="w-[12%]" />
-                </colgroup>
-                <thead [class.sr-only]="!first">
-                  <tr>
-                    <th scope="col">Container</th>
-                    <th scope="col">Version</th>
-                    <th scope="col">Update</th>
-                    <th scope="col">Risk</th>
-                    <th scope="col"><span class="sr-only">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (c of stack.containers; track c.name) {
-                    <tr>
-                      <td data-stack="full">
-                        <div class="truncate font-medium">{{ c.name }}</div>
-                        <div class="truncate font-mono text-xs text-fg-subtle">{{ c.image }}</div>
-                      </td>
-                      <td data-stack="indent"><tm-version-diff [from]="c.from" [to]="c.kind === 'none' || c.kind === 'digest' ? null : c.to" /></td>
-                      <td><tm-update-class [kind]="c.kind" /></td>
-                      <td><tm-level [level]="c.level" /></td>
-                      <td class="text-right" data-stack="hide">
-                        @if (c.kind !== 'none') {
-                          <button tmButton variant="ghost" size="sm">Changes <tm-icon name="arrow-right" [size]="14" /></button>
-                        }
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </tm-card>
+      @for (stack of stacks; track stack.name) {
+        <tm-section [heading]="stack.name ?? 'Ungrouped'" [icon]="stack.name ? 'layers' : 'box'" [meta]="stack.containers.length + ' containers'">
+          <tm-container-table [containers]="stack.containers" [link]="sampleLink" />
         </tm-section>
       }
     </div>
+  </section>
+
+  <!-- ── Tiles ──────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Tiles</h2>
+    <p class="mb-4 text-fg-muted">
+      <span class="font-mono text-sm">tm-container-tile</span>: the dashboard's tile view. The whole tile is a stretched
+      link; keyboard focus outlines it.
+    </p>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      @for (c of tiles; track c.id) {
+        <tm-container-tile [container]="c" [link]="sampleLink" />
+      }
+    </div>
+  </section>
+
+  <!-- ── Cards & sections ───────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Cards &amp; sections</h2>
+    <p class="mb-4 text-fg-muted">
+      A <span class="font-mono text-sm">tm-section</span> with a button in <span class="font-mono text-sm">[tmSectionActions]</span>,
+      holding a <span class="font-mono text-sm">tm-card</span> with a <span class="font-mono text-sm">heading</span> and a
+      button in <span class="font-mono text-sm">[tmCardActions]</span>.
+    </p>
+    <tm-section heading="backups" icon="layers" meta="1 container">
+      <button tmSectionActions tmButton variant="primary" size="sm" icon="refresh-cw" [loading]="loading()" (click)="fakeLoad()">
+        Check now
+      </button>
+      <tm-card heading="Rules">
+        <button tmCardActions tmButton variant="ghost" size="sm" icon="external-link">Docs</button>
+        <p class="text-fg-muted">
+          Pinned to <span class="font-mono text-sm">1.4</span> by the label <span class="font-mono text-sm">tidemark.pin</span>.
+        </p>
+      </tm-card>
+    </tm-section>
   </section>
 
   <!-- ── Rules ──────────────────────────────────────────── -->
@@ -243,6 +278,12 @@
           <tm-segmented label="View" [options]="views" [(value)]="view" />
           <tm-segmented label="View" iconOnly [options]="views" [(value)]="view" />
           <span class="text-sm text-fg-muted">Segmented control: <span class="font-mono">{{ view() }}</span></span>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
+          <tm-theme-switch />
+          <span class="text-sm text-fg-muted">
+            <span class="font-mono">tm-theme-switch</span>, as in the header: icon-only, so each button has an aria-label
+          </span>
         </div>
         <div class="flex flex-wrap items-center gap-3">
           <tm-segmented label="Show" [options]="filters" [(value)]="filter" />

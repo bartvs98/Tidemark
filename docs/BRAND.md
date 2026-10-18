@@ -66,7 +66,8 @@ Light-mode accent hover is `#0B5F58`, a darker step outside the palette.
 | Update, no risk | tide-400 | tide-700 | Neutral class badge + tide dot |
 | Attention | `#F5B83D` | `#9A6700` | Amber badge "Attention" + highlighted lines |
 | Breaking | `#F2665E` | `#C9372C` | Coral badge "Breaking" + highlighted lines |
-| Unknown / error | deep-400 | deep-500 | Muted text, dashed border: "check failed", "rule skipped", "image missing" |
+| Unknown / error | deep-400 | deep-500 | Muted text, dashed border: "check failed" (never checked successfully), "rule skipped", "image missing" |
+| Kept result | — | — | Small muted text + history icon "refresh failed", no badge or colour: it must not hide the result shown |
 
 Status is never shown with colour alone: every status also has an icon and a word.
 

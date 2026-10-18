@@ -5,7 +5,7 @@ import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 import { TM_TABS, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmClamp, TmEmptyState, TmIcon, TmLevel, TmSkeleton } from '../ui';
 import { TmMarkdown } from '../ui/markdown';
-import { imageName, isIgnored, ruleOrigin } from '../dashboard/containers';
+import { hasResult, imageName, isIgnored, ruleOrigin } from '../dashboard/containers';
 import { ContainerRuleProblems, ContainerUpdate, ContainerVersion, heldText } from '../dashboard/update-info';
 import { ContainerDetailData } from './detail-types';
 import { describeRules } from './rules';
@@ -60,6 +60,11 @@ export class ContainerDetail {
   protected readonly data = computed(() => (this.detail.hasValue() ? this.detail.value() : undefined));
   protected readonly changelog = computed(() => this.data()?.changelog);
   protected readonly update = computed(() => this.data()?.container.update);
+  /** The last successful result; kept when a later refresh failed, absent if no check ever succeeded. */
+  protected readonly result = computed(() => {
+    const u = this.update();
+    return hasResult(u) ? u : undefined;
+  });
   protected readonly rules = computed(() => this.data()?.container.rules);
   protected readonly ruleLines = computed(() => describeRules(this.rules()));
   protected readonly ignored = computed(() => {

@@ -31,6 +31,7 @@ type countingRegistry struct {
 	mu    sync.Mutex
 	calls map[string]int
 	block chan struct{} // if set, Tags waits for it
+	down  bool          // every lookup fails, like before the network is up
 }
 
 func (r *countingRegistry) Tags(_ context.Context, ref imageref.Ref) ([]string, error) {
@@ -39,7 +40,11 @@ func (r *countingRegistry) Tags(_ context.Context, ref imageref.Ref) ([]string, 
 	}
 	r.mu.Lock()
 	r.calls[ref.Repository]++
+	down := r.down
 	r.mu.Unlock()
+	if down {
+		return nil, errors.New("dial tcp: lookup index.docker.io: no such host")
+	}
 	if ref.Repository == "team/broken" {
 		return nil, errors.New("registry exploded")
 	}
@@ -347,5 +352,91 @@ func TestUnchecked(t *testing.T) {
 	s.source = listSource{err: errors.New("down")}
 	if _, err := s.Unchecked(context.Background()); err == nil {
 		t.Error("source error should be returned")
+	}
+}
+
+func TestFailedCheckKeepsLastResult(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.db")
+	reg := &countingRegistry{calls: map[string]int{}}
+	app := ctr("app", "team/app:1.0.0", "sha256:1")
+	s := New(listSource{list: []docker.Container{app}}, reg, openStore(t, path), quiet)
+	var hooked int
+	s.SetAfterCheck(func(context.Context, docker.Container, rules.Rules, resolve.Result) { hooked++ })
+	runOnce(t, s)
+	good, _ := s.Result(app)
+	if good.Err != "" || good.CheckedAt.IsZero() || !good.FailedAt.IsZero() || hooked != 1 {
+		t.Fatalf("first run = %+v, hooked %d", good, hooked)
+	}
+
+	// The network is down (woke from sleep). "twin" shares app's check but was never
+	// checked before, so it has nothing to keep.
+	twin := ctr("twin", "team/app:1.0.0", "sha256:1")
+	reg.mu.Lock()
+	reg.down = true
+	reg.mu.Unlock()
+	s.source = listSource{list: []docker.Container{app, twin}}
+	runOnce(t, s)
+	if hooked != 1 {
+		t.Errorf("after-check hook ran %d times, want no run for a failed check", hooked)
+	}
+
+	kept := func(s *Service, when string) {
+		t.Helper()
+		e, ok := s.Result(app)
+		if !ok || e.Result != good.Result || !e.CheckedAt.Equal(good.CheckedAt) || e.Err == "" || e.FailedAt.Before(good.CheckedAt) {
+			t.Errorf("%s: app = %+v ok=%v, want the good result kept with the error", when, e, ok)
+		}
+		e, ok = s.Result(twin)
+		if !ok || e.Result != (resolve.Result{}) || !e.CheckedAt.IsZero() || e.Err == "" || e.FailedAt.IsZero() {
+			t.Errorf("%s: twin = %+v ok=%v, want the error alone", when, e, ok)
+		}
+	}
+	kept(s, "in memory")
+
+	// After a restart, and a failed check doesn't force a startup run.
+	again := New(listSource{list: []docker.Container{app, twin}}, reg, openStore(t, path), quiet)
+	if err := again.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	kept(again, "after restart")
+	if n, _ := again.Unchecked(context.Background()); n != 0 {
+		t.Errorf("unchecked = %d, want 0", n)
+	}
+
+	// Back online: success clears the failure.
+	reg.mu.Lock()
+	reg.down = false
+	reg.mu.Unlock()
+	runOnce(t, again)
+	for _, c := range []docker.Container{app, twin} {
+		if e, ok := again.Result(c); !ok || e.Err != "" || !e.FailedAt.IsZero() || e.CheckedAt.Equal(good.CheckedAt) || e.Result.Latest != "1.1.0" {
+			t.Errorf("%s after recovery = %+v ok=%v", c.Name, e, ok)
+		}
+	}
+
+	// Recreated with another image while offline: the old result must not come back.
+	recreated := ctr("app", "team/app:1.1.0", "sha256:9")
+	reg.mu.Lock()
+	reg.down = true
+	reg.mu.Unlock()
+	again.source = listSource{list: []docker.Container{recreated}}
+	runOnce(t, again)
+	if e, ok := again.Result(recreated); !ok || e.Result != (resolve.Result{}) || !e.CheckedAt.IsZero() || e.Err == "" {
+		t.Errorf("recreated = %+v ok=%v, want the error alone", e, ok)
+	}
+	// Changed rules likewise.
+	pinned := withLabels(recreated, "tidemark.pin", "1.1")
+	reg.mu.Lock()
+	reg.down = false
+	reg.mu.Unlock()
+	again.source = listSource{list: []docker.Container{recreated}}
+	runOnce(t, again)
+	reg.mu.Lock()
+	reg.down = true
+	reg.mu.Unlock()
+	again.source = listSource{list: []docker.Container{pinned}}
+	runOnce(t, again)
+	if e, ok := again.Result(pinned); !ok || !e.CheckedAt.IsZero() || e.Err == "" {
+		t.Errorf("pinned = %+v ok=%v, want the error alone", e, ok)
 	}
 }

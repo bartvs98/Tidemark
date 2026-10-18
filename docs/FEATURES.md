@@ -87,6 +87,7 @@ The dashboard shows the level next to the update class (reasons in the tooltip) 
 ## 7. Scheduled checks & caching — MVP
 
 - Built-in scheduler (default: every 6 h, configurable cron expression) plus a "Check now" button.
+- A failed check (registry unreachable, e.g. right after the host wakes from sleep) keeps the last good result, shown with a quiet "refresh failed" note (time and error on hover, spelled out in the detail page's Details tab); the dashboard summary counts failed checks. A container that never had a successful check shows "check failed". A failed check doesn't force a check at startup.
 - Registry calls use `HEAD` on manifests where possible (doesn't count towards Docker Hub's pull rate limit).
 - Optional GitHub token (raises the API limit from 60 to 5000 requests/hour). Recommended.
 

@@ -12,6 +12,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
+	"github.com/bartvs98/tidemark/internal/resolve"
 	"github.com/bartvs98/tidemark/internal/rules"
 	"github.com/bartvs98/tidemark/internal/source"
 	"github.com/bartvs98/tidemark/internal/version"
@@ -37,18 +38,22 @@ type checkJSON struct {
 	RulesError string `json:"rulesError,omitempty"`
 }
 
+// updateJSON describes the last successful check. When the latest attempt failed, Error
+// and FailedAt say so and the rest is the result kept from before (CheckedAt absent if no
+// check ever succeeded: then the result is empty, source unknown, class none).
 type updateJSON struct {
-	Running       string    `json:"running,omitempty"`       // running version (tag text), empty if unknown
-	Source        string    `json:"source"`                  // tag | label | digest | env | unknown
-	Latest        string    `json:"latest,omitempty"`        // newest release in the same family
-	LatestInMajor string    `json:"latestInMajor,omitempty"` // newest within the running major, for major jumps
-	Class         string    `json:"class"`                   // none | patch | minor | major | digest
-	Floating      bool      `json:"floating"`
-	NewImage      bool      `json:"newImage"`
-	Held          string    `json:"held,omitempty"`   // newest version a pin or major hold keeps back
-	HeldBy        string    `json:"heldBy,omitempty"` // pin | allow-major
-	Error         string    `json:"error,omitempty"`
-	CheckedAt     time.Time `json:"checkedAt"`
+	Running       string     `json:"running,omitempty"`       // running version (tag text), empty if unknown
+	Source        string     `json:"source"`                  // tag | label | digest | env | unknown
+	Latest        string     `json:"latest,omitempty"`        // newest release in the same family
+	LatestInMajor string     `json:"latestInMajor,omitempty"` // newest within the running major, for major jumps
+	Class         string     `json:"class"`                   // none | patch | minor | major | digest
+	Floating      bool       `json:"floating"`
+	NewImage      bool       `json:"newImage"`
+	Held          string     `json:"held,omitempty"`   // newest version a pin or major hold keeps back
+	HeldBy        string     `json:"heldBy,omitempty"` // pin | allow-major
+	Error         string     `json:"error,omitempty"`
+	CheckedAt     *time.Time `json:"checkedAt,omitempty"`
+	FailedAt      *time.Time `json:"failedAt,omitempty"` // set with Error
 	// Level is the breaking-change verdict (none | attention | breaking) from the version
 	// jump and the stored release notes in range; Reasons explain it, most severe first.
 	Level   analysis.Level `json:"level"`
@@ -215,21 +220,29 @@ func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref
 	r := e.Result
 	u := &updateJSON{
 		Running:       r.Running,
-		Source:        string(r.Source),
+		Source:        string(cmp.Or(r.Source, resolve.SourceUnknown)),
 		Latest:        r.Latest,
 		LatestInMajor: r.LatestInMajor,
-		Class:         string(r.Class),
+		Class:         string(cmp.Or(r.Class, version.None)),
 		Floating:      r.Floating,
 		NewImage:      r.NewImage,
 		Held:          r.Held,
 		HeldBy:        r.HeldBy,
 		Error:         e.Err,
-		CheckedAt:     e.CheckedAt,
+		CheckedAt:     timeOrNil(e.CheckedAt),
+		FailedAt:      timeOrNil(e.FailedAt),
 	}
-	if e.Err == "" && r.Class != version.None {
+	if !e.CheckedAt.IsZero() && r.Class != version.None {
 		s.assessUpdate(ctx, u, c, ref, rs)
 	}
 	return u
+}
+
+func timeOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 // assessUpdate sets the update's level from the version jump and the release notes that

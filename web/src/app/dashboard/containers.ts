@@ -28,6 +28,11 @@ export interface CheckStatus {
 /** How the running version was determined (internal/resolve). */
 export type UpdateSource = 'tag' | 'label' | 'digest' | 'env' | 'unknown';
 
+/**
+ * The result fields describe the last *successful* check. A failed attempt doesn't throw that
+ * result away: it only sets `error` + `failedAt`. So there are three states:
+ * result (checkedAt), result + failed refresh (checkedAt + error), no result yet (error only).
+ */
 export interface UpdateInfo {
   running?: string;
   source: UpdateSource;
@@ -36,8 +41,12 @@ export interface UpdateInfo {
   class: 'none' | 'patch' | 'minor' | 'major' | 'digest';
   floating: boolean;
   newImage: boolean;
+  /** When the last successful check was; absent if there never was one. */
+  checkedAt?: string;
+  /** The most recent check attempt failed with this. */
   error?: string;
-  checkedAt: string;
+  /** When that failed attempt was; set together with `error`. */
+  failedAt?: string;
   /** Breaking-change verdict from the version jump and the stored release notes. */
   level: Exclude<Level, 'unknown'>;
   /** Why, most severe first: "Major version: 2 → 3", "v3.0.0: Redis 8.0 or newer is now required". */
@@ -142,9 +151,24 @@ export function imageName(c: ContainerSummary): string {
   return registry === 'docker.io' ? repository.replace(/^library\//, '') : `${registry}/${repository}`;
 }
 
-/** A successful check found a newer version or image. */
+/** There is a result from a successful check (possibly with a later failed refresh). */
+export function hasResult(u: UpdateInfo | undefined): u is UpdateInfo & { checkedAt: string } {
+  return !!u?.checkedAt;
+}
+
+/** A result is shown, but the most recent attempt to refresh it failed. */
+export function refreshFailed(u: UpdateInfo | undefined): boolean {
+  return hasResult(u) && !!u.error;
+}
+
+/** The last successful check found a newer version or image (a kept result counts too). */
 export function hasUpdate(c: ContainerSummary): boolean {
-  return !isIgnored(c) && !!c.update && !c.update.error && c.update.class !== 'none';
+  return !isIgnored(c) && hasResult(c.update) && c.update.class !== 'none';
+}
+
+/** The most recent attempt failed, whether or not an earlier result is still shown. */
+export function checkFailed(c: ContainerSummary): boolean {
+  return !isIgnored(c) && !!c.update?.error;
 }
 
 /** Containers with an update of any kind. */

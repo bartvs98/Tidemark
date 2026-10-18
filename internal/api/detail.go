@@ -125,7 +125,7 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Changelog = toChangelogJSON(repo, how, ch)
 	// The notes may be fresher than what the list endpoint saw, so assess again.
-	if u := out.Container.Update; u != nil && u.Error == "" {
+	if u := out.Container.Update; u != nil && u.CheckedAt != nil { // a result, possibly kept after a failed refresh
 		res := assess(u.Class, running, latest, ch)
 		if u.Class != string(version.None) {
 			u.Level, u.Reasons = res.Level, res.Reasons
