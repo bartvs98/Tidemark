@@ -81,6 +81,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 /scripts/snapshot.sh          export a host's container/image metadata for development (no container env;
                               only image *_VERSION variables)
 /scripts/dev/verify.mjs       visual verification: build, run against a snapshot, screenshot (verify skill)
+/.github/workflows/image.yml  CI: vet, gofmt, Go + frontend tests, then build and push the image to GHCR
 Dockerfile
 compose.example.yaml
 ```
@@ -203,14 +204,17 @@ Only public images are supported; registry requests are anonymous (a private or 
 ```yaml
 services:
   socket-proxy:
-    image: tecnativa/docker-socket-proxy
+    image: tecnativa/docker-socket-proxy:v0.5.0
     environment: { CONTAINERS: 1, IMAGES: 1, POST: 0 }
     volumes: [ "/var/run/docker.sock:/var/run/docker.sock:ro" ]
   tidemark:
-    image: tidemark:latest
+    image: ghcr.io/bartvs98/tidemark:latest
     environment:
       TIDEMARK_DOCKER_HOST: tcp://socket-proxy:2375
       TIDEMARK_GITHUB_TOKEN: ${GITHUB_TOKEN}
     volumes: [ "./data:/data" ]
     ports: [ "8080:8080" ]
+    labels: [ "tidemark.ignore=true" ]   # its own image is private, so it can't check itself
 ```
+
+The image is built by GitHub Actions (`.github/workflows/image.yml`) on every push to `main`: tests first, then a linux/amd64 build pushed as `latest` and `sha-<short commit>` (also the version `/api/health` reports). Pull requests only build. While the repo is private, the host needs `docker login ghcr.io` with a `read:packages` token. Full example with commented Traefik labels: `compose.example.yaml`.

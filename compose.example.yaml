@@ -1,8 +1,10 @@
-# Copy to compose.yaml and adjust. Secrets go in a .env file next to it.
+# Copy to compose.yaml (or paste into a stack in Portainer) and adjust.
+# Secrets go in a .env file next to it (or the stack's environment).
 services:
   # Read-only gateway to the Docker API. Tidemark never touches the socket directly.
+  # Only reachable on this stack's internal network; never publish port 2375.
   socket-proxy:
-    image: tecnativa/docker-socket-proxy:latest
+    image: tecnativa/docker-socket-proxy:v0.5.0
     restart: unless-stopped
     environment:
       CONTAINERS: 1
@@ -12,8 +14,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   tidemark:
-    build: .
-    image: tidemark:latest
+    image: ghcr.io/bartvs98/tidemark:latest   # or `build: .` from a checkout
     restart: unless-stopped
     depends_on: [socket-proxy]
     environment:
@@ -23,3 +24,10 @@ services:
       - ./data:/data
     ports:
       - "8080:8080"
+    labels:
+      # Tidemark's own image is private while it's a prototype, so it can't check itself.
+      - "tidemark.ignore=true"
+      # Behind Traefik instead of a published port (Tidemark has no login: keep it internal):
+      # - "traefik.enable=true"
+      # - "traefik.http.routers.tidemark.rule=Host(`tidemark.example.com`)"
+      # - "traefik.http.services.tidemark.loadbalancer.server.port=8080"
