@@ -9,7 +9,7 @@
 - **Per-container rules** via labels or a config file: ignore, pin to `1.4.x`, no majors, include pre-releases, custom tag pattern, source repo override.
 - **Read-only and private.** Tidemark never changes your containers. It talks to Docker through a read-only socket proxy and never reads container environment variables.
 
-Status: **early prototype.** Steps 0–6 of the [roadmap](docs/ROADMAP.md) are done; the Docker image hasn't been built and run on a real host yet (step 7). Only public images are supported.
+Status: **early prototype.** The MVP (steps 0–7 of the [roadmap](docs/ROADMAP.md)) is done and runs on real images. Only public images are supported.
 
 ## Run it with Docker
 
