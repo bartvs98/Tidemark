@@ -21,6 +21,16 @@ docker compose up -d
 
 The image is built by GitHub Actions on every push to `main` and published as `ghcr.io/bartvs98/tidemark` (`latest` and `sha-<commit>`, linux/amd64). While the repository is private, the host needs a one-time `docker login ghcr.io` with a token that has `read:packages`. To build from a checkout instead, replace `image:` with `build: .` and run `docker compose up -d --build`. The compose file also works as a stack in Portainer; the `./data` path is then relative to the stack's directory.
 
+A named volume (`- tidemark-data:/data`) works too and needs no `chown`: Docker fills a new volume from the image, which already gives `/data` to uid 65532. The image has no shell, though, so to use a rules file, mount it separately:
+
+```yaml
+    volumes:
+      - tidemark-data:/data
+      - ./tidemark/config.yaml:/config.yaml:ro
+    environment:
+      TIDEMARK_CONFIG: /config.yaml
+```
+
 Then open http://your-server:8080. Tidemark has no login, so keep it on your LAN or behind a reverse proxy that limits access (the compose file has commented Traefik labels). The first check runs at startup, and then every 6 hours. You can also start one with **Check now**.
 
 The compose file runs [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) next to Tidemark with only `CONTAINERS=1 IMAGES=1` and `POST=0`. Don't mount the Docker socket into Tidemark directly: socket access is root-equivalent, and mounting it `:ro` doesn't restrict the API.
