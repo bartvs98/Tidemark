@@ -1,4 +1,7 @@
-<img src="docs/brand/tidemark-wordmark.svg" height="40" alt="Tidemark">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/banner-dark.png">
+  <img src="docs/brand/banner-light.png" alt="Tidemark: know what changed before you update">
+</picture>
 
 **Know what changed before you update.** A self-hosted dashboard that shows, for every container on your Docker host, the version you run, the latest version, the changelog in between and whether anything in it is breaking.
 
@@ -8,6 +11,8 @@
 - **Breaking-change flags.** Release notes are scanned for things like "BREAKING", "action required" and removed options. Each update gets a risk level (none / attention / breaking) with the reasons, and the lines that triggered it are highlighted.
 - **Per-container rules** via labels or a config file: ignore, pin to `1.4.x`, no majors, include pre-releases, custom tag pattern, source repo override.
 - **Read-only and private.** Tidemark never changes your containers. It talks to Docker through a read-only socket proxy and never reads container environment variables.
+
+![The Tidemark dashboard, dark mode on the left and light mode on the right](docs/brand/screenshot.png)
 
 Status: **early prototype.** The MVP (steps 0–7 of the [roadmap](docs/ROADMAP.md)) is done and runs on real images. Only public images are supported.
 

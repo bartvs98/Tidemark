@@ -49,6 +49,8 @@ Use the **`verify` skill** (`.claude/skills/verify/SKILL.md`), which runs `node 
 
 To verify rules or other label/config-driven UI without touching the owner's snapshot: copy `snapshots/home.json` to the scratchpad with labels added (don't print its contents), put a `config.yaml` into a copy of an earlier run's data dir, and pass `--snapshot <copy> --data <dir>`. Interactive states (opened sections, other tabs) need a small Puppeteer script against `--serve` (resolve `puppeteer-core` from `scripts/dev`).
 
+The README banner and the split dark/light screenshot in `docs/brand/` come from `node scripts/dev/readme-images.mjs`, run against `--serve --snapshot scripts/dev/demo-snapshot.json` (a made-up host; never the owner's snapshot). Re-render them when the dashboard looks noticeably different.
+
 ## Gotchas (learned the hard way)
 
 - **Puppeteer + Firefox** sometimes dies on the first page with `DiscardedBrowsingContextError`. That's the driver, not the app: just re-run.

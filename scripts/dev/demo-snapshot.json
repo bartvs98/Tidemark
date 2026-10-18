@@ -1,0 +1,183 @@
+{
+  "capturedAt": "2026-10-18T12:00:00Z",
+  "version": {
+    "Version": "29.2.0",
+    "ApiVersion": "1.53",
+    "Os": "linux",
+    "Arch": "amd64"
+  },
+  "containers": [
+    {
+      "Id": "5910812e4eddbcbaf09d5b9b7953016a9939234085f7dbeb1902ba4a4c06ad63",
+      "Names": [
+        "/homeassistant"
+      ],
+      "Image": "homeassistant/home-assistant:2026.9.0",
+      "ImageID": "sha256:fe0213ed84da50400ba336f1b74a22495791f0479649c74c2c5203033c6f1cdf",
+      "Created": 1789000000,
+      "State": "running",
+      "Status": "Up 3 weeks (healthy)",
+      "Labels": {
+        "com.docker.compose.project": "home",
+        "com.docker.compose.service": "homeassistant"
+      }
+    },
+    {
+      "Id": "7b7450564372fb2887cd3ffcbe6cefacc501222b3283cc664b812dd7e5d3271a",
+      "Names": [
+        "/grafana"
+      ],
+      "Image": "grafana/grafana:11.6.0",
+      "ImageID": "sha256:1a481bf97c4a20e34dde8efe069afcf60144da28aa84c27b0aa082eb9580c031",
+      "Created": 1789000001,
+      "State": "running",
+      "Status": "Up 3 weeks",
+      "Labels": {
+        "com.docker.compose.project": "monitoring",
+        "com.docker.compose.service": "grafana"
+      }
+    },
+    {
+      "Id": "e9c163e36978a3c057431de76b79d2c491e3912514bbf2e85039926d93c43bad",
+      "Names": [
+        "/uptime-kuma"
+      ],
+      "Image": "louislam/uptime-kuma:1.23.16",
+      "ImageID": "sha256:089895471a4f7d9dbcdeba99fbaf5362735d652b26d37e1bdbbc0ab9619300eb",
+      "Created": 1789000002,
+      "State": "running",
+      "Status": "Up 3 weeks (healthy)",
+      "Labels": {
+        "com.docker.compose.project": "monitoring",
+        "com.docker.compose.service": "uptime-kuma"
+      }
+    },
+    {
+      "Id": "1d82a484bc5016b70271a54adec39ff276bf67321975fe2a4266d06425d0bca6",
+      "Names": [
+        "/traefik"
+      ],
+      "Image": "traefik:v3.7.12",
+      "ImageID": "sha256:26d3d0b308d9ad4c85f100d783f2eeb679b06a5e2b03c7045088dbf0dace73f0",
+      "Created": 1789000003,
+      "State": "running",
+      "Status": "Up 3 weeks",
+      "Labels": {
+        "com.docker.compose.project": "proxy",
+        "com.docker.compose.service": "traefik"
+      }
+    },
+    {
+      "Id": "85bc3c99a730454d73c7e3004bde0bde68cc7dcc393885ef213da36e0951063b",
+      "Names": [
+        "/nginx"
+      ],
+      "Image": "nginx:1.31.7-alpine",
+      "ImageID": "sha256:8a9bb8c1e92429c9f7d7efb11c006a04a61c6f06c5133adc9a7e579340bc6aaa",
+      "Created": 1789000004,
+      "State": "running",
+      "Status": "Up 3 weeks",
+      "Labels": {
+        "com.docker.compose.project": "proxy",
+        "com.docker.compose.service": "nginx"
+      }
+    }
+  ],
+  "images": [
+    {
+      "Id": "sha256:fe0213ed84da50400ba336f1b74a22495791f0479649c74c2c5203033c6f1cdf",
+      "RepoTags": [
+        "homeassistant/home-assistant:2026.9.0"
+      ],
+      "RepoDigests": [
+        "homeassistant/home-assistant@sha256:8a94f4c75b9be546e39c2003083c09e329fed0b3d64b7fed85b345449d134fc2"
+      ],
+      "Created": "2026-09-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Variant": null,
+      "Config": {
+        "Labels": {
+          "org.opencontainers.image.source": "https://github.com/home-assistant/core"
+        },
+        "Env": []
+      }
+    },
+    {
+      "Id": "sha256:1a481bf97c4a20e34dde8efe069afcf60144da28aa84c27b0aa082eb9580c031",
+      "RepoTags": [
+        "grafana/grafana:11.6.0"
+      ],
+      "RepoDigests": [
+        "grafana/grafana@sha256:54c65722c18e19fbefc644c51c3993d850e7255d7723aa0d06add867ef67a1df"
+      ],
+      "Created": "2026-09-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Variant": null,
+      "Config": {
+        "Labels": {
+          "org.opencontainers.image.source": "https://github.com/grafana/grafana"
+        },
+        "Env": []
+      }
+    },
+    {
+      "Id": "sha256:089895471a4f7d9dbcdeba99fbaf5362735d652b26d37e1bdbbc0ab9619300eb",
+      "RepoTags": [
+        "louislam/uptime-kuma:1.23.16"
+      ],
+      "RepoDigests": [
+        "louislam/uptime-kuma@sha256:2642dc11302271fc5a52b87a640fd9742291e9e96794c3be2ade4910d68f63f0"
+      ],
+      "Created": "2026-09-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Variant": null,
+      "Config": {
+        "Labels": {
+          "org.opencontainers.image.source": "https://github.com/louislam/uptime-kuma"
+        },
+        "Env": []
+      }
+    },
+    {
+      "Id": "sha256:26d3d0b308d9ad4c85f100d783f2eeb679b06a5e2b03c7045088dbf0dace73f0",
+      "RepoTags": [
+        "traefik:v3.7.12"
+      ],
+      "RepoDigests": [
+        "traefik@sha256:c7d6a050a60b932936155755accb71b34a01fd1d0cae68ff18700b47ba61af64"
+      ],
+      "Created": "2026-09-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Variant": null,
+      "Config": {
+        "Labels": {
+          "org.opencontainers.image.source": "https://github.com/traefik/traefik"
+        },
+        "Env": []
+      }
+    },
+    {
+      "Id": "sha256:8a9bb8c1e92429c9f7d7efb11c006a04a61c6f06c5133adc9a7e579340bc6aaa",
+      "RepoTags": [
+        "nginx:1.31.7-alpine"
+      ],
+      "RepoDigests": [
+        "nginx@sha256:166bcbf742663e2f7f47f6e959d0da62edb746e65001972a3866e24a4bee91c2"
+      ],
+      "Created": "2026-09-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Variant": null,
+      "Config": {
+        "Labels": {
+          "org.opencontainers.image.source": "https://github.com/nginx/nginx"
+        },
+        "Env": []
+      }
+    }
+  ]
+}
