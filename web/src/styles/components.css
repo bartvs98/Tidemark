@@ -270,6 +270,65 @@
   }
 }
 
+@layer components {
+  /* Dialog (ui/dialog.ts): a native modal <dialog>, centred in the top layer. */
+  .tm-dialog {
+    width: min(34rem, calc(100vw - 2rem));
+    max-height: min(44rem, calc(100dvh - 2rem));
+    margin: auto;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-lg);
+    background-color: var(--color-surface);
+    color: var(--color-fg);
+    box-shadow: var(--shadow-overlay);
+  }
+  .tm-dialog::backdrop {
+    background-color: rgb(3 7 13 / 0.55);
+    backdrop-filter: blur(2px);
+  }
+  .tm-dialog[open] {
+    animation: tm-dialog-in 160ms ease-out;
+  }
+  .tm-dialog[open]::backdrop {
+    animation: tm-backdrop-in 160ms ease-out;
+  }
+  @keyframes tm-dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
+  }
+  @keyframes tm-backdrop-in {
+    from {
+      opacity: 0;
+    }
+  }
+  /* A label/value row in a settings list: <dl><div class="tm-setting"><dt/><dd/></div></dl>. */
+  .tm-setting {
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    gap: calc(var(--spacing) * 3);
+    padding-block: calc(var(--spacing) * 2.5);
+    border-bottom: 1px solid var(--color-line);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+  .tm-setting:last-child {
+    border-bottom: 0;
+  }
+  .tm-setting > dt {
+    color: var(--color-fg-muted);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tm-dialog[open],
+    .tm-dialog[open]::backdrop {
+      animation: none;
+    }
+  }
+}
+
 /* ── Severity frame ──────────────────────────────────── */
 /* A card-shaped element (border + border-radius) whose border becomes a calm, slowly circling
    highlight in its level's colour: data-level="breaking" | "attention". The resting border is

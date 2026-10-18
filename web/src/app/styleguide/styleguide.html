@@ -513,6 +513,35 @@
     </tm-card>
   </section>
 
+  <!-- ── Dialog ─────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Dialog</h2>
+    <p class="mb-4 text-fg-muted">
+      A native modal <span class="font-mono text-sm">&lt;dialog&gt;</span>: focus stays inside, Escape, the close button or a
+      click on the backdrop closes it. Rows inside use <span class="font-mono text-sm">.tm-setting</span>. The header's gear
+      opens the settings dialog built from it.
+    </p>
+    <tm-card>
+      <button tmButton icon="settings" data-testid="styleguide-dialog-open" (click)="dialogOpen.set(true)">Open dialog</button>
+    </tm-card>
+    <tm-dialog heading="Example dialog" [(open)]="dialogOpen">
+      <dl>
+        <div class="tm-setting">
+          <dt>Token</dt>
+          <dd><span class="inline-flex items-center gap-1.5"><tm-icon name="check" />Set</span></dd>
+        </div>
+        <div class="tm-setting">
+          <dt>Requests left</dt>
+          <dd><span class="font-mono">4,812 / 5,000</span><span class="text-fg-muted"> this hour, resets 21:24</span></dd>
+        </div>
+        <div class="tm-setting">
+          <dt>Schedule</dt>
+          <dd class="font-mono">0 */6 * * *</dd>
+        </div>
+      </dl>
+    </tm-dialog>
+  </section>
+
   <!-- ── Icons ──────────────────────────────────────────── -->
   <section>
     <h2 class="mb-4 text-xl font-semibold">Icons</h2>

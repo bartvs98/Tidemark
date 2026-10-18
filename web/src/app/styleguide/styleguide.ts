@@ -8,6 +8,7 @@ import {
   TmCallout,
   TmCard,
   TmClamp,
+  TmDialog,
   TmEmptyState,
   TmIcon,
   TmLevel,
@@ -80,6 +81,7 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
     TmCallout,
     TmCard,
     TmClamp,
+    TmDialog,
     TmMarkdown,
     TmEmptyState,
     TmIcon,
@@ -170,6 +172,7 @@ export class Styleguide {
   protected readonly longNotes = Array.from({ length: 24 }, (_, i) => `- Fix number ${i + 1} in a long release`).join('\n');
 
   protected readonly ignoredOpen = signal(false);
+  protected readonly dialogOpen = signal(false);
 
   /** Per-container rules as the dashboard shows them (real components, sample data). */
   protected readonly ruleSamples: { label: string; container: ContainerSummary }[] = [

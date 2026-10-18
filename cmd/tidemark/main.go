@@ -112,7 +112,9 @@ func run(cfg config.Config, log *slog.Logger) error {
 			log.Debug("changelog prefetch failed", "repo", repo.Key(), "err", err)
 		}
 	})
+	schedule := ""
 	if !strings.EqualFold(cfg.Schedule, "off") {
+		schedule = cfg.Schedule
 		if err := checks.Schedule(ctx, cfg.Schedule); err != nil {
 			return fmt.Errorf("TIDEMARK_SCHEDULE: %w", err)
 		}
@@ -141,6 +143,8 @@ func run(cfg config.Config, log *slog.Logger) error {
 			Icons:      iconSvc,
 			Checks:     checks,
 			Changelogs: changelogs,
+			Schedule:   schedule,
+			ConfigFile: cfg.ConfigFile,
 			Background: ctx,
 		}).Handler(web.SPA()),
 		ReadHeaderTimeout: 10 * time.Second,

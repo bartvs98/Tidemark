@@ -22,6 +22,9 @@ type Deps struct {
 	Checks  *check.Service // nil in tests that don't need update checks
 	// Changelogs serves release notes on the detail endpoint; nil disables them.
 	Changelogs *changelog.Service
+	// Schedule (cron spec, "" when off) and ConfigFile (rules file path) are only shown in settings.
+	Schedule   string
+	ConfigFile string
 
 	// Context for background work started by requests (check runs); it outlives the request.
 	Background context.Context
@@ -34,6 +37,8 @@ type Server struct {
 	icons      *icons.Service
 	checks     *check.Service
 	changelogs *changelog.Service
+	schedule   string
+	configFile string
 	background context.Context
 }
 
@@ -42,7 +47,7 @@ func New(d Deps) *Server {
 	if bg == nil {
 		bg = context.Background()
 	}
-	return &Server{version: d.Version, log: d.Log, source: d.Source, icons: d.Icons, checks: d.Checks, changelogs: d.Changelogs, background: bg}
+	return &Server{version: d.Version, log: d.Log, source: d.Source, icons: d.Icons, checks: d.Checks, changelogs: d.Changelogs, schedule: d.Schedule, configFile: d.ConfigFile, background: bg}
 }
 
 // Handler returns the full HTTP handler: API routes plus the SPA served from spa.
@@ -53,6 +58,7 @@ func (s *Server) Handler(spa fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/containers/{name}", s.containerDetail)
 	mux.HandleFunc("GET /api/icons/{ref}", s.icon)
 	mux.HandleFunc("POST /api/checks", s.startCheck)
+	mux.HandleFunc("GET /api/settings", s.settings)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})

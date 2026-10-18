@@ -48,7 +48,7 @@ Recommended: create a [GitHub fine-grained token](https://github.com/settings/pe
 |---|---|
 | Docker Engine API (via the socket proxy) | List containers and images (`GET` only; container inspect is never called) |
 | Container registries (Docker Hub, GHCR, Quay, lscr.io, …) | Tag lists and manifest digests, anonymously; `HEAD` where possible, which doesn't count towards Docker Hub's pull limit |
-| GitHub / GitLab | Release notes and `CHANGELOG.md` for containers with an update |
+| GitHub / GitLab | Release notes and `CHANGELOG.md` for containers with an update; GitHub's remaining API quota when you open Settings (that lookup doesn't count against it) |
 | cdn.jsdelivr.net | App icons from [selfh.st/icons](https://selfh.st/icons/) (`TIDEMARK_ICONS=off` to disable, or `TIDEMARK_ICONS_URL` for a mirror) |
 
 Nothing else: no telemetry, no accounts.

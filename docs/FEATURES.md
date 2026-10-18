@@ -95,6 +95,7 @@ The dashboard shows the level next to the update class (reasons in the tooltip) 
 - A failed check (registry unreachable, e.g. right after the host wakes from sleep) keeps the last good result, shown with a quiet "refresh failed" note (time and error on hover, spelled out in the detail page's Details tab); the dashboard summary counts failed checks. A container that never had a successful check shows "check failed". A failed check doesn't force a check at startup.
 - Registry calls use `HEAD` on manifests where possible (doesn't count towards Docker Hub's pull rate limit).
 - Optional GitHub token (raises the API limit from 60 to 5000 requests/hour). Recommended.
+- **Settings dialog** (gear in the header): read-only, since everything is set by env vars. Shows whether a GitHub token is set (never the token), GitHub's remaining quota and reset time (looked up live via GitHub's `/rate_limit`, which doesn't count against it; cached for a minute), the check schedule and next run, the rules file (path, "not found" or "didn't load"), the container source and whether app icons are on, plus a link to the styleguide and Tidemark's version. The version is also in the page footer.
 
 ## 8. Rules — MVP
 

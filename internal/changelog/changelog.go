@@ -59,6 +59,8 @@ type Service struct {
 	mu           sync.Mutex
 	locks        map[string]*sync.Mutex // one sync per repo at a time
 	limitedUntil time.Time              // GitHub rate limit reset; no API calls before it
+	rateLimit    RateLimit              // last quota lookup (settings), see RateLimit
+	rateLimitAt  time.Time
 
 	// Changes results by repo, then by running→latest. The dashboard asks for every
 	// container on each poll; a repo's entry is dropped whenever Sync stores something.
