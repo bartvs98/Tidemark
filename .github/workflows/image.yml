@@ -1,12 +1,27 @@
 # Tests everything, then builds the Docker image and pushes it to
 # ghcr.io/bartvs98/tidemark (pushes to main only; pull requests just build).
+# Changes that only touch docs don't run it: they change nothing in the image.
 name: image
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
   workflow_dispatch:
+
+# A newer push to the same branch or PR cancels the run it replaces. On main every
+# merge still finishes, so each one gets its image.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

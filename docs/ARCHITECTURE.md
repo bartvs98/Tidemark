@@ -219,4 +219,4 @@ services:
     labels: [ "tidemark.ignore=true" ]   # its own image is private, so it can't check itself
 ```
 
-The image is built by GitHub Actions (`.github/workflows/image.yml`) on every push to `main`: tests first, then a linux/amd64 build pushed as `latest` and `sha-<short commit>` (also the version `/api/health` reports). Pull requests only build. While the repo is private, the host needs `docker login ghcr.io` with a `read:packages` token. Full example with commented Traefik labels: `compose.example.yaml`.
+The image is built by GitHub Actions (`.github/workflows/image.yml`) on every push to `main`: tests first, then a linux/amd64 build pushed as `latest` and `sha-<short commit>` (also the version `/api/health` reports). Pull requests only test and build. Docs-only changes (`*.md`, `docs/`, `LICENSE`) skip the workflow, and a newer push to a PR cancels its running build. While the repo is private, the host needs `docker login ghcr.io` with a `read:packages` token. Full example with commented Traefik labels: `compose.example.yaml`.
