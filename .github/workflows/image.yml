@@ -1,11 +1,13 @@
-# Tests everything, then builds the Docker image and pushes it to
-# ghcr.io/bartvs98/tidemark (pushes to main only; pull requests just build).
-# Changes that only touch docs don't run it: they change nothing in the image.
+# Tests everything. Pull requests also build the Docker image (without pushing it), and
+# release tags (v1.2.3) push it to ghcr.io/bartvs98/tidemark and create a GitHub
+# Release. Merges to main only test. Changes that only touch docs don't run it (paths
+# filters don't apply to tags, so a release always runs).
 name: image
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -17,8 +19,8 @@ on:
       - "LICENSE"
   workflow_dispatch:
 
-# A newer push to the same branch or PR cancels the run it replaces. On main every
-# merge still finishes, so each one gets its image.
+# A newer push to the same PR cancels the run it replaces. Runs on main and on tags
+# always finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -53,6 +55,7 @@ jobs:
 
   image:
     needs: test
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,15 +69,18 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: sha
-        run: echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
       - id: meta
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/tidemark
+          # v1.2.3 → 1.2.3, 1.2, 1, latest and sha-<commit>. A pre-release (v1.3.0-rc.1)
+          # only gets its own version and sha (latest=auto skips pre-releases).
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
             type=sha,prefix=sha-
+          flavor: latest=auto
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -82,6 +88,36 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=sha-${{ steps.sha.outputs.short }}
+          # 1.2.3 on a release (shown in the footer, settings and /api/health), pr-<n> on a PR.
+          build-args: VERSION=${{ steps.meta.outputs.version }}
+          # One manifest per image instead of an index plus untagged attestation manifests,
+          # so cleanup.yml can delete untagged versions without breaking tagged images.
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    needs: image
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: GitHub Release with generated notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Leave a release that already exists (e.g. drafted by hand) alone.
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "release $TAG exists"; exit 0; fi
+          pre=""
+          if [[ "$TAG" == *-* ]]; then pre="--prerelease"; fi
+          gh release create "$TAG" --verify-tag --generate-notes $pre
+
+  cleanup:
+    needs: release
+    permissions:
+      packages: write
+    uses: ./.github/workflows/cleanup.yml

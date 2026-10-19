@@ -1,0 +1,51 @@
+# Deletes old image versions from ghcr.io/bartvs98/tidemark. Runs after each release
+# (called from image.yml) or by hand. Release versions (any tag like 1.2.3, 1.2, 1,
+# latest or a pre-release) are always kept. Of the rest (sha-only and untagged), the
+# newest 20 stay, and nothing younger than 14 days is deleted, so the untagged parts
+# of images built before provenance was switched off survive until a release replaces
+# them.
+name: cleanup
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only list what would be deleted
+        type: boolean
+        default: true
+
+permissions:
+  packages: write
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old image versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          API: /users/${{ github.repository_owner }}/packages/container/tidemark/versions
+          KEEP: 20
+          MIN_AGE_DAYS: 14
+          # Called after a release there are no inputs, so it deletes for real.
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d "$MIN_AGE_DAYS days ago" +%Y-%m-%dT%H:%M:%SZ)
+          gh api --paginate "$API?per_page=100" | jq -s 'add' > versions.json
+          echo "$(jq length versions.json) versions"
+          jq -r --argjson keep "$KEEP" --arg cutoff "$cutoff" '
+            map(select((.metadata.container.tags // [])
+                       | any(test("^(latest|v?[0-9]+(\\.[0-9]+){0,2}(-.+)?)$")) | not))
+            | sort_by(.created_at) | reverse | .[$keep:]
+            | map(select(.created_at < $cutoff))
+            | .[]
+            | [.id, .created_at, ((.metadata.container.tags // []) | join(",") | if . == "" then "untagged" else . end)]
+            | @tsv
+          ' versions.json > delete.tsv
+          echo "$(wc -l < delete.tsv) to delete (dry run: $DRY_RUN)"
+          while IFS=$'\t' read -r id created tags; do
+            echo "  $id  $created  $tags"
+            if [ "$DRY_RUN" != "true" ]; then gh api -X DELETE "$API/$id" --silent; fi
+          done < delete.tsv

@@ -81,7 +81,8 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 /scripts/snapshot.sh          export a host's container/image metadata for development (no container env;
                               only image *_VERSION variables)
 /scripts/dev/verify.mjs       visual verification: build, run against a snapshot, screenshot (verify skill)
-/.github/workflows/image.yml  CI: vet, gofmt, Go + frontend tests, then build and push the image to GHCR
+/.github/workflows/image.yml  CI: vet, gofmt, Go + frontend tests; image build on PRs, image + GitHub Release on v* tags
+/.github/workflows/cleanup.yml  after each release (or by hand): delete old image versions from GHCR (release versions are kept)
 Dockerfile
 compose.example.yaml
 ```
@@ -220,4 +221,13 @@ services:
     labels: [ "tidemark.ignore=true" ]   # its own image is private, so it can't check itself
 ```
 
-The image is built by GitHub Actions (`.github/workflows/image.yml`) on every push to `main`: tests first, then a linux/amd64 build pushed as `latest` and `sha-<short commit>` (also the version `/api/health` reports). Pull requests only test and build. Docs-only changes (`*.md`, `docs/`, `LICENSE`) skip the workflow, and a newer push to a PR cancels its running build. While the repo is private, the host needs `docker login ghcr.io` with a `read:packages` token. Full example with commented Traefik labels: `compose.example.yaml`.
+CI is `.github/workflows/image.yml`:
+
+- **Pull requests:** vet, gofmt and all tests, then a linux/amd64 image build that isn't pushed.
+- **Merges to `main`:** tests only. There's no image between releases.
+- **Docs-only changes** (`*.md`, `docs/`, `LICENSE`) skip the workflow, and a newer push to a PR cancels its running build.
+- **Release tags** (`v1.2.3`): tests, then an image pushed as `1.2.3`, `1.2`, `1`, `latest` and `sha-<short commit>`, built with `VERSION=1.2.3` (what the footer, the settings dialog and `/api/health` report). Then a GitHub Release with notes generated from the merged PRs. A pre-release tag (`v1.3.0-rc.1`) only gets its own version and the sha, and its GitHub Release is marked as a pre-release.
+- **Single-manifest images:** builds turn off provenance and SBOM, so each image is one manifest carrying its tags.
+- **Cleanup after each release** (`.github/workflows/cleanup.yml`, the release run's last job, or by hand with a dry run as the default): deletes old image versions. Every version with a release tag is kept. Of the rest (sha-only or untagged), the newest 20 stay, and nothing younger than 14 days is deleted.
+
+**Releasing:** SemVer. Major for changes that need action from whoever runs it (config, data, API), minor for features, patch for fixes. Tag the merged `main` and push the tag: `git tag -a v1.2.3 -m v1.2.3 origin/main && git push origin v1.2.3`. The owner decides when to release. While the repo is private, the host needs `docker login ghcr.io` with a `read:packages` token. Full example with commented Traefik labels: `compose.example.yaml`.
