@@ -79,13 +79,13 @@ Status is never shown with colour alone: every status also has an icon and a wor
 | UI | **Geist** (variable, OFL) | 14 px base, 600 for headings |
 | Versions, tags, digests, code | **Geist Mono** | Always mono: `1.4.2 → 1.6.0`, `sha256:3f9a…` |
 
-Both are bundled with the app (`@fontsource-variable/geist`, `@fontsource-variable/geist-mono`). There's no CDN, so the app works offline on the LAN.
+Both are bundled with the app (`@fontsource-variable/geist`, `@fontsource-variable/geist-mono`), not loaded from a CDN, so the app works offline on the LAN.
 
 Type scale (px): 12 · 13 · 14 · 16 · 20 · 24 · 32 · 40. Tabular numerals in tables.
 
 ## Motion
 
-Decorative motion is the tide. The tide gauge (the logo as a gauge: line = latest version, water = how much of it you run) and the faint tide behind every page drift in slow loops (seconds to a minute), and a breaking or attention detail page gets a slowly circling border in the level's colour. UI feedback (skeleton shimmer, tooltip fade, toasts, the water easing to a new level) stays short and subtle. Nothing blinks or pulses, and decorative motion stops when the OS asks for reduced motion.
+Decorative motion is the tide: the tide gauge (the logo as a gauge: line = latest version, water = how much of it you run) and the faint tide behind every page drift in slow loops (seconds to a minute), and a breaking or attention detail page gets a slowly circling border in the level's colour. UI feedback (skeleton shimmer, tooltip fade, toasts, the water easing to a new level) stays short and subtle. Nothing blinks or pulses, and decorative motion stops when the OS asks for reduced motion.
 
 ## Voice
 

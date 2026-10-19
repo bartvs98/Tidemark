@@ -1,6 +1,6 @@
 # Design system
 
-The visual rules are in [BRAND.md](BRAND.md). This page covers how they're built in code. To see every piece live in both themes, run the app and open **`/styleguide`**.
+The visual rules are in [BRAND.md](BRAND.md); this page covers how they're built in code. Every piece is live in both themes at **`/styleguide`**.
 
 ## Where things live
 
@@ -66,7 +66,7 @@ Every colour is written once as `light-dark(<light>, <dark>)`. The theme switch 
 | `tm-tide-gauge` | `level` (0 far behind … 1 at the mark, clamped), `size` (`compact`, default, 56×32; `hero` fills its parent), `label` (required: the accessible name on `role="img"`). The logo as a gauge: the line at the top is the latest version, the water below rises to `level`. The dashboard uses `hero` with level = up to date ÷ checked and the line moved to 56 px (64 px from `sm`); the detail page `compact` with level = `max(0.15, 1 - releases behind / 12)`. Waves drift slowly and the water eases to a new level; both stop under reduced motion. Draws no text and never turns amber or red (colour means risk). In `hero` size the line and the lowest water sit at `--tm-gauge-line` (24%) and `--tm-gauge-floor` (80%), overridable with utilities (`[--tm-gauge-line:64px]`). |
 | `tm-tide-backdrop` | No inputs. The faint tide along the bottom of every page, mounted once in `app.html`: fixed, `z-index: -1`, no pointer events, `aria-hidden`, still under reduced motion. |
 | `.tm-severity-frame` | CSS class + `data-level="breaking"` or `"attention"` on a card: the level's `-line` border with two soft arcs of the level colour circling it every 12 s (static under reduced motion). Used on the detail header; the level badge stays, since colour is never the only signal. Don't combine it with a `border-line` utility, which would win. |
-| `tr.tm-row-link` | A table row that opens a link: put `after:absolute after:inset-0` on one link inside (stretched link). Things that must stay hoverable on their own get `relative z-10`. |
+| `tr.tm-row-link` | A table row that opens a link: put `after:absolute after:inset-0` on one link inside (stretched link). Anything that must stay hoverable on its own (a tooltip host, in rows and in tiles) gets `relative z-10`. |
 | `table.tm-table` | A plain table, which keeps it accessible by default. For tables split across sections, see [Tables across sections](#tables-across-sections). Add `tm-table-stack` (and make any `min-w` `sm:` only) to stack rows below 640px: cells with `data-stack="full"` take the first line, `"hide"` drop out, `"indent"` grows and lines up under the name, the rest share the second line. |
 | `TM_TABS` + `.tm-tabs` | [Angular Aria](https://angular.dev/guide/aria/tabs) headless tabs (`ngTabs`, `ngTabList`, `ngTab`, `ngTabPanel`), styled by the class. Keyboard navigation and ARIA come from Aria. |
 
@@ -101,13 +101,11 @@ An `update` has three states. Its result fields always describe the **last succe
 | `tm-container-table` | One group of containers (a stack, or "Ignored") as `tm-card flush` + `table.tm-table tm-table-stack` with the `COLUMNS` widths and a `sm:sr-only` `<thead>`. Each row is a `tr.tm-row-link`: app icon, name (the stretched link), state and rule-skipped badges, status; image; `tm-container-version`; `tm-container-update`. Inputs: `containers` (required), `checking`, `ignored` (tones the names down and puts the stack before the status), `showStack` (the stack before the status, for the severity grouping), `link`. |
 | `tm-column-bar` | The single sticky, `aria-hidden` column header above all the tables (see [Tables across sections](#tables-across-sections)). No inputs. |
 
-Anything with a tooltip inside a stretched-link row or tile gets `relative z-10` so it stays hoverable.
-
 **Quiet when up to date.** Rows and tiles of an up-to-date container (a successful result, class `none`, not ignored) carry `data-current` and are toned down: muted name, greyed icon (`opacity-50 grayscale`), and a flat tile without surface or shadow. Containers with an update get a bold name. Containers without a result yet aren't toned down.
 
 ## Rules
 
-1. **Colour means risk.** Patch, minor and major are neutral. Only `attention` and `breaking` get colour. Don't add coloured badges for anything else. (`tm-badge` has `accent` and `ok` tones, but update info doesn't use them; the only green there is the small "Up to date" check.)
+1. **Colour means risk:** only `attention` and `breaking` get colour; patch, minor and major are neutral. Don't add coloured badges for anything else. (`tm-badge` has `accent` and `ok` tones, but update info doesn't use them; the only green there is the small "Up to date" check.)
 2. **Never colour alone.** Every status has an icon **and** a word.
 3. **Versions, tags, digests and image refs are always mono.**
 4. **Build from the pieces.** If a screen needs something new, add it to the design system and to `/styleguide` first, then use it. Generic pieces go in their own folder in `ui/` (exported from `ui/index.ts`). Domain composites that take a `ContainerSummary` live next to the dashboard ([Container pieces](#container-pieces)), but are documented here and shown on `/styleguide` all the same.
