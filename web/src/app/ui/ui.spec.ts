@@ -354,6 +354,12 @@ describe('TmTideGauge', () => {
     expect(crest.endsWith('T400 5')).toBe(true); // one period past the width, for the loop
     expect(fill).toBe(`${crest} V2000 H0Z`);
   });
+
+  it('can leave room above the peaks for a stroked crest', () => {
+    const { crest } = tideWavePath(100, 5, 300, 2000, 2);
+    // Peaks at y=2 instead of y=0, so a 2 px stroke isn't clipped flat by the SVG's top edge.
+    expect(crest.startsWith('M0 7 Q25 -3 50 7')).toBe(true);
+  });
 });
 
 describe('TmTideBackdrop', () => {

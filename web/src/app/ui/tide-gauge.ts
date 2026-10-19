@@ -4,12 +4,14 @@ export type TideGaugeSize = 'hero' | 'compact';
 
 /**
  * SVG path data for one wave layer, in px (the SVGs have no viewBox, so nothing stretches).
- * The crest runs from y=0 (peaks) to y=2·amp (troughs) with the given period, `width` px long;
- * the fill closes it down to `depth`. Quadratic curves with smooth continuation (T) keep it short.
+ * The crest runs from y=pad (peaks) to y=pad+2·amp (troughs) with the given period, `width` px
+ * long; the fill closes it down to `depth`. Quadratic curves with smooth continuation (T) keep it
+ * short. `pad` leaves room above the peaks for a stroked crest, which the SVG would clip.
  */
-export function tideWavePath(period: number, amp: number, width: number, depth = 2000): { crest: string; fill: string } {
-  let crest = `M0 ${amp} Q${period / 4} ${-amp} ${period / 2} ${amp}`;
-  for (let x = period; x <= width + period; x += period / 2) crest += ` T${x} ${amp}`;
+export function tideWavePath(period: number, amp: number, width: number, depth = 2000, pad = 0): { crest: string; fill: string } {
+  const mid = amp + pad;
+  let crest = `M0 ${mid} Q${period / 4} ${pad - amp} ${period / 2} ${mid}`;
+  for (let x = period; x <= width + period; x += period / 2) crest += ` T${x} ${mid}`;
   return { crest, fill: `${crest} V${depth} H0Z` };
 }
 
@@ -28,8 +30,11 @@ interface Wave {
   fill: string;
 }
 
+/** Room above the peaks for the 2 px crest stroke (the wave box moves up by as much, see .tm-gauge-wave). */
+const CREST_PAD = 2;
+
 function wave(period: number, amp: number, offset: number, seconds: number, reverse: boolean, opacity: number, front = false): Wave {
-  return { period, offset, seconds, reverse, opacity, front, ...tideWavePath(period, amp, 3200) };
+  return { period, offset, seconds, reverse, opacity, front, ...tideWavePath(period, amp, 3200, 2000, CREST_PAD) };
 }
 
 // Back to front. Different periods + speeds + directions keep the crests from lining up.
@@ -127,8 +132,8 @@ const WAVES: Record<TideGaugeSize, Wave[]> = {
         width: calc(100% + var(--tm-wave-period));
         top: calc(
           var(--tm-gauge-line) + 1px + (1 - var(--tm-level)) * (var(--tm-gauge-floor) - var(--tm-gauge-line)) +
-            var(--tm-wave-offset)
-        );
+            var(--tm-wave-offset) - 2px
+        ); /* - 2px: CREST_PAD, so the peaks stay where they were and the crest isn't clipped */
         animation: tm-gauge-flow linear infinite;
         transition: top 1.4s cubic-bezier(0.4, 0, 0.2, 1);
         will-change: transform;
