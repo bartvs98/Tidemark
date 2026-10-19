@@ -36,6 +36,6 @@ export interface Settings {
 export class SettingsDialog {
   readonly open = model(false);
 
-  /** Requested only while open; reopening asks again (the server caches GitHub's answer for a minute). */
+  /** Requested only while open; reopening asks again (the server keeps GitHub's quota current from its own requests and asks again after a minute). */
   protected readonly settings = httpResource<Settings>(() => (this.open() ? '/api/settings' : undefined));
 }

@@ -4,6 +4,9 @@ import { ContainerSummary, hasResult, isIgnored, ruleOrigin } from '../container
 import { errorKindLabel } from '../format';
 import { ContainerRefreshFailed } from '../refresh-failed/refresh-failed';
 
+const TOOLTIP_LINE = 140;
+const clip = (s: string) => (s.length > TOOLTIP_LINE ? s.slice(0, TOOLTIP_LINE - 1).trimEnd() + '…' : s);
+
 /** The update class and risk level badges, "check failed", or a placeholder while checking. */
 @Component({
   selector: 'tm-container-update',
@@ -30,5 +33,8 @@ export class ContainerUpdate {
   protected readonly error = computed(() => this.container().update?.error);
   protected readonly reason = computed(() => errorKindLabel(this.container().update?.errorKind));
   protected readonly kind = computed(() => (this.result()?.class ?? 'none') as UpdateClass);
-  protected readonly reasons = computed(() => this.result()?.reasons?.join('\n') || null);
+  /** One line per reason, quotes prefixed with their release; cut short, since the tooltip is small. */
+  protected readonly reasons = computed(
+    () => this.result()?.reasons?.map((r) => clip(r.tag ? `${r.tag}: ${r.text}` : r.text)).join('\n') || null,
+  );
 }

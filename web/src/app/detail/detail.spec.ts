@@ -22,7 +22,8 @@ function detail(overrides: Partial<ContainerDetailData> = {}): ContainerDetailDa
       state: 'running',
       status: 'Up 3 weeks',
       created: '2026-10-01T00:00:00Z',
-      update: { running: '2026.9.0', source: 'label', latest: '2026.10.1', class: 'minor', floating: true, newImage: true, checkedAt: '2026-10-16T12:00:00Z', level: 'breaking', reasons: ['2026.10.0: removed X'] },
+      update: { running: '2026.9.0', source: 'label', latest: '2026.10.1', class: 'minor', floating: true, newImage: true, checkedAt: '2026-10-16T12:00:00Z', level: 'breaking',
+        reasons: [{ text: 'Major version: 2026 → 2027' }, { text: 'removed X', tag: '2026.10.0', line: '- removed X' }] },
     },
     image: { digests: ['homeassistant/home-assistant@sha256:1'], labels: { 'org.opencontainers.image.version': '2026.9.0' } },
     changelog: {
@@ -78,16 +79,67 @@ describe('ContainerDetail', () => {
     const el = await render('homeassistant', (req) => req.flush(detail()));
     const reasons = el.querySelector('[data-testid="reasons"]')!;
     expect(reasons.textContent).toContain('Read before updating');
-    expect(reasons.querySelector('li')?.textContent).toBe('2026.10.0: removed X');
+    const items = [...reasons.querySelectorAll('[data-testid="reason"]')];
+    expect(items.map((li) => li.querySelector('[data-testid="reason-text"]')?.textContent)).toEqual(['Major version: 2026 → 2027', 'removed X']);
+    expect(items[0].querySelector('button')).toBeNull(); // no quote, nothing to jump to
+    expect(items[1].querySelector('[data-testid="reason-jump"]')?.textContent?.trim()).toBe('2026.10.0');
 
     const [calm, flagged] = [...el.querySelectorAll('[data-testid="changes"] details')];
     expect(calm.querySelector('summary tm-level')?.textContent?.trim()).toBe('');
     expect(flagged.querySelector('summary tm-level')?.textContent).toContain('Breaking');
     expect(flagged.querySelector('h2')?.className).toBe('tm-flag-breaking');
     expect(flagged.querySelector('li')?.className).toBe('tm-flag-breaking');
-    // Only notes without flags are capped behind "Show all".
+    // All notes are capped behind "Show all", flagged ones too (the button counts hidden flags).
     expect(calm.querySelector('tm-clamp')).not.toBeNull();
-    expect(flagged.querySelector('tm-clamp')).toBeNull();
+    expect(flagged.querySelector('tm-clamp')).not.toBeNull();
+  });
+
+  it('shows a long reason whole', async () => {
+    const d = detail();
+    const long = 'removed '.repeat(40) + 'https://example.com/a/very/long/url/without/any/spaces/'.repeat(4);
+    d.container.update!.reasons = [{ text: long, tag: '2026.10.0', line: 'not in the notes' }];
+    const el = await render('homeassistant', (req) => req.flush(d));
+    const li = el.querySelector('[data-testid="reason"]')!;
+    expect(li.querySelector('[data-testid="reason-text"]')?.textContent).toBe(long);
+    expect(li.classList).toContain('wrap-anywhere');
+    // The line isn't among the release's hits: the tag shows, without a jump.
+    expect(li.querySelector('button')).toBeNull();
+    expect(li.querySelector('.font-mono')?.textContent).toBe('2026.10.0');
+  });
+
+  it('jumps from a quoted reason to its line: Changes tab, release opened, scrolled, focused, highlighted', async () => {
+    const original = Element.prototype.scrollIntoView;
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const d = detail();
+      // An attention release stays closed until jumped to.
+      const release = d.changelog!.releases[1];
+      release.level = 'attention';
+      release.hits = release.hits.map((h) => ({ ...h, level: 'attention' }));
+      const el = await render('homeassistant', (req) => req.flush(d));
+      const app = TestBed.inject(ApplicationRef);
+
+      (el.querySelector('[ngTab][value="details"]') as HTMLElement).click();
+      await app.whenStable();
+      expect(el.querySelector('[data-testid="changes"]')).toBeNull();
+
+      (el.querySelector('[data-testid="reason-jump"]') as HTMLButtonElement).click();
+      await app.whenStable();
+      await app.whenStable();
+
+      const flagged = el.querySelector<HTMLDetailsElement>('details[data-release="2026.10.0"]')!;
+      expect(flagged.open).toBe(true);
+      const line = flagged.querySelector<HTMLElement>('[data-flag~="1"]')!;
+      expect(line.textContent).toBe('removed X');
+      expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ block: 'center' }));
+      expect(scrollIntoView.mock.contexts[0]).toBe(line);
+      expect(document.activeElement).toBe(line);
+      expect(line.tabIndex).toBe(-1);
+      expect(line.classList).toContain('tm-flag-jumped');
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 
   it('explains a missing repository, missing notes and fetch errors', async () => {

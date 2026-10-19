@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -145,7 +146,7 @@ func TestAssess(t *testing.T) {
 
 	t.Run("major bump", func(t *testing.T) {
 		r := Assess(Input{Class: version.Major, Running: v("2.17.2"), Latest: v("3.5.1")})
-		if r.Level != Breaking || len(r.Reasons) != 1 || r.Reasons[0] != "Major version: 2.17.2 → 3.5.1" {
+		if r.Level != Breaking || len(r.Reasons) != 1 || r.Reasons[0] != (Reason{Text: "Major version: 2.17.2 → 3.5.1"}) {
 			t.Errorf("got %v %q", r.Level, r.Reasons)
 		}
 	})
@@ -162,6 +163,25 @@ func TestAssess(t *testing.T) {
 			t.Errorf("got %v %q %d", r.Level, r.Reasons, len(r.Releases))
 		}
 	})
+	t.Run("a long quote comes through whole, with its tag and raw line", func(t *testing.T) {
+		long := strings.Repeat("the old setting is gone ", 12)
+		r := Assess(Input{Class: version.Minor, Running: v("2.6.13"), Latest: v("2.6.15"), Releases: []Notes{
+			{"2.6.15", "- **BREAKING**: " + long},
+		}})
+		if len(r.Reasons) != 1 {
+			t.Fatalf("reasons = %+v", r.Reasons)
+		}
+		rs := r.Reasons[0]
+		if want := "BREAKING: " + strings.TrimSpace(long); rs.Text != want || len([]rune(rs.Text)) <= 140 {
+			t.Errorf("text = %q", rs.Text)
+		}
+		if rs.Tag != "2.6.15" {
+			t.Errorf("tag = %q", rs.Tag)
+		}
+		if !slices.ContainsFunc(r.Releases[0].Hits, func(h Hit) bool { return h.Line == rs.Line }) || rs.Line == rs.Text {
+			t.Errorf("line %q not found in hits %+v", rs.Line, r.Releases[0].Hits)
+		}
+	})
 	t.Run("quotes breaking first, then the rest as a count", func(t *testing.T) {
 		r := Assess(Input{Class: version.Minor, Running: v("2.6.13"), Latest: v("2.6.15"), Releases: []Notes{
 			{"2.6.15", "- **removed** basic auth from rest API\n- Removed MySQL libraries\n- settings have been removed\n- Dropped support for X"},
@@ -173,7 +193,15 @@ func TestAssess(t *testing.T) {
 			"2.6.15: Removed MySQL libraries",
 			"and 2 more flagged lines",
 		}
-		if r.Level != Breaking || strings.Join(r.Reasons, "|") != strings.Join(want, "|") {
+		var got []string
+		for _, rs := range r.Reasons {
+			if rs.Tag != "" {
+				got = append(got, rs.Tag+": "+rs.Text)
+			} else {
+				got = append(got, rs.Text)
+			}
+		}
+		if r.Level != Breaking || strings.Join(got, "|") != strings.Join(want, "|") {
 			t.Errorf("got %v\n%q\nwant\n%q", r.Level, r.Reasons, want)
 		}
 		if r.Releases[0].Level != Attention || r.Releases[1].Level != Breaking {

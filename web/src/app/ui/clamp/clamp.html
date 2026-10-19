@@ -11,6 +11,6 @@
 </div>
 @if (tall()) {
   <button tmButton variant="ghost" size="sm" [icon]="open() ? 'chevron-up' : 'chevron-down'" class="mt-2" [attr.aria-expanded]="open()" (click)="toggle()">
-    {{ open() ? 'Show less' : 'Show all' }}
+    {{ label() }}
   </button>
 }

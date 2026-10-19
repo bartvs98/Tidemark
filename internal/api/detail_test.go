@@ -77,7 +77,7 @@ func TestContainerDetail(t *testing.T) {
 		cl.Links.Running != "https://github.com/jellyfin/jellyfin-packaging/tree/v10.9.11" {
 		t.Errorf("links = %+v", cl.Links)
 	}
-	if u := d.Container.Update; u == nil || u.Level != analysis.Breaking || len(u.Reasons) != 1 || u.Reasons[0] != "v10.10.7: new config" {
+	if u := d.Container.Update; u == nil || u.Level != analysis.Breaking || len(u.Reasons) != 1 || u.Reasons[0].Tag != "v10.10.7" || u.Reasons[0].Text != "new config" || u.Reasons[0].Line != "new config" {
 		t.Errorf("update = %+v", d.Container.Update)
 	}
 	if r := cl.Releases[0]; r.Level != analysis.Breaking || len(r.Hits) != 2 || r.Hits[0].Line != "## Breaking" || r.Hits[1].Line != "new config" {

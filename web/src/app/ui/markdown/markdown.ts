@@ -35,41 +35,56 @@ export interface MarkdownFlag {
 const MARKERS = /^(?:\s|>)*(?:(?:[-*+]|\d+[.)])\s+)?/;
 const flagKey = (line: string) => line.replace(MARKERS, '').trim();
 
+interface Mark {
+  level: 'attention' | 'breaking';
+  /** Indexes into the flags that matched. */
+  indexes: number[];
+}
+
 /**
  * Renders markdown to sanitised HTML. With a GitHub repo URL, "#123" links to the issue
  * or pull request and "@name" to the user, like on GitHub. Headings, paragraphs and list
- * items holding a flagged line get class "tm-flag-breaking" or "tm-flag-attention".
+ * items holding a flagged line get class "tm-flag-breaking" or "tm-flag-attention", and
+ * `data-flag` with the indexes of those flags, space-separated (select with `[data-flag~="2"]`).
  */
 export function renderMarkdown(markdown: string, githubRepo?: string, flags: MarkdownFlag[] = []): string {
   const md = new Marked({ gfm: true, breaks: false });
-  const levels = new Map<string, 'attention' | 'breaking'>();
-  for (const f of flags) {
-    if (f.level === 'none') continue;
-    const key = flagKey(f.line);
-    if (key && levels.get(key) !== 'breaking') levels.set(key, f.level);
-  }
-  if (levels.size) {
+  const marks = new Map<string, Mark>();
+  flags.forEach((f, i) => {
+    const key = f.level === 'none' ? '' : flagKey(f.line);
+    if (!key) return;
+    const m = marks.get(key);
+    if (!m) marks.set(key, { level: f.level as Mark['level'], indexes: [i] });
+    else {
+      m.indexes.push(i);
+      if (f.level === 'breaking') m.level = 'breaking';
+    }
+  });
+  if (marks.size) {
     // Own text only: a list item's first line, not its nested list.
-    const levelOf = (raw: string, firstLineOnly: boolean) => {
+    const markOf = (raw: string, firstLineOnly: boolean): Mark | undefined => {
+      const found: Mark = { level: 'attention', indexes: [] };
       const lines = raw.split('\n');
       for (const l of firstLineOnly ? lines.slice(0, 1) : lines) {
-        const level = levels.get(flagKey(l));
-        if (level) return level;
+        const m = marks.get(flagKey(l));
+        if (!m) continue;
+        if (m.level === 'breaking') found.level = 'breaking';
+        found.indexes.push(...m.indexes);
       }
-      return undefined;
+      return found.indexes.length ? found : undefined;
     };
-    const mark = (html: string, level?: string) =>
-      level ? html.replace(/^<(\w+)/, `<$1 class="tm-flag-${level}"`) : html;
+    const mark = (html: string, m?: Mark) =>
+      m ? html.replace(/^<(\w+)/, `<$1 class="tm-flag-${m.level}" data-flag="${m.indexes.join(' ')}"`) : html;
     md.use({
       renderer: {
         heading(this: Renderer, token: Tokens.Heading) {
-          return mark(Renderer.prototype.heading.call(this, token), levelOf(token.raw, true));
+          return mark(Renderer.prototype.heading.call(this, token), markOf(token.raw, true));
         },
         paragraph(this: Renderer, token: Tokens.Paragraph) {
-          return mark(Renderer.prototype.paragraph.call(this, token), levelOf(token.raw, false));
+          return mark(Renderer.prototype.paragraph.call(this, token), markOf(token.raw, false));
         },
         listitem(this: Renderer, token: Tokens.ListItem) {
-          return mark(Renderer.prototype.listitem.call(this, token), levelOf(token.raw, true));
+          return mark(Renderer.prototype.listitem.call(this, token), markOf(token.raw, true));
         },
       },
     });

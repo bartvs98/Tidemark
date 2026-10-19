@@ -163,6 +163,7 @@ describe('Dashboard', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
     TestBed.configureTestingModule({
       providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])],
     });
@@ -259,7 +260,7 @@ describe('Dashboard', () => {
   });
 
   it('shows the risk level with its reasons, and filters to updates or breaking ones', async () => {
-    const update = (cls: 'none' | 'minor' | 'major', level: 'none' | 'attention' | 'breaking', reasons?: string[]) => ({
+    const update = (cls: 'none' | 'minor' | 'major', level: 'none' | 'attention' | 'breaking', reasons?: UpdateInfo['reasons']) => ({
       running: '1.0.0', source: 'tag' as const, latest: cls === 'none' ? '1.0.0' : '2.0.0', class: cls,
       floating: false, newImage: false, checkedAt: '2026-10-16T13:00:00Z', level, reasons,
     });
@@ -267,8 +268,13 @@ describe('Dashboard', () => {
       source: { kind: 'docker', location: 'x' },
       check: { running: false, done: 3, total: 3, finishedAt: '2026-10-16T13:00:00Z' },
       containers: [
-        container('jellyfin', 'media', { update: update('major', 'breaking', ['Major version: 1.0.0 → 2.0.0']) }),
-        container('sonarr', 'media', { update: update('minor', 'attention', ['2.0.0: settings have been removed']) }),
+        container('jellyfin', 'media', { update: update('major', 'breaking', [{ text: 'Major version: 1.0.0 → 2.0.0' }]) }),
+        container('sonarr', 'media', {
+          update: update('minor', 'attention', [
+            { text: 'settings have been removed', tag: '2.0.0', line: '- settings have been removed' },
+            { text: 'x'.repeat(200), tag: '1.9.0', line: 'x' },
+          ]),
+        }),
         container('mkvtoolnix', 'files', { update: update('none', 'none') }),
       ],
     };
@@ -278,6 +284,12 @@ describe('Dashboard', () => {
     const levels = [...el.querySelectorAll('[data-testid="level"]')];
     expect(levels.map((l) => l.textContent?.trim())).toEqual(['Breaking', 'Attention']); // mkvtoolnix is up to date: no badge
     expect(levels[0].getAttribute('data-tooltip')).toBe('Major version: 1.0.0 → 2.0.0');
+    // Quotes carry their release; long lines are cut short for the small tooltip.
+    const [quote, long] = levels[1].getAttribute('data-tooltip')!.split('\n');
+    expect(quote).toBe('2.0.0: settings have been removed');
+    expect(long.length).toBe(140);
+    expect(long.startsWith('1.9.0: xxx')).toBe(true);
+    expect(long.endsWith('…')).toBe(true);
 
     const buttons = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="filter"] button')];
     expect(buttons.map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['All', 'Updates 2', 'Breaking 1']);
@@ -293,10 +305,111 @@ describe('Dashboard', () => {
     expect(rowNames()).toEqual(['jellyfin', 'sonarr']);
   });
 
+  describe('search', () => {
+    function body(): ContainerList {
+      return {
+        source: { kind: 'docker', location: 'x' },
+        containers: [
+          container('jellyfin', 'media', { update: checked('major', 'breaking') }),
+          container('sonarr', 'media', { update: checked('minor', 'attention') }),
+          container('adguard', 'networking', { image: { ...container('x').image, ref: 'adguard/adguardhome:1', display: 'adguard/adguardhome:1' } }),
+          container('filebrowser', 'tools', { rules: { ignore: true, from: { ignore: 'label' } } }),
+        ],
+      };
+    }
+    const settle = () => TestBed.inject(ApplicationRef).whenStable();
+    const names = (el: HTMLElement) => [...el.querySelectorAll('tbody tr a')].map((a) => a.textContent?.trim());
+    async function type(el: HTMLElement, text: string) {
+      const input = el.querySelector<HTMLInputElement>('[data-testid="search"] input')!;
+      input.value = text;
+      input.dispatchEvent(new Event('input'));
+      await settle();
+    }
+
+    it('filters by name, image and stack, ignoring case and surrounding whitespace', async () => {
+      const el = await render((req) => req.flush(body()));
+      await type(el, '  JELLY ');
+      expect(names(el)).toEqual(['jellyfin']);
+      await type(el, 'adguardhome');
+      expect(names(el)).toEqual(['adguard']);
+      await type(el, 'media');
+      expect(names(el)).toEqual(['jellyfin', 'sonarr']);
+      await type(el, '');
+      expect(names(el).length).toBe(3);
+    });
+
+    it('combines with the Show filter and works in severity grouping and tiles', async () => {
+      const el = await render((req) => req.flush(body()));
+      await type(el, 'media');
+      el.querySelector<HTMLButtonElement>('[data-testid="filter"] button:nth-child(3)')!.click(); // Breaking
+      await settle();
+      expect(names(el)).toEqual(['jellyfin']);
+
+      el.querySelector<HTMLButtonElement>('[data-testid="filter"] button:nth-child(1)')!.click();
+      el.querySelector<HTMLButtonElement>('[data-testid="group"] button:nth-child(2)')!.click();
+      el.querySelector<HTMLButtonElement>('button[aria-label="Tiles"]')!.click();
+      await settle();
+      expect([...el.querySelectorAll('tm-container-tile')].length).toBe(2);
+      expect(el.querySelector('[data-testid="severity-breaking"]')).not.toBeNull();
+    });
+
+    it('searches ignored containers too and leaves the hero figures alone', async () => {
+      const el = await render((req) => req.flush(body()));
+      const headline = el.querySelector('[data-testid="headline"]')!.textContent;
+      await type(el, 'filebrowser');
+      expect(el.querySelector('[data-testid="ignored-section"]')).not.toBeNull();
+      expect(el.querySelector('[data-testid="no-match"]')).toBeNull();
+      await type(el, 'jelly');
+      expect(el.querySelector('[data-testid="ignored-section"]')).toBeNull();
+      expect(el.querySelector('[data-testid="headline"]')!.textContent).toBe(headline);
+      expect(el.querySelector('[data-testid="summary"]')!.textContent).toContain('4 containers');
+    });
+
+    it('shows an empty state with a way to clear the search', async () => {
+      const el = await render((req) => req.flush(body()));
+      await type(el, ' nope ');
+      const empty = el.querySelector('[data-testid="no-match"]')!;
+      expect(empty.textContent).toContain('No containers match "nope"');
+      empty.querySelector<HTMLButtonElement>('button')!.click();
+      await settle();
+      expect(el.querySelector('[data-testid="no-match"]')).toBeNull();
+      expect(names(el).length).toBe(3);
+    });
+
+    it('keeps the query for the session only', async () => {
+      const el = await render((req) => req.flush(body()));
+      await type(el, 'sonarr');
+      expect(sessionStorage.getItem('tidemark.query')).toBe('sonarr');
+      expect(localStorage.getItem('tidemark.query')).toBeNull();
+    });
+
+    it('restores the query from the session', async () => {
+      sessionStorage.setItem('tidemark.query', 'sonarr');
+      const el = await render((req) => req.flush(body()));
+      expect(names(el)).toEqual(['sonarr']);
+    });
+
+    it('"/" focuses the field, except while typing in an input', async () => {
+      const el = await render((req) => req.flush(body()));
+      document.body.appendChild(el);
+      const input = el.querySelector<HTMLInputElement>('[data-testid="search"] input')!;
+
+      const slash = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true });
+      document.body.dispatchEvent(slash);
+      expect(document.activeElement).toBe(input);
+      expect(slash.defaultPrevented).toBe(true);
+
+      const typing = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true });
+      input.dispatchEvent(typing);
+      expect(typing.defaultPrevented).toBe(false);
+      el.remove();
+    });
+  });
+
   describe('when a check fails', () => {
     const result = (extra: Partial<UpdateInfo> = {}): UpdateInfo => ({
       running: '1.0.0', source: 'tag', latest: '2.0.0', class: 'major', floating: false, newImage: false,
-      checkedAt: '2026-10-15T23:00:00Z', level: 'breaking', reasons: ['Major version: 1.0.0 → 2.0.0'], ...extra,
+      checkedAt: '2026-10-15T23:00:00Z', level: 'breaking', reasons: [{ text: 'Major version: 1.0.0 → 2.0.0' }], ...extra,
     });
     const failed = { error: 'dial tcp: lookup registry-1.docker.io: no such host', failedAt: '2026-10-16T07:02:00Z' };
     const text = (e: Element | null | undefined) => e?.textContent?.replace(/\s+/g, ' ').trim();

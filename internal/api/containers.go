@@ -61,8 +61,8 @@ type updateJSON struct {
 	TagsFrom *time.Time `json:"tagsFrom,omitempty"`
 	// Level is the breaking-change verdict (none | attention | breaking) from the version
 	// jump and the stored release notes in range; Reasons explain it, most severe first.
-	Level   analysis.Level `json:"level"`
-	Reasons []string       `json:"reasons,omitempty"`
+	Level   analysis.Level    `json:"level"`
+	Reasons []analysis.Reason `json:"reasons,omitempty"`
 }
 
 type sourceJSON struct {

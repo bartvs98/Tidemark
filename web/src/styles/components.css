@@ -163,6 +163,26 @@
     background-color: var(--color-attention-soft);
     box-shadow: 0 0 0 0.25rem var(--color-attention-soft);
   }
+  /* A flagged line just jumped to from the reasons: a focus-coloured ring that fades (static under reduced motion). */
+  .tm-prose .tm-flag-jumped {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 0.4rem;
+    animation: tm-flag-jumped 2s ease-in forwards;
+  }
+  @keyframes tm-flag-jumped {
+    0%,
+    50% {
+      outline-color: var(--color-focus);
+    }
+    100% {
+      outline-color: transparent;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tm-prose .tm-flag-jumped {
+      animation: none;
+    }
+  }
 
   /* ── Tabs (Angular Aria: ngTabs / ngTabList / ngTab / ngTabPanel) ── */
   .tm-tabs [role='tablist'] {

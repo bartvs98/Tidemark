@@ -84,8 +84,15 @@ type Notes struct {
 // Result is the overall verdict plus one entry per input release (same order).
 type Result struct {
 	Level    Level
-	Reasons  []string // short, specific, most severe first
+	Reasons  []Reason // short, specific, most severe first
 	Releases []Release
+}
+
+// Reason is one line of the verdict's explanation.
+type Reason struct {
+	Text string `json:"text"`           // readable text; for a quote, the flagged line without the tag prefix, not truncated
+	Tag  string `json:"tag,omitempty"`  // quotes only: the release tag the line is from
+	Line string `json:"line,omitempty"` // quotes only: that line's Hit.Line exactly as in Result.Releases[i].Hits, so the UI can find it
 }
 
 // maxQuoted is how many flagged lines Reasons quotes.
@@ -96,13 +103,13 @@ func Assess(in Input) Result {
 	var out Result
 	if r := bumpReason(in); r != "" {
 		out.Level = Breaking
-		out.Reasons = append(out.Reasons, r)
+		out.Reasons = append(out.Reasons, Reason{Text: r})
 	}
 
 	known := lineSet(in.RunningNotes)
 	type quote struct {
-		tag, text string
-		level     Level
+		tag, text, line string
+		level           Level
 	}
 	var quotes []quote
 	seen := map[string]bool{}
@@ -121,7 +128,7 @@ func Assess(in Input) Result {
 				continue
 			}
 			seen[sameText(text)] = true
-			quotes = append(quotes, quote{n.Tag, text, h.Level})
+			quotes = append(quotes, quote{n.Tag, text, h.Line, h.Level})
 		}
 	}
 	// Breaking lines first, then attention, each in release order (newest first).
@@ -129,13 +136,13 @@ func Assess(in Input) Result {
 	for _, lvl := range []Level{Breaking, Attention} {
 		for _, q := range quotes {
 			if q.level == lvl && quoted < maxQuoted {
-				out.Reasons = append(out.Reasons, q.tag+": "+truncate(q.text, 140))
+				out.Reasons = append(out.Reasons, Reason{Text: q.text, Tag: q.tag, Line: q.line})
 				quoted++
 			}
 		}
 	}
 	if extra := len(quotes) - quoted; extra > 0 {
-		out.Reasons = append(out.Reasons, fmt.Sprintf("and %d more flagged %s", extra, pluralLines(extra)))
+		out.Reasons = append(out.Reasons, Reason{Text: fmt.Sprintf("and %d more flagged %s", extra, pluralLines(extra))})
 	}
 	return out
 }
@@ -340,14 +347,6 @@ func plain(line string) string {
 	s = reLink.ReplaceAllString(s, "$1")
 	s = reEmphasis.ReplaceAllString(s, "")
 	return strings.TrimSpace(reSpaces.ReplaceAllString(s, " "))
-}
-
-func truncate(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	return strings.TrimSpace(string(r[:n-1])) + "…"
 }
 
 func at(nums []int, i int) int {

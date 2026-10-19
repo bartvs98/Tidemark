@@ -374,6 +374,14 @@
           </span>
         </div>
         <div class="flex flex-wrap items-center gap-3">
+          <tm-search label="Search containers" placeholder="Search containers" class="w-64" [(value)]="searchEmpty" />
+          <tm-search label="Search containers" placeholder="Search containers" class="w-64" [(value)]="searchFilled" />
+          <button tmButton variant="secondary" size="md" icon="refresh-cw">Check now</button>
+          <span class="text-sm text-fg-muted">
+            <span class="font-mono">tm-search</span>: empty, then filled (clear button; Escape also clears). 36 px, level with md buttons
+          </span>
+        </div>
+        <div class="flex flex-wrap items-center gap-3">
           <tm-theme-switch />
           <span class="text-sm text-fg-muted">
             <span class="font-mono">tm-theme-switch</span>, as in the header: icon-only, so each button has an aria-label
@@ -409,8 +417,9 @@
     <h2 class="mb-1 text-xl font-semibold">Callouts &amp; release notes</h2>
     <p class="mb-4 text-fg-muted">
       Callouts explain why something is missing and what to do. Release notes are sanitised markdown; lines the
-      breaking-change analysis flagged get a highlighter in the level's colour. Long notes without flags sit in a
-      <span class="font-mono text-sm">tm-clamp</span>.
+      breaking-change analysis flagged get a highlighter in the level's colour. Long notes sit in a
+      <span class="font-mono text-sm">tm-clamp</span>; with <span class="font-mono text-sm">marks</span> its button counts the
+      flagged lines it hides.
     </p>
     <div class="grid gap-4 md:grid-cols-2">
       <div class="flex flex-col gap-3">
@@ -422,9 +431,14 @@
       <tm-card>
         <tm-markdown [markdown]="sampleNotes" githubRepo="https://github.com/home-assistant/core" [flags]="sampleFlags" />
       </tm-card>
-      <tm-card class="md:col-span-2">
+      <tm-card>
         <tm-clamp max="12rem">
           <tm-markdown [markdown]="longNotes" />
+        </tm-clamp>
+      </tm-card>
+      <tm-card>
+        <tm-clamp max="12rem" marks=".tm-flag-breaking, .tm-flag-attention">
+          <tm-markdown [markdown]="longNotes" [flags]="longFlags" />
         </tm-clamp>
       </tm-card>
     </div>

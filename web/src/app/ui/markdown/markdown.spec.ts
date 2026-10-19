@@ -76,6 +76,24 @@ describe('renderMarkdown flags', () => {
     expect(el.querySelectorAll('[class^="tm-flag"]').length).toBe(3);
   });
 
+  it('tags each flagged element with the indexes of its flags', () => {
+    const el = dom(
+      renderMarkdown(notes, undefined, [
+        { line: '## ⚠ BREAKING CHANGES', level: 'breaking' },
+        { line: 'not in the notes', level: 'breaking' },
+        { line: '- the config file moved', level: 'attention' },
+        { line: '* the config file moved', level: 'breaking' }, // same element, other marker
+        { line: 'Plain paragraph', level: 'none' },
+      ]),
+    );
+    expect(el.querySelector('h2')?.getAttribute('data-flag')).toBe('0');
+    const item = el.querySelector('[data-flag~="3"]')!;
+    expect(item.tagName).toBe('LI');
+    expect(item.getAttribute('data-flag')).toBe('2 3');
+    expect(item.className).toBe('tm-flag-breaking'); // the most severe of its flags
+    expect(el.querySelectorAll('[data-flag]').length).toBe(2);
+  });
+
   it('renders the same without flags', () => {
     expect(renderMarkdown(notes, undefined, [])).toBe(renderMarkdown(notes));
     expect(dom(renderMarkdown(notes)).querySelector('[class^="tm-flag"]')).toBeNull();

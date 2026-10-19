@@ -76,12 +76,28 @@
 
   <!-- ── Why it's flagged (internal/analysis) ───────────── -->
   @if (result(); as u) {
-    @if (u.level !== 'none' && u.reasons?.length) {
+    @if (u.level !== 'none' && reasons().length) {
       <div class="mb-8" data-testid="reasons">
         <tm-callout [tone]="u.level" [heading]="u.level === 'breaking' ? 'Read before updating' : 'Worth a look before updating'">
-          <ul class="mt-1 flex list-disc flex-col gap-1 pl-5">
-            @for (reason of u.reasons; track $index) {
-              <li>{{ reason }}</li>
+          <ul class="mt-1 flex list-disc flex-col gap-1.5 pl-5">
+            @for (reason of reasons(); track $index) {
+              <li class="wrap-anywhere" data-testid="reason">
+                <!-- A quote: its release, as a button to the line in the notes below when they're loaded. -->
+                @if (reason.target; as t) {
+                  <button
+                    type="button"
+                    class="me-1.5 inline-flex cursor-pointer items-center gap-0.5 rounded-sm font-mono text-sm text-accent-text hover:underline"
+                    [tmTooltip]="'Show this line in the ' + t.tag + ' notes'"
+                    (click)="jumpTo(t)"
+                    data-testid="reason-jump"
+                  >
+                    {{ t.tag }}<tm-icon name="arrow-down" [size]="12" />
+                  </button>
+                } @else if (reason.tag) {
+                  <span class="me-1.5 font-mono text-sm">{{ reason.tag }}</span>
+                }
+                <span data-testid="reason-text">{{ reason.text }}</span>
+              </li>
             }
           </ul>
         </tm-callout>
@@ -129,7 +145,7 @@
 
   <!-- ── Tabs ───────────────────────────────────────────── -->
   <div ngTabs class="tm-tabs">
-    <div ngTabList selectedTab="changes">
+    <div ngTabList [(selectedTab)]="tab">
       <div ngTab value="changes">
         Changes
         @if (changelog()?.releases?.length; as n) {
@@ -171,7 +187,7 @@
 
             @for (r of cl.releases; track r.tag; let first = $first) {
               <!-- Open: the newest and the breaking ones. Attention ones stay closed (traefik flags most releases) but show their badge. -->
-              <details class="group rounded-xl border border-line bg-surface shadow-raised" [open]="first || r.level === 'breaking'">
+              <details class="group rounded-xl border border-line bg-surface shadow-raised" [open]="first || r.level === 'breaking'" [attr.data-release]="r.tag">
                 <summary class="flex cursor-pointer list-none items-center gap-2.5 px-5 py-4 select-none [&::-webkit-details-marker]:hidden">
                   <tm-icon name="chevron-right" [size]="14" class="text-fg-subtle transition-transform group-open:rotate-90" />
                   <span class="font-mono font-medium">{{ r.tag }}</span>
@@ -193,12 +209,10 @@
                 <div class="border-t border-line px-5 py-5 sm:px-6">
                   @if (!r.body.trim()) {
                     <p class="text-fg-subtle">No notes for this release.</p>
-                  } @else if (r.hits.length) {
-                    <!-- Never clamp flagged notes: the highlighted lines must stay in view. -->
-                    <tm-markdown [markdown]="r.body" [githubRepo]="githubRepo()" [flags]="r.hits" />
                   } @else {
-                    <tm-clamp max="40rem">
-                      <tm-markdown [markdown]="r.body" [githubRepo]="githubRepo()" />
+                    <!-- The button says how many flagged lines the cap hides. -->
+                    <tm-clamp max="40rem" marks=".tm-flag-breaking, .tm-flag-attention">
+                      <tm-markdown [markdown]="r.body" [githubRepo]="githubRepo()" [flags]="r.hits" />
                     </tm-clamp>
                   }
                 </div>

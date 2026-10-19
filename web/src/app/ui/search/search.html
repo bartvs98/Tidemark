@@ -1,0 +1,23 @@
+<tm-icon name="search" [size]="16" class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-fg-subtle" />
+<input
+  #field
+  type="search"
+  class="box-border h-9 w-full rounded-md border border-line-strong bg-surface pr-9 pl-9 text-base text-fg placeholder:text-fg-subtle"
+  [attr.aria-label]="label()"
+  [placeholder]="placeholder()"
+  [value]="value()"
+  autocomplete="off"
+  spellcheck="false"
+  (input)="value.set(field.value)"
+  (keydown.escape)="onEscape($event)"
+/>
+@if (value()) {
+  <button
+    type="button"
+    class="absolute top-1/2 right-1.5 inline-flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm text-fg-muted transition-colors hover:bg-hover hover:text-fg"
+    aria-label="Clear search"
+    (click)="clear()"
+  >
+    <tm-icon name="x" [size]="14" />
+  </button>
+}

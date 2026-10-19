@@ -13,6 +13,7 @@ import {
   TmIcon,
   TmLevel,
   TmSection,
+  TmSearch,
   TmSegmented,
   TmSkeleton,
   TmThemeSwitch,
@@ -91,6 +92,7 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
     TmIcon,
     TmLevel,
     TmSection,
+    TmSearch,
     TmSegmented,
     TmSkeleton,
     TmThemeSwitch,
@@ -111,6 +113,9 @@ export class Styleguide {
     { value: 'list', label: 'List', icon: 'list' },
     { value: 'tiles', label: 'Tiles', icon: 'layout-grid' },
   ];
+
+  protected readonly searchEmpty = signal('');
+  protected readonly searchFilled = signal('jelly');
 
   protected readonly filter = signal<'all' | 'updates' | 'breaking'>('all');
   protected readonly filters: SegmentOption<'all' | 'updates' | 'breaking'>[] = [
@@ -174,6 +179,12 @@ export class Styleguide {
   ];
 
   protected readonly longNotes = Array.from({ length: 24 }, (_, i) => `- Fix number ${i + 1} in a long release`).join('\n');
+  /** One flag in view, two hidden by the clamp. */
+  protected readonly longFlags: MarkdownFlag[] = [
+    { line: '- Fix number 2 in a long release', level: 'attention' },
+    { line: '- Fix number 17 in a long release', level: 'breaking' },
+    { line: '- Fix number 21 in a long release', level: 'attention' },
+  ];
 
   protected readonly ignoredOpen = signal(false);
   protected readonly dialogOpen = signal(false);
@@ -220,7 +231,7 @@ export class Styleguide {
     {
       label: 'Update, with a risk level',
       container: sample('jellyfin', 'jellyfin/jellyfin:10.9.11', {
-        update: { ...UPDATE, source: 'label', running: '10.9.11', latest: '10.10.7', class: 'minor', level: 'attention', reasons: ['10.10.0: clients older than 10.9 can no longer connect'] },
+        update: { ...UPDATE, source: 'label', running: '10.9.11', latest: '10.10.7', class: 'minor', level: 'attention', reasons: [{ text: 'clients older than 10.9 can no longer connect', tag: '10.10.0', line: '- clients older than 10.9 can no longer connect' }] },
       }),
     },
     {
@@ -232,7 +243,7 @@ export class Styleguide {
     {
       label: 'Refresh failed, earlier result kept',
       container: sample('immich-server', 'ghcr.io/immich-app/immich-server:v1.135.3', {
-        update: { ...UPDATE, running: 'v1.135.3', latest: 'v2.0.1', class: 'major', level: 'breaking', reasons: ['Major version: v1.135.3 → v2.0.1'], ...REFRESH_FAILED },
+        update: { ...UPDATE, running: 'v1.135.3', latest: 'v2.0.1', class: 'major', level: 'breaking', reasons: [{ text: 'Major version: v1.135.3 → v2.0.1' }], ...REFRESH_FAILED },
       }),
     },
     { label: 'Check failed, no result yet', container: sample('private-app', 'ghcr.io/me/private-app:2.1', { update: NO_RESULT }) },
@@ -249,7 +260,7 @@ export class Styleguide {
     sample('jellyfin', 'jellyfin/jellyfin:10.9.11', {
       stack: 'media',
       icon: icon('jellyfin'),
-      update: { ...UPDATE, source: 'label', running: '10.9.11', latest: '10.10.7', class: 'minor', level: 'attention', reasons: ['10.10.0: clients older than 10.9 can no longer connect'] },
+      update: { ...UPDATE, source: 'label', running: '10.9.11', latest: '10.10.7', class: 'minor', level: 'attention', reasons: [{ text: 'clients older than 10.9 can no longer connect', tag: '10.10.0', line: '- clients older than 10.9 can no longer connect' }] },
     }),
     sample('sonarr', 'lscr.io/linuxserver/sonarr:latest', {
       stack: 'media',
@@ -266,7 +277,7 @@ export class Styleguide {
     sample('immich-server', 'ghcr.io/immich-app/immich-server:v1.135.3', {
       stack: 'photos',
       icon: icon('immich'),
-      update: { ...UPDATE, running: 'v1.135.3', latest: 'v2.0.1', latestInMajor: 'v1.135.4', class: 'major', level: 'breaking', reasons: ['Major version: v1.135.3 → v2.0.1'] },
+      update: { ...UPDATE, running: 'v1.135.3', latest: 'v2.0.1', latestInMajor: 'v1.135.4', class: 'major', level: 'breaking', reasons: [{ text: 'Major version: v1.135.3 → v2.0.1' }] },
     }),
     sample('redis', 'redis:7.4-alpine', {
       stack: 'photos',

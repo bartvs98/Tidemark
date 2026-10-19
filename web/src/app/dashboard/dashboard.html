@@ -129,13 +129,27 @@
     <!-- One toolbar row; all controls are md, the same height as the Check now button. -->
     <div class="mb-6 flex flex-wrap items-center gap-3" data-testid="toolbar">
       <tm-segmented label="Show" size="md" [options]="filters()" [(value)]="filter" data-testid="filter" />
+      <!-- Phone: its own full-width line above the controls; from sm: a fixed-width field after "Show". -->
+      <tm-search
+        class="order-first w-full sm:order-none sm:w-64"
+        label="Search containers"
+        placeholder="Search containers"
+        [(value)]="query"
+        data-testid="search"
+      />
       <div class="flex flex-wrap items-center gap-3 sm:ml-auto">
         <tm-segmented label="Group by" size="md" [options]="groups" [(value)]="group" data-testid="group" />
         <tm-segmented label="View" size="md" iconOnly [options]="views" [(value)]="view" />
       </div>
     </div>
 
-    @if (nothingShown()) {
+    @if (nothingShown() && searchText()) {
+      <tm-card>
+        <tm-empty-state icon="search" [heading]="'No containers match &quot;' + searchText() + '&quot;'" description="Search looks at the container name, the image and the stack." data-testid="no-match">
+          <button tmButton size="sm" (click)="query.set('')">Clear search</button>
+        </tm-empty-state>
+      </tm-card>
+    } @else if (nothingShown()) {
       <tm-card>
         <tm-empty-state
           icon="circle-check"

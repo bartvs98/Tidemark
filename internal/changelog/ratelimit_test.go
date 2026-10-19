@@ -56,3 +56,40 @@ func TestRateLimitBadToken(t *testing.T) {
 		t.Error("want an error for a rejected token")
 	}
 }
+
+func TestRateLimitFromResponseHeaders(t *testing.T) {
+	var quotaCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/rate_limit" {
+			quotaCalls.Add(1)
+		}
+		w.Header().Set("X-RateLimit-Limit", "60")
+		w.Header().Set("X-RateLimit-Remaining", "41")
+		w.Header().Set("X-RateLimit-Reset", "1792351465")
+		w.Header().Set("X-RateLimit-Resource", "core")
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	defer srv.Close()
+
+	s := New(nil, "", slog.New(slog.NewTextHandler(io.Discard, nil)), WithBaseURLs(srv.URL, srv.URL, srv.URL))
+	if _, _, _, err := s.get(context.Background(), srv.URL+"/repos/o/r/releases", "", true); err != nil {
+		t.Fatal(err)
+	}
+	rl, err := s.RateLimit(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rl.Limit != 60 || rl.Remaining != 41 || rl.ResetAt.Unix() != 1792351465 {
+		t.Errorf("rate limit = %+v", rl)
+	}
+	if quotaCalls.Load() != 0 {
+		t.Errorf("/rate_limit called %d times, want 0", quotaCalls.Load())
+	}
+
+	// A non-GitHub request or another resource must not touch the cache.
+	s.noteQuota(http.Header{"X-Ratelimit-Limit": {"1"}, "X-Ratelimit-Remaining": {"1"}, "X-Ratelimit-Reset": {"1"}, "X-Ratelimit-Resource": {"search"}})
+	s.noteQuota(http.Header{"X-Ratelimit-Limit": {"x"}, "X-Ratelimit-Remaining": {"1"}, "X-Ratelimit-Reset": {"1"}})
+	if rl2, _ := s.RateLimit(context.Background()); rl2 != rl {
+		t.Errorf("cache changed to %+v", rl2)
+	}
+}

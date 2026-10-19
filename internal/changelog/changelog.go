@@ -303,6 +303,9 @@ func (s *Service) get(ctx context.Context, u, etag string, githubAPI bool) (body
 		return nil, "", 0, err
 	}
 	defer resp.Body.Close()
+	if githubAPI {
+		s.noteQuota(resp.Header)
+	}
 	if githubAPI && (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) &&
 		resp.Header.Get("X-RateLimit-Remaining") == "0" {
 		reset := time.Now().Add(15 * time.Minute)

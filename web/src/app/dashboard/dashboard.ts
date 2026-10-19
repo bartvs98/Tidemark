@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -10,6 +10,7 @@ import {
   TmCard,
   TmEmptyState,
   TmIcon,
+  TmSearch,
   TmSection,
   TmSegmented,
   TmSkeleton,
@@ -23,6 +24,7 @@ import { ContainerTile } from './container-tile/container-tile';
 import {
   checkFailed,
   ContainerList,
+  ContainerSummary,
   countUpdates,
   Filter,
   Grouping,
@@ -41,6 +43,8 @@ export type ViewMode = 'list' | 'tiles';
 const VIEW_KEY = 'tidemark.view';
 const FILTER_KEY = 'tidemark.filter';
 const GROUP_KEY = 'tidemark.group';
+/** Session only: survives a trip to a detail page, but a reload later starts unfiltered. */
+const QUERY_KEY = 'tidemark.query';
 const POLL_MS = 1500;
 
 const VIEWS: SegmentOption<ViewMode>[] = [
@@ -67,6 +71,7 @@ const GROUPS: SegmentOption<Grouping>[] = [
     TmCard,
     TmEmptyState,
     TmIcon,
+    TmSearch,
     TmSection,
     TmSegmented,
     TmSkeleton,
@@ -74,6 +79,7 @@ const GROUPS: SegmentOption<Grouping>[] = [
     TmTooltip,
   ],
   templateUrl: './dashboard.html',
+  host: { '(document:keydown)': 'onKeydown($event)' },
 })
 export class Dashboard {
   private readonly http = inject(HttpClient);
@@ -86,6 +92,8 @@ export class Dashboard {
   protected readonly filter = signal<Filter>(readStored(FILTER_KEY, ['all', 'updates', 'breaking'], 'all'));
   protected readonly groups = GROUPS;
   protected readonly group = signal<Grouping>(readStored(GROUP_KEY, ['stack', 'severity'], 'stack'));
+  protected readonly query = signal(readSession(QUERY_KEY));
+  private readonly search = viewChild(TmSearch);
   protected readonly starting = signal(false);
 
   // value() throws while the resource is in an error state, so always go through hasValue().
@@ -97,17 +105,24 @@ export class Dashboard {
   private readonly split = computed(() => splitIgnored(this.containers()));
   /** All stacks (for the summary). */
   protected readonly stacks = computed(() => groupByStack(this.containers()));
-  /** Non-ignored containers under the current filter. */
+  /** The search text, trimmed and lower-cased; empty means no search. */
+  private readonly needle = computed(() => this.query().trim().toLowerCase());
+  protected readonly searchText = computed(() => this.query().trim());
+  /** Non-ignored containers under the current filter and search. */
   private readonly shown = computed(() => {
     const filter = this.filter();
-    return this.split().active.filter((c) => matchesFilter(c, filter));
+    const query = this.needle();
+    return this.split().active.filter((c) => matchesFilter(c, filter) && matchesQuery(c, query));
   });
   /** Stack mode: stacks that need a look first, fully up-to-date stacks after. */
   protected readonly shownStacks = computed(() => orderStacks(this.shown()));
   /** Severity mode: Breaking, Attention, Updates, Check failed, Not checked yet, Up to date. */
   protected readonly shownSeverity = computed(() => groupBySeverity(this.shown()));
   /** Ignored containers have no update, so they only show under "All". */
-  protected readonly shownIgnored = computed(() => (this.filter() === 'all' ? this.split().ignored : []));
+  protected readonly shownIgnored = computed(() => {
+    const query = this.needle();
+    return this.filter() === 'all' ? this.split().ignored.filter((c) => matchesQuery(c, query)) : [];
+  });
   protected readonly nothingShown = computed(() => this.shown().length === 0 && this.shownIgnored().length === 0);
   /** Severity mode's "Up to date" section: collapsed by default, like "Ignored". */
   protected readonly currentOpen = signal(false);
@@ -191,6 +206,7 @@ export class Dashboard {
     effect(() => store(VIEW_KEY, this.view()));
     effect(() => store(FILTER_KEY, this.filter()));
     effect(() => store(GROUP_KEY, this.group()));
+    effect(() => storeSession(QUERY_KEY, this.query()));
 
     // While a check runs, poll so results appear as they come in. Depend on the status
     // object (new on every response), not the boolean, which stays `true` between polls.
@@ -212,6 +228,19 @@ export class Dashboard {
       }
       wasChecking = check.running;
     });
+  }
+
+  /** "/" jumps to the search field, unless the user is typing somewhere. */
+  protected onKeydown(event: KeyboardEvent): void {
+    if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
+    const target = event.target;
+    if (target instanceof HTMLElement) {
+      if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+    }
+    const search = this.search();
+    if (!search) return;
+    event.preventDefault();
+    search.focus();
   }
 
   protected async checkNow(): Promise<void> {
@@ -243,6 +272,28 @@ function store(key: string, value: string): void {
   } catch {
     // storage blocked: the choice just won't persist
   }
+}
+
+function readSession(key: string): string {
+  try {
+    return sessionStorage.getItem(key) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function storeSession(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // storage blocked: the search just won't survive navigation
+  }
+}
+
+/** Case-insensitive substring match on name, image (display and ref) and compose stack. `needle` is lower-cased and trimmed. */
+function matchesQuery(c: ContainerSummary, needle: string): boolean {
+  if (!needle) return true;
+  return [c.name, c.image.display, c.image.ref, c.stack ?? ''].some((s) => s.toLowerCase().includes(needle));
 }
 
 function plural(n: number, word: string): string {

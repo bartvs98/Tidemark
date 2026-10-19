@@ -9,6 +9,7 @@ export * from './clamp/clamp';
 export * from './dialog/dialog';
 export * from './empty-state/empty-state';
 export * from './icon/icon';
+export * from './search/search';
 export * from './section/section';
 export * from './segmented/segmented';
 export * from './skeleton/skeleton';

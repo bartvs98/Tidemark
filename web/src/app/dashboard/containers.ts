@@ -58,11 +58,21 @@ export interface UpdateInfo {
   tagsFrom?: string;
   /** Breaking-change verdict from the version jump and the stored release notes. */
   level: Exclude<Level, 'unknown'>;
-  /** Why, most severe first: "Major version: 2 → 3", "v3.0.0: Redis 8.0 or newer is now required". */
-  reasons?: string[];
+  /** Why, most severe first: "Major version: 2 → 3", or a quote from the notes of a release. */
+  reasons?: Reason[];
   /** Newest version a rule keeps back (outside the pin or the running major). */
   held?: string;
   heldBy?: 'pin' | 'allow-major';
+}
+
+/** One line of why an update is flagged. Quotes carry the release and the flagged line. */
+export interface Reason {
+  /** Plain text, full length. For a quote: the flagged line, without the tag. */
+  text: string;
+  /** Quotes only: the release tag the line is from. */
+  tag?: string;
+  /** Quotes only: equals one `hits[i].line` of that release in the detail changelog. */
+  line?: string;
 }
 
 /** Rule names as used in labels (`tidemark.<key>`) and the config file. */
