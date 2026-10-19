@@ -8,8 +8,8 @@ The visual rules are in [BRAND.md](BRAND.md). This page covers how they're built
 |---|---|
 | Tokens (colour, type, radius, elevation) | [web/src/styles/tokens.css](../web/src/styles/tokens.css) |
 | Plain-HTML patterns: `.tm-table`, `.tm-table-stack`, `.tm-row-link`, `.tm-tabs`, `.tm-prose` (+ `.tm-flag-breaking` / `.tm-flag-attention`), `.tm-shimmer`, `.tm-tooltip`, `.tm-severity-frame` | [web/src/styles/components.css](../web/src/styles/components.css) |
-| Angular components | [web/src/app/ui/](../web/src/app/ui/) (import from `../ui`, except `ui/markdown`) |
-| Container pieces (take a `ContainerSummary`) | [dashboard/update-info.ts](../web/src/app/dashboard/update-info.ts), [dashboard/container-table.ts](../web/src/app/dashboard/container-table.ts), [dashboard/container-tile.ts](../web/src/app/dashboard/container-tile.ts) |
+| Angular components | [web/src/app/ui/](../web/src/app/ui/), one folder per piece (`badge/badge.ts` + `.html`, `.css` when it has styles, `.spec.ts` when it has tests). Import from the `ui` barrel, except `ui/markdown/markdown` |
+| Container pieces (take a `ContainerSummary`) | folders under [dashboard/](../web/src/app/dashboard/): `container-version/`, `container-update/`, `refresh-failed/`, `rule-problems/`, `container-table/`, `column-bar/`, `container-tile/` (text helpers in `format.ts`) |
 | Live reference | [web/src/app/styleguide/](../web/src/app/styleguide/) → `/styleguide` |
 
 ## Tokens
@@ -38,7 +38,7 @@ Every colour is written once as `light-dark(<light>, <dark>)`. The theme switch 
 
 - The default is **dark**. `system` follows the OS.
 - The choice is saved in `localStorage` (`tidemark.theme`) and applied by an inline script in `index.html` before first paint, so the page doesn't flash the wrong theme.
-- `<meta name="theme-color">` (the browser bar on phones) follows the resolved theme: it's the `canvas` colour, `#070d17` dark or `#f4f7fa` light (`THEME_COLORS` in `ui/theme.ts`). The pre-paint script sets it first, then the `Theme` service keeps it in sync, also when `system` flips with the OS. Change `canvas` and you change those two copies too.
+- `<meta name="theme-color">` (the browser bar on phones) follows the resolved theme: it's the `canvas` colour, `#070d17` dark or `#f4f7fa` light (`THEME_COLORS` in `ui/theme-switch/theme.ts`). The pre-paint script sets it first, then the `Theme` service keeps it in sync, also when `system` flips with the OS. Change `canvas` and you change those two copies too.
 
 ## Components
 
@@ -56,7 +56,7 @@ Every colour is written once as `light-dark(<light>, <dark>)`. The theme switch 
 | `tm-icon` | `name`, `size` (default 16). A small set of Lucide icons; add new ones in `icon.ts`. `ICON_NAMES` lists them all. |
 | `tm-callout` | `tone` (info by default, attention, breaking; `breaking` gets `role="alert"`), optional `heading`, content. Each tone has a fixed icon. Explains what's missing and what to do next, in context. |
 | `tm-clamp` | `max` (CSS length, default `40rem`). Caps tall content with a fade and "Show all" / "Show less"; content at most a third taller than the cap is shown whole. Used for long release notes (not for notes with flagged lines, which must stay visible). |
-| `tm-markdown` | `markdown`, `githubRepo`, `flags` (`{line, level}[]` from the API). Flagged source lines get a highlighter in the level's colour (`.tm-flag-breaking` / `.tm-flag-attention` on the heading, paragraph or list item). Renders untrusted markdown (release notes) sanitised with DOMPurify, styled by `.tm-prose`. **Import it from `ui/markdown`, not the `ui` barrel**, and only in lazy routes: it pulls in marked + DOMPurify (~28 KB gz). |
+| `tm-markdown` | `markdown`, `githubRepo`, `flags` (`{line, level}[]` from the API). Flagged source lines get a highlighter in the level's colour (`.tm-flag-breaking` / `.tm-flag-attention` on the heading, paragraph or list item). Renders untrusted markdown (release notes) sanitised with DOMPurify, styled by `.tm-prose`. **Import it from `ui/markdown/markdown`, not the `ui` barrel**, and only in lazy routes: it pulls in marked + DOMPurify (~28 KB gz). |
 | `tm-app-icon` | `icon` (`{src, light?, dark?}`), `name`, `size` (default 24). An app's logo, with a letter avatar when there's no icon or it fails to load. Swaps to the light/dark variant when the logo would disappear on the current theme. Decorative (`aria-hidden`); always show the name next to it. |
 | `tm-dialog` | `heading` (required), two-way `[(open)]`, content. A modal on the native `<dialog>` (`showModal`): focus is trapped and returns to the opener, the page behind is inert, Escape / the close button / a backdrop click close it. Centred, up to 34rem wide and 44rem tall (body scrolls), short fade-in (none under reduced motion). Content is always projected, so wrap anything that should load only while open in `@if`. Label/value rows inside use `<dl>` with `<div class="tm-setting"><dt/><dd/></div>`. The header's settings dialog is built from it. |
 | `tm-theme-switch` | System, light or dark, as an icon-only `tm-segmented`. Lives in the header. Backed by the exported `Theme` service: `preference` (signal) and `isDark()` (resolves `system` via `prefers-color-scheme`), which `tm-app-icon` and the `theme-color` meta use. |
@@ -72,9 +72,9 @@ Every colour is written once as `light-dark(<light>, <dark>)`. The theme switch 
 
 ### Tables across sections
 
-The dashboard's list view is one `tm-section` + `tm-container-table` (a `tm-card flush` + `table.tm-table`) per Compose stack or severity group ([dashboard.html](../web/src/app/dashboard/dashboard.html), pieces in [container-table.ts](../web/src/app/dashboard/container-table.ts)). To make them read as one table:
+The dashboard's list view is one `tm-section` + `tm-container-table` (a `tm-card flush` + `table.tm-table`) per Compose stack or severity group ([dashboard.html](../web/src/app/dashboard/dashboard.html), pieces in [container-table/](../web/src/app/dashboard/container-table/) and [column-bar/](../web/src/app/dashboard/column-bar/)). To make them read as one table:
 
-- **Shared widths.** Every table is `table-fixed` with a `<colgroup>` built from one constant (`COLUMNS` in container-table.ts), so columns line up across stacks.
+- **Shared widths.** Every table is `table-fixed` with a `<colgroup>` built from one constant (`COLUMNS` in `dashboard/container-table/container-table.ts`), so columns line up across stacks.
 - **One column bar.** A single `tm-column-bar` (an `aria-hidden` header table) sits above all sections, `sticky top-16` (just under the app header) and hidden below `sm`.
 - **Headers stay for screen readers.** Each table keeps its own `<thead>` (`th scope="col"`), made `sm:sr-only`. Below 640px `tm-table-stack` hides it and stacks the rows.
 - **Rows are links.** Each row is `tr.tm-row-link` with a stretched link on the container name.
@@ -110,5 +110,5 @@ Anything with a tooltip inside a stretched-link row or tile gets `relative z-10`
 1. **Colour means risk.** Patch, minor and major are neutral. Only `attention` and `breaking` get colour. Don't add coloured badges for anything else. (`tm-badge` has `accent` and `ok` tones, but update info doesn't use them; the only green there is the small "Up to date" check.)
 2. **Never colour alone.** Every status has an icon **and** a word.
 3. **Versions, tags, digests and image refs are always mono.**
-4. **Build from the pieces.** If a screen needs something new, add it to the design system and to `/styleguide` first, then use it. Generic pieces go in `ui/` (exported from `ui/index.ts`). Domain composites that take a `ContainerSummary` live next to the dashboard ([Container pieces](#container-pieces)), but are documented here and shown on `/styleguide` all the same.
+4. **Build from the pieces.** If a screen needs something new, add it to the design system and to `/styleguide` first, then use it. Generic pieces go in their own folder in `ui/` (exported from `ui/index.ts`). Domain composites that take a `ContainerSummary` live next to the dashboard ([Container pieces](#container-pieces)), but are documented here and shown on `/styleguide` all the same.
 5. **Accessibility:** use native elements first (`button`, `a`, `table`), use Angular Aria for composite widgets (tabs, menus, listboxes), give every icon-only button an `aria-label`, and never remove the visible focus ring (`:focus-visible`, 2 px `focus` colour).

@@ -4,9 +4,12 @@ import { HttpErrorResponse, httpResource } from '@angular/common/http';
 import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 import { TM_TABS, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmClamp, TmEmptyState, TmIcon, TmLevel, TmSkeleton, TmTideGauge, TmTooltip } from '../ui';
-import { TmMarkdown } from '../ui/markdown';
+import { TmMarkdown } from '../ui/markdown/markdown';
 import { hasResult, hasUpdate, imageName, isIgnored, ruleOrigin } from '../dashboard/containers';
-import { ContainerRuleProblems, ContainerUpdate, ContainerVersion, heldText } from '../dashboard/update-info';
+import { ContainerUpdate } from '../dashboard/container-update/container-update';
+import { ContainerVersion } from '../dashboard/container-version/container-version';
+import { ContainerRuleProblems } from '../dashboard/rule-problems/rule-problems';
+import { heldText } from '../dashboard/format';
 import { ContainerDetailData } from './detail-types';
 import { describeRules } from './rules';
 

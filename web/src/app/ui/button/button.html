@@ -1,0 +1,6 @@
+@if (loading()) {
+  <tm-icon name="loader" class="animate-spin motion-reduce:animate-none" />
+} @else if (icon(); as icon) {
+  <tm-icon [name]="icon" />
+}
+<ng-content />

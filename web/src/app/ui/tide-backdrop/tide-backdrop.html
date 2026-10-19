@@ -1,0 +1,13 @@
+@for (w of waves; track $index) {
+  <div
+    class="tm-backdrop-wave"
+    [class.tm-backdrop-reverse]="w.reverse"
+    [style.top.px]="w.top"
+    [style.--tm-wave-period.px]="w.period"
+    [style.animation-duration.s]="w.seconds"
+  >
+    <svg width="100%" height="100%" focusable="false">
+      <path [attr.d]="w.fill" [attr.fill-opacity]="w.opacity" />
+    </svg>
+  </div>
+}

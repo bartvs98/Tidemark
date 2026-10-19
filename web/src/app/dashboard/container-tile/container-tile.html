@@ -1,0 +1,43 @@
+<div class="mb-5 flex items-start gap-3">
+  <tm-app-icon
+    [icon]="container().icon"
+    [name]="container().name"
+    [size]="32"
+    [class.opacity-50]="quiet()"
+    [class.grayscale]="quiet()"
+  />
+  <div class="min-w-0 flex-1">
+    <div class="flex items-start justify-between gap-2">
+      <h3 class="truncate">
+        <!-- Stretched link: the whole tile is clickable, but it stays one link for keyboards and screen readers. -->
+        <a
+          [routerLink]="link()(container())"
+          class="no-underline after:absolute after:inset-0 after:rounded-xl hover:no-underline"
+          [class]="nameClass()"
+          >{{ container().name }}</a
+        >
+      </h3>
+      <div class="flex shrink-0 items-center gap-1.5 empty:hidden">
+        <tm-rule-problems [container]="container()" />
+        @if (container().state !== 'running') {
+          <tm-badge>{{ container().state }}</tm-badge>
+        }
+      </div>
+    </div>
+    <p class="mt-0.5 truncate font-mono text-xs text-fg-subtle">
+      {{ image() }}:{{ container().image.tag || '—' }}
+    </p>
+    <p class="truncate text-xs text-fg-subtle">
+      @if (showStack() && container().stack) {
+        <span data-testid="tile-stack">{{ container().stack }}</span> ·
+      }
+      {{ container().status }}
+    </p>
+  </div>
+</div>
+
+<!-- Version on its own line, badges below it: a long "2.17.2 → 3.5.1" never runs into them. -->
+<div class="mt-auto flex flex-col gap-2 border-t border-line pt-4">
+  <tm-container-version [container]="container()" [checking]="checking()" />
+  <tm-container-update [container]="container()" [checking]="checking()" class="empty:hidden" />
+</div>

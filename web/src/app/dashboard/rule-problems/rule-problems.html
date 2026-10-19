@@ -1,0 +1,6 @@
+@if (problems().length; as n) {
+  <!-- relative z-10: hoverable above a stretched link, so the problems show -->
+  <tm-badge tone="unknown" icon="info" class="relative z-10" [tmTooltip]="title()" data-testid="rule-problems">
+    {{ n === 1 ? 'rule skipped' : n + ' rules skipped' }}
+  </tm-badge>
+}

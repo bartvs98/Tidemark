@@ -1,4 +1,4 @@
-import type { MarkdownFlag } from '../ui/markdown';
+import type { MarkdownFlag } from '../ui/markdown/markdown';
 import { ContainerSummary } from '../dashboard/containers';
 
 /** Shape of GET /api/containers/{name} (internal/api/detail.go). */

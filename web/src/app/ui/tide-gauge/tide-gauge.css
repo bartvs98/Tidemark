@@ -1,0 +1,97 @@
+/* In the components layer, so utilities on the host (absolute, h-48 …) win. */
+@layer components {
+  :host {
+    position: relative;
+    overflow: hidden;
+    /* Line position and the lowest water level (level 0), from the top. */
+    --tm-gauge-line: 24%;
+    --tm-gauge-floor: 80%;
+  }
+  :host(.tm-gauge-hero) {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  :host(.tm-gauge-compact) {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 56px;
+    height: 32px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-md);
+    background-color: var(--color-surface);
+    vertical-align: middle;
+    --tm-gauge-line: 7px;
+    --tm-gauge-floor: 24px;
+  }
+
+  .tm-gauge-line {
+    position: absolute;
+    top: var(--tm-gauge-line);
+    left: 0;
+    right: 0;
+    height: 2px;
+    margin-top: -1px;
+    background-color: var(--color-line-strong);
+  }
+  :host(.tm-gauge-compact) .tm-gauge-line {
+    left: 7px;
+    right: 7px;
+    border-radius: 1px;
+    background-color: var(--color-fg);
+  }
+
+  .tm-gauge-wave {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    /* One period wider than the gauge, so sliding it by one period loops seamlessly. */
+    width: calc(100% + var(--tm-wave-period));
+    top: calc(
+      var(--tm-gauge-line) + 1px + (1 - var(--tm-level)) * (var(--tm-gauge-floor) - var(--tm-gauge-line)) +
+        var(--tm-wave-offset) - 2px
+    ); /* - 2px: CREST_PAD, so the peaks stay where they were and the crest isn't clipped */
+    animation: tm-gauge-flow linear infinite;
+    transition: top 1.4s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform;
+  }
+  .tm-gauge-reverse {
+    animation-direction: reverse;
+  }
+  :host(.tm-gauge-hero) .tm-gauge-wave {
+    /* Strongest at the surface, fading with depth: text over the lower part stays readable. */
+    mask-image: linear-gradient(to bottom, #000 0, #000 1.5rem, rgb(0 0 0 / 0.2) 100%);
+  }
+  svg {
+    display: block;
+  }
+  .tm-gauge-fill {
+    fill: var(--color-accent);
+  }
+  /* Hero water is the translucent --color-water (lighter in dark mode, where the accent is bright). */
+  :host(.tm-gauge-hero) .tm-gauge-fill {
+    fill: var(--color-water);
+  }
+  .tm-gauge-crest {
+    fill: none;
+    stroke: var(--color-accent);
+    stroke-width: 2;
+    stroke-opacity: 0.6;
+  }
+  :host(.tm-gauge-compact) .tm-gauge-crest {
+    stroke-width: 1.5;
+    stroke-opacity: 1;
+  }
+
+  @keyframes tm-gauge-flow {
+    to {
+      transform: translateX(calc(-1 * var(--tm-wave-period)));
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tm-gauge-wave {
+      animation: none;
+      transition: none;
+    }
+  }
+}

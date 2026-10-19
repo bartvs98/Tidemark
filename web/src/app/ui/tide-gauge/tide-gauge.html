@@ -1,0 +1,17 @@
+<span class="tm-gauge-line"></span>
+@for (w of waves(); track $index) {
+  <div
+    class="tm-gauge-wave"
+    [class.tm-gauge-reverse]="w.reverse"
+    [style.--tm-wave-period.px]="w.period"
+    [style.--tm-wave-offset.px]="w.offset"
+    [style.animation-duration.s]="w.seconds"
+  >
+    <svg width="100%" height="100%" aria-hidden="true" focusable="false">
+      <path class="tm-gauge-fill" [attr.d]="w.fill" [attr.fill-opacity]="w.opacity" />
+      @if (w.front) {
+        <path class="tm-gauge-crest" [attr.d]="w.crest" />
+      }
+    </svg>
+  </div>
+}

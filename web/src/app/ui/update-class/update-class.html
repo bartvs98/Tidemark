@@ -1,0 +1,10 @@
+@if (kind() === 'none') {
+  <span class="inline-flex items-center gap-1 text-sm text-fg-muted">
+    <tm-icon name="check" [size]="14" class="text-ok" />Up to date
+  </span>
+} @else {
+  <tm-badge>
+    <span class="size-1.5 rounded-full bg-accent" aria-hidden="true"></span>
+    {{ kind() === 'digest' ? 'new image' : kind() }}
+  </tm-badge>
+}

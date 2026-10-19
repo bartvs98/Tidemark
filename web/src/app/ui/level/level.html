@@ -1,0 +1,11 @@
+@switch (level()) {
+  @case ('attention') {
+    <tm-badge tone="attention" icon="triangle-alert">Attention</tm-badge>
+  }
+  @case ('breaking') {
+    <tm-badge tone="breaking" icon="octagon-alert">Breaking</tm-badge>
+  }
+  @case ('unknown') {
+    <tm-badge tone="unknown" icon="circle-help">Unknown</tm-badge>
+  }
+}

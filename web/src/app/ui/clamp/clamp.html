@@ -1,0 +1,16 @@
+<div
+  class="relative"
+  [class.overflow-hidden]="clamped()"
+  [style.max-height]="clamped() ? max() : null"
+  [attr.data-clamped]="clamped() || null"
+>
+  <div #content><ng-content /></div>
+  @if (clamped()) {
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-surface" aria-hidden="true"></div>
+  }
+</div>
+@if (tall()) {
+  <button tmButton variant="ghost" size="sm" [icon]="open() ? 'chevron-up' : 'chevron-down'" class="mt-2" [attr.aria-expanded]="open()" (click)="toggle()">
+    {{ open() ? 'Show less' : 'Show all' }}
+  </button>
+}

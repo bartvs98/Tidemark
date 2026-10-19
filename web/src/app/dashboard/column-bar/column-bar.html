@@ -1,0 +1,16 @@
+<div class="border-x border-transparent">
+  <table class="tm-table min-w-[44rem] table-fixed">
+    <colgroup>
+      @for (col of columns; track col.label) {
+        <col [class]="col.width" />
+      }
+    </colgroup>
+    <thead>
+      <tr>
+        @for (col of columns; track col.label) {
+          <th>{{ col.label }}</th>
+        }
+      </tr>
+    </thead>
+  </table>
+</div>

@@ -1,0 +1,6 @@
+@if (title(); as t) {
+  <!-- relative z-10: hoverable above a stretched link, so the error shows -->
+  <span class="relative z-10 inline-flex items-center gap-1 text-xs whitespace-nowrap text-fg-muted" [tmTooltip]="t" data-testid="refresh-failed">
+    <tm-icon name="history" [size]="12" />refresh failed
+  </span>
+}

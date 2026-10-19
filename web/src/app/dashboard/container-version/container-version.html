@@ -1,0 +1,39 @@
+@if (ignored()) {
+  <!-- Ignored: not checked, so there's no version change to show. -->
+  <span class="font-mono text-sm text-fg-muted">{{ container().image.tag || '—' }}</span>
+} @else if (update(); as u) {
+  @if (u.channel) {
+    <!-- A channel build is usually ahead of the newest stable release, so no arrow between them. -->
+    <span class="font-mono text-sm" data-testid="channel">{{ u.channel }}</span>
+    <div class="truncate text-xs text-fg-subtle">{{ u.newImage ? 'new build available' : 'latest build' }}</div>
+    @if (u.latest) {
+      <div class="truncate text-xs text-fg-subtle">newest stable <span class="font-mono">{{ u.latest }}</span></div>
+    }
+  } @else if (u.running) {
+    <tm-version-diff [from]="u.running" [to]="showLatest() ? u.latest : null" />
+  } @else if (u.latest) {
+    <span class="font-mono text-sm text-fg-muted">? <span class="text-fg-subtle">→</span> {{ u.latest }}</span>
+  } @else {
+    <span class="font-mono text-sm text-fg-muted">{{ container().image.tag || '—' }}</span>
+  }
+  @if (hint() && !u.channel) {
+    <div class="truncate text-xs text-fg-subtle">{{ hint() }}</div>
+  }
+  @if (u.latestInMajor) {
+    <div class="truncate text-xs text-fg-subtle">
+      or <span class="font-mono">{{ u.latestInMajor }}</span> in your major
+    </div>
+  }
+  @if (held(); as h) {
+    <div class="truncate text-xs text-fg-subtle" [tmTooltip]="h.title" data-testid="held">
+      <span class="font-mono">{{ u.held }}</span> {{ h.text }}
+      @if (h.value) {
+        <span class="font-mono">{{ h.value }}</span>
+      }
+    </div>
+  }
+} @else if (checking() && !failed()) {
+  <tm-skeleton width="7rem" height="0.875rem" />
+} @else {
+  <span class="font-mono text-sm text-fg-muted">{{ container().image.tag || '—' }}</span>
+}

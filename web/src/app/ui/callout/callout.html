@@ -1,0 +1,7 @@
+<tm-icon [name]="tone().icon" [class]="'mt-0.5 shrink-0 ' + tone().iconClass" />
+<div class="min-w-0 flex-1">
+  @if (heading()) {
+    <p class="font-medium">{{ heading() }}</p>
+  }
+  <div class="text-fg-muted [&_a]:text-accent-text"><ng-content /></div>
+</div>

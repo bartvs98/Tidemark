@@ -1,0 +1,24 @@
+@for (option of options(); track option.value) {
+  <button
+    type="button"
+    class="inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-sm px-2 text-sm font-medium text-fg-muted transition-colors hover:text-fg aria-pressed:bg-hover aria-pressed:text-fg"
+    [class]="size() === 'md' ? 'h-8' : 'h-7'"
+    [class.w-7]="iconOnly() && size() === 'sm'"
+    [class.w-8]="iconOnly() && size() === 'md'"
+    [class.px-0]="iconOnly()"
+    [attr.aria-pressed]="value() === option.value"
+    [attr.aria-label]="iconOnly() ? option.label : null"
+    [tmTooltip]="iconOnly() ? option.label : null"
+    (click)="value.set(option.value)"
+  >
+    @if (option.icon) {
+      <tm-icon [name]="option.icon" [size]="14" />
+    }
+    @if (!iconOnly()) {
+      {{ option.label }}
+      @if (option.count !== undefined) {
+        <span class="text-xs text-fg-subtle tabular-nums">{{ option.count }}</span>
+      }
+    }
+  </button>
+}

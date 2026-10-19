@@ -1,0 +1,19 @@
+@if (ignored()) {
+  <!-- relative z-10: hoverable above a stretched link, so the origin shows -->
+  <span class="relative z-10 inline-flex items-center gap-1 text-sm text-fg-subtle" [tmTooltip]="ignoredTitle()" data-testid="ignored">
+    <tm-icon name="eye-off" [size]="14" />Ignored
+  </span>
+} @else if (result(); as u) {
+  <tm-update-class [kind]="kind()" />
+  @if (kind() !== 'none') {
+    <!-- relative z-10: hoverable above a stretched link, so the reasons tooltip shows -->
+    <tm-level [level]="u.level" [tmTooltip]="reasons()" class="relative z-10" data-testid="level" />
+  }
+  <!-- The result above is kept from an earlier check; this says the latest refresh failed. -->
+  <tm-refresh-failed [container]="container()" />
+} @else if (error(); as err) {
+  <!-- No result at all yet. relative z-10: stays hoverable above the row's stretched link, so the reason shows -->
+  <tm-badge tone="unknown" icon="circle-help" [tmTooltip]="err" class="relative z-10" data-testid="check-failed">check failed</tm-badge>
+} @else if (checking()) {
+  <tm-skeleton width="4.5rem" height="1.25rem" />
+}

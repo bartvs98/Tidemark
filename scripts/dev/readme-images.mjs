@@ -33,7 +33,7 @@ const chrome = [
 ].find((p) => p && existsSync(p));
 const browser = await puppeteer.launch({ executablePath: chrome });
 
-// Same wave as web/src/app/ui/tide-gauge.ts (tideWavePath).
+// Same wave as web/src/app/ui/tide-gauge/tide-gauge.ts (tideWavePath).
 function wavePath(period, amp, width, depth = 400) {
   let d = `M0 ${amp} Q${period / 4} ${-amp} ${period / 2} ${amp}`;
   for (let x = period; x <= width + period; x += period / 2) d += ` T${x} ${amp}`;

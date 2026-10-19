@@ -1,0 +1,8 @@
+<span class="whitespace-nowrap text-fg-muted">{{ from() }}</span>
+@if (to(); as to) {
+  <!-- arrow and target wrap together, never inside a version -->
+  <span class="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+    <span class="text-fg-subtle" aria-label="to">→</span>
+    <span class="font-medium text-fg">{{ to }}</span>
+  </span>
+}

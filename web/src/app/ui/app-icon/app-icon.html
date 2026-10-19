@@ -1,0 +1,5 @@
+@if (src(); as src) {
+  <img [src]="src" alt="" [width]="size()" [height]="size()" decoding="async" (load)="measure($event)" (error)="failed.set(true)" class="size-full object-contain" />
+} @else {
+  <span class="font-semibold text-fg-muted select-none" [style.font-size.px]="size() * 0.45">{{ letter() }}</span>
+}

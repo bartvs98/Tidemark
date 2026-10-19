@@ -1,25 +1,29 @@
 import { Tab, TabContent, TabList, TabPanel, Tabs } from '@angular/aria/tabs';
 
-export * from './app-icon';
-export * from './badge';
-export * from './button';
-export * from './callout';
-export * from './card';
-export * from './clamp';
-export * from './dialog';
-export * from './empty-state';
-export * from './icon';
-export * from './section';
-export * from './segmented';
-export * from './skeleton';
-export * from './status';
-export * from './theme';
-export * from './tide-backdrop';
-export * from './tide-gauge';
-export * from './toast';
-export * from './tooltip';
+export * from './app-icon/app-icon';
+export * from './badge/badge';
+export * from './button/button';
+export * from './callout/callout';
+export * from './card/card';
+export * from './clamp/clamp';
+export * from './dialog/dialog';
+export * from './empty-state/empty-state';
+export * from './icon/icon';
+export * from './section/section';
+export * from './segmented/segmented';
+export * from './skeleton/skeleton';
+export * from './update-class/update-class';
+export * from './level/level';
+export * from './version-diff/version-diff';
+export * from './theme-switch/theme';
+export * from './theme-switch/theme-switch';
+export * from './tide-backdrop/tide-backdrop';
+export * from './tide-gauge/tide-gauge';
+export * from './toaster/toasts';
+export * from './toaster/toaster';
+export * from './tooltip/tooltip';
 
-// Not re-exported: ./markdown pulls in marked + DOMPurify and registers a sanitiser hook,
+// Not re-exported: ./markdown/markdown pulls in marked + DOMPurify and registers a sanitiser hook,
 // so it would land in the main bundle. Import it directly (from lazy routes only).
 
 /**

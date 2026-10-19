@@ -17,8 +17,9 @@ import {
   TmTooltip,
   Toasts,
 } from '../ui';
-import { ContainerColumnBar, ContainerTable } from './container-table';
-import { ContainerTile } from './container-tile';
+import { ContainerColumnBar } from './column-bar/column-bar';
+import { ContainerTable } from './container-table/container-table';
+import { ContainerTile } from './container-tile/container-tile';
 import {
   checkFailed,
   ContainerList,

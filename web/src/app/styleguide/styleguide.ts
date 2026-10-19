@@ -23,11 +23,14 @@ import {
   TmVersionDiff,
   Toasts,
 } from '../ui';
-import { MarkdownFlag, TmMarkdown } from '../ui/markdown';
-import { ContainerColumnBar, ContainerLink, ContainerTable } from '../dashboard/container-table';
-import { ContainerTile } from '../dashboard/container-tile';
+import { MarkdownFlag, TmMarkdown } from '../ui/markdown/markdown';
+import { ContainerColumnBar } from '../dashboard/column-bar/column-bar';
+import { ContainerLink, ContainerTable } from '../dashboard/container-table/container-table';
+import { ContainerTile } from '../dashboard/container-tile/container-tile';
 import { ContainerSummary, groupByStack, UpdateInfo } from '../dashboard/containers';
-import { ContainerRuleProblems, ContainerUpdate, ContainerVersion } from '../dashboard/update-info';
+import { ContainerUpdate } from '../dashboard/container-update/container-update';
+import { ContainerVersion } from '../dashboard/container-version/container-version';
+import { ContainerRuleProblems } from '../dashboard/rule-problems/rule-problems';
 
 /** A sample container from an image ref ("jellyfin/jellyfin:10.9.11", "ghcr.io/owner/app:v1"). */
 function sample(name: string, ref: string, extra: Partial<ContainerSummary> = {}): ContainerSummary {
