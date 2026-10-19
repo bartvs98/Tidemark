@@ -20,12 +20,27 @@ Each step ends in something runnable and verifiable. MVP = steps B1–7.
 - [x] **6. Rules**: ignore / pin / allow-major / prerelease / tag-pattern / repo override via labels + config file. ✅ `internal/rules` merges labels > `containers:` > `images:` entries of a `config.yaml` that's re-read each check; invalid values are skipped and shown, a bad file is reported while the last good one stays in use. Pins and `allow-major=false` keep the held-back version visible ("18.6-alpine held back by pin 16"); ignored containers make no outside calls and sit in a collapsed group at the bottom; results go stale when a container's rules change. Pre-releases now order by stage and number (`rc.2` < `rc.10`). Checked against the home snapshot with test labels + config (pins on postgres and Traefik, majors off on mongo, two ignored, two invalid rules, a config repo) in Chrome + Firefox, both themes, 1280 and 390 px. Built by four agents in parallel against fixed contracts (rules, resolve, wiring, frontend).
 - [x] **7. Deploy to the home server**: build the image, run with socket-proxy, tune against your ~20 real containers (fix version-detection misses). ✅ GitHub Actions runs vet, gofmt and all tests, then builds the image and pushes it to GHCR (`latest` + `sha-<commit>`); the first build of the Dockerfile worked as-is. Runs in a stack behind a reverse proxy with its own socket proxy (`v0.5.0`, only `CONTAINERS=1 IMAGES=1`, on an internal network), a named data volume and `tidemark.ignore` on itself (its image is private). Healthy, first check 26 containers in ~10 s. Tuning against a fresh snapshot: 23 of 24 checked containers have an exact running version (9 tag, 10 label, 2 digest, 1 `*_VERSION`: postgres `16-alpine` → 16.15); the one left is mealie `nightly`, which led to **channel tags**: `nightly`/`dev`/`edge` are no longer compared with the newest stable release (shown as a quiet line), only a new build counts, and there's no verdict from stable notes. Also: the summary line counts ignored containers and the gauge count explains what it counts. Known gap: mongo and postgres have no notes (their GitHub repos have no releases); parked below.
 
+## Between MVP and step 8
+
+From the owner's notes after the MVP. One PR each; the release comes last so v1.0.0 includes the rest.
+
+- [x] **H1. License**: MIT. ✅ `LICENSE`, a README section (the selfh.st icons keep CC BY 4.0), `license` in `web/package.json`; the image's licence label comes from the repo via `docker/metadata-action`.
+- [ ] **H2. CI tidy-up**: skip docs-only changes (`*.md`, `docs/**`, `LICENSE`), cancel superseded PR runs.
+- [ ] **H3. Angular restructure**: one folder per component (`name.ts` / `.html` / `.css` / `.spec.ts`), always split, also for small pieces; `ui/` keeps its name (it is the design system) and pages get the same layout. No behaviour or visual change.
+- [ ] **H4. Visible check failures**: today the reason sits in a tooltip on "refresh failed" / "check failed" (not discoverable) and in a muted line under "Checked" on the detail page (easy to miss). Make the reason visible without hovering and readable (rate limit, auth denied, not found, timeout instead of raw Go errors). The owner had two containers fail on scheduled refreshes; a manual check cleared them, so capture the real errors after the next one.
+- [ ] **H5. Releases + v1.0.0**: a git tag `v1.2.3` publishes `1.2.3`, `1.2`, `1` and `latest` plus a GitHub Release with generated notes, and builds with that version; merges to `main` publish `edge` + `sha-…` only. The owner pulls `:latest` (or `:1`) after a release.
+
 ## After MVP
 
 - [ ] **8. Reviewed / snooze state + update history**
 - [ ] **9. Telegram notifications** (notifier interface, new-findings-only diffing, test button)
 - [ ] **10. AI changelog summary** (opt-in, cached, verdict can only raise the level)
 - [ ] **11. Gated one-click update** (gates, floating-tag check, pull/recreate, healthcheck, rollback)
+- [ ] **12. Stats** (later; brainstorm with the owner first, builds on step 8's history). Ideas so far:
+  - *Behind:* how long each container has been behind (age of the running version vs. the latest), updates per container and stack over time, an up-to-date ratio over time (the tide as a history chart).
+  - *Upstream:* release cadence per image/repo, breaking vs. calm releases per repo, biggest version jumps.
+  - *Check health:* failures per container and reason, check durations, registry and GitHub requests, GitHub quota used.
+  - *Lifetime (for fun):* containers ever tracked, updates applied (running version changed), breaking changes caught, release notes read, check runs, longest-behind container ever, fastest update after a release, longest fully-up-to-date streak, mean time to update, Tidemark's own uptime.
 
 ## Ideas parked
 
