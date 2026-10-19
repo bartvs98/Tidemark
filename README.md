@@ -150,3 +150,7 @@ go build -o tidemark ./cmd/tidemark    # embeds web/dist/spa
 ## Credits
 
 App icons by [selfh.st/icons](https://selfh.st/icons/), licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+## License
+
+[MIT](LICENSE). The app icons (above) keep their own CC BY 4.0 license.
