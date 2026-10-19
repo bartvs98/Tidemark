@@ -1,6 +1,7 @@
 import { Component, computed, input } from '@angular/core';
 import { TmBadge, TmIcon, TmLevel, TmSkeleton, TmTooltip, TmUpdateClass, UpdateClass } from '../../ui';
 import { ContainerSummary, hasResult, isIgnored, ruleOrigin } from '../containers';
+import { errorKindLabel } from '../format';
 import { ContainerRefreshFailed } from '../refresh-failed/refresh-failed';
 
 /** The update class and risk level badges, "check failed", or a placeholder while checking. */
@@ -27,6 +28,7 @@ export class ContainerUpdate {
     return hasResult(u) ? u : undefined;
   });
   protected readonly error = computed(() => this.container().update?.error);
+  protected readonly reason = computed(() => errorKindLabel(this.container().update?.errorKind));
   protected readonly kind = computed(() => (this.result()?.class ?? 'none') as UpdateClass);
   protected readonly reasons = computed(() => this.result()?.reasons?.join('\n') || null);
 }

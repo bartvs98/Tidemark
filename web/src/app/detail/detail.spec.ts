@@ -192,9 +192,39 @@ describe('ContainerDetail', () => {
 
       const checked = el.querySelector('[data-testid="checked"]')!;
       expect(text(checked)).toMatch(/^Oct 16, 2026/); // the last successful check
-      const failed = checked.querySelector('[data-testid="check-attempt-failed"]')!;
-      expect(text(failed)).toContain('Refresh failed Oct 17, 2026');
+      expect(text(checked)).toContain('refresh failed, see above');
+      expect(checked.querySelector('[data-testid="check-attempt-failed"]')).toBeNull();
+      // The callout carries the details.
+      const failed = el.querySelector('[data-testid="check-attempt-failed"]')!;
+      expect(text(failed)).toContain('Refresh failed at Oct 17, 2026');
+      expect(text(failed)).toContain('Showing the result from Oct 16, 2026');
       expect(failed.querySelector('.font-mono')?.textContent).toBe('dial tcp: i/o timeout');
+      expect(el.querySelector('[data-testid="failure-hint"]')).toBeNull(); // no kind, no hint
+    });
+
+    it.each([
+      ['rate-limit', 'Tidemark tries again at the next check.'],
+      ['not-found', ''], // its message already says why
+      ['timeout', "Check the server's network or DNS."],
+      ['network', "Check the server's network or DNS."],
+      ['registry', 'The registry had a problem; Tidemark tries again at the next check.'],
+    ] as const)('shows the %s hint and short reason', async (kind, hint) => {
+      const d = detail();
+      d.container.update = { ...d.container.update!, error: 'x: failed', errorKind: kind, failedAt: '2026-10-17T07:02:00Z' };
+      const el = await details(d);
+      const shown = el.querySelector('[data-testid="failure-hint"]');
+      if (hint) expect(text(shown)).toBe(hint);
+      else expect(shown).toBeNull();
+      expect(el.querySelector('header [data-testid="refresh-failed"] [data-testid="failure-reason"]')).not.toBeNull();
+    });
+
+    it('notes a reused tag list quietly under Checked', async () => {
+      const d = detail();
+      d.container.update = { ...d.container.update!, tagsFrom: '2026-10-15T07:02:00Z' };
+      const el = await details(d);
+      const note = text(el.querySelector('[data-testid="checked"] [data-testid="tags-from"]'));
+      expect(note).toMatch(/^Tag list from Oct 15, 2026, .* \(the registry rate-limited the refresh\)$/);
+      expect(el.querySelector('[data-testid="check-attempt-failed"]')).toBeNull();
     });
 
     it('says there was no successful check when the only attempt failed', async () => {
@@ -206,7 +236,10 @@ describe('ContainerDetail', () => {
       expect(el.querySelector('header [data-testid="refresh-failed"]')).toBeNull();
       const checked = el.querySelector('[data-testid="checked"]')!;
       expect(text(checked)).toContain('No successful check yet');
-      expect(text(checked.querySelector('[data-testid="check-attempt-failed"]'))).toContain('Check failed Oct 17, 2026');
+      expect(text(checked)).toContain('check failed, see above');
+      const failed = text(el.querySelector('[data-testid="check-attempt-failed"]'));
+      expect(failed).toContain('Check failed at Oct 17, 2026');
+      expect(failed).not.toContain('Showing the result');
       expect(text(el.querySelector('[data-testid="details"]'))).not.toContain('from unknown');
     });
   });

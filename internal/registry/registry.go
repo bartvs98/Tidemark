@@ -9,8 +9,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -27,6 +29,45 @@ const (
 	defaultReqTimeout = 60 * time.Second
 )
 
+// Kind classifies a registry failure, so the UI can say what went wrong.
+type Kind string
+
+const (
+	KindRateLimit Kind = "rate-limit" // HTTP 429
+	KindNotFound  Kind = "not-found"  // 401/403/404: missing or private
+	KindTimeout   Kind = "timeout"    // the registry didn't answer in time
+	KindNetwork   Kind = "network"    // DNS or connection failure
+	KindRegistry  Kind = "registry"   // 5xx
+)
+
+// Error is a classified registry failure; Error() is a short message meant to be shown as is.
+type Error struct {
+	Kind Kind
+	Msg  string
+	Err  error
+}
+
+func (e *Error) Error() string { return e.Msg }
+func (e *Error) Unwrap() error { return e.Err }
+
+// KindOf returns the kind of a classified registry error in err's chain, "" if there is none.
+func KindOf(err error) Kind {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.Kind
+	}
+	return ""
+}
+
+// StaleError: the registry refused to list tags (rate limit), so Tags returned the list from At.
+type StaleError struct {
+	At  time.Time
+	Err error
+}
+
+func (e *StaleError) Error() string { return e.Err.Error() }
+func (e *StaleError) Unwrap() error { return e.Err }
+
 // TagCache persists tag lists across restarts (the store implements it).
 type TagCache interface {
 	LoadTags(ctx context.Context, repository string) ([]string, time.Time, bool)
@@ -38,6 +79,7 @@ type Client struct {
 	transport http.RoundTripper
 	userAgent string
 	tagCache  TagCache
+	extra     []remote.Option // appended to every request's options (tests: faster retries)
 
 	mu      sync.Mutex
 	tags    map[string]cached[[]string]
@@ -76,18 +118,23 @@ func New(userAgent string, opts ...Option) *Client {
 	return c
 }
 
-// Tags lists every tag of the repository.
+// Tags lists every tag of the repository. When the registry rate-limits the request
+// and the tag cache has an older list, it returns that list with a *StaleError.
 func (c *Client) Tags(ctx context.Context, ref imageref.Ref) ([]string, error) {
 	key := ref.Registry + "/" + ref.Repository
 	if v, ok := lookup(c, c.tags, key); ok {
 		return v, nil
 	}
+	var old []string
+	var oldAt time.Time
+	haveOld := false
 	if c.tagCache != nil {
-		if tags, at, ok := c.tagCache.LoadTags(ctx, key); ok && time.Since(at) < c.ttl {
+		old, oldAt, haveOld = c.tagCache.LoadTags(ctx, key)
+		if haveOld && time.Since(oldAt) < c.ttl {
 			c.mu.Lock()
-			c.tags[key] = cached[[]string]{value: tags, at: at}
+			c.tags[key] = cached[[]string]{value: old, at: oldAt}
 			c.mu.Unlock()
-			return tags, nil
+			return old, nil
 		}
 	}
 	repo, err := name.NewRepository(key)
@@ -102,9 +149,15 @@ func (c *Client) Tags(ctx context.Context, ref imageref.Ref) ([]string, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, defaultReqTimeout)
 	defer cancel()
+	// remote.List asks for 1000 tags per page (GHCR returns 100 without n), so even
+	// repos with thousands of signature tags (sha256-…) take only a few requests.
 	tags, err := remote.List(repo, c.options(ctx)...)
 	if err != nil {
-		return nil, friendly(err, key)
+		err = friendly(err, key, ref.Registry)
+		if haveOld && KindOf(err) == KindRateLimit {
+			return old, &StaleError{At: oldAt, Err: err} // not cached: the next check asks again
+		}
+		return nil, err
 	}
 	store(c, c.tags, key, tags)
 	if c.tagCache != nil {
@@ -135,7 +188,7 @@ func (c *Client) Digest(ctx context.Context, ref imageref.Ref, tag string) (stri
 	defer cancel()
 	desc, err := remote.Head(t, c.options(ctx)...)
 	if err != nil {
-		return "", friendly(err, key)
+		return "", friendly(err, key, ref.Registry)
 	}
 	d := desc.Digest.String()
 	store(c, c.digests, key, d)
@@ -143,12 +196,12 @@ func (c *Client) Digest(ctx context.Context, ref imageref.Ref, tag string) (stri
 }
 
 func (c *Client) options(ctx context.Context) []remote.Option {
-	return []remote.Option{
+	return append([]remote.Option{
 		remote.WithContext(ctx),
 		remote.WithAuth(authn.Anonymous),
 		remote.WithTransport(c.transport),
 		remote.WithUserAgent(c.userAgent),
-	}
+	}, c.extra...)
 }
 
 func (c *Client) acquire(ctx context.Context, host string) (func(), error) {
@@ -184,16 +237,37 @@ func store[T any](c *Client, m map[string]cached[T], key string, v T) {
 	m[key] = cached[T]{value: v, at: time.Now()}
 }
 
-// friendly turns registry errors into messages that say what to do.
-func friendly(err error, what string) error {
+// friendly turns registry errors into short messages that say what went wrong (and,
+// where it helps, what to do), classified by Kind. Errors it doesn't recognise keep
+// their own text and have no kind.
+func friendly(err error, what, host string) error {
+	classified := func(k Kind, format string, args ...any) error {
+		return &Error{Kind: k, Msg: what + ": " + fmt.Sprintf(format, args...), Err: err}
+	}
 	var te *transport.Error
 	if errors.As(err, &te) {
-		switch te.StatusCode {
-		case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
-			return fmt.Errorf("%s: not found, or private (only public images are supported for now)", what)
-		case http.StatusTooManyRequests:
-			return fmt.Errorf("%s: registry rate limit reached, try again later", what)
+		switch code := te.StatusCode; {
+		case code == http.StatusUnauthorized, code == http.StatusForbidden, code == http.StatusNotFound:
+			return classified(KindNotFound, "not found, or private (only public images are supported for now)")
+		case code == http.StatusTooManyRequests:
+			return classified(KindRateLimit, "registry rate limit reached, try again later")
+		case code >= 500 && code <= 599:
+			return classified(KindRegistry, "registry error (HTTP %d), try again later", code)
 		}
+	}
+	var ne net.Error
+	if errors.Is(err, context.DeadlineExceeded) || errors.As(err, &ne) && ne.Timeout() {
+		return classified(KindTimeout, "the registry didn't answer in time")
+	}
+	var dns *net.DNSError
+	if errors.As(err, &dns) {
+		return classified(KindNetwork, "can't resolve %s", dns.Name)
+	}
+	// A failed dial covers refused connections on every platform (Windows reports
+	// WSAECONNREFUSED, not ECONNREFUSED).
+	var op *net.OpError
+	if errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET) || errors.As(err, &op) && op.Op == "dial" {
+		return classified(KindNetwork, "can't connect to %s", host)
 	}
 	return fmt.Errorf("%s: %w", what, err)
 }

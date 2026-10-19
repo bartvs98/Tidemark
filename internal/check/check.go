@@ -13,6 +13,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/bartvs98/tidemark/internal/docker"
+	"github.com/bartvs98/tidemark/internal/registry"
 	"github.com/bartvs98/tidemark/internal/resolve"
 	"github.com/bartvs98/tidemark/internal/rules"
 	"github.com/bartvs98/tidemark/internal/store"
@@ -40,6 +41,7 @@ type Entry struct {
 	Rules     string // with these rules (fingerprint, "" for none)
 	Result    resolve.Result
 	Err       string    // the last attempt failed with this, "" if it succeeded
+	ErrKind   string    // registry.Kind of Err (rate-limit, timeout, …), "" if unclassified
 	CheckedAt time.Time // last successful check
 	FailedAt  time.Time // the failed attempt Err is from
 }
@@ -341,7 +343,7 @@ func (s *Service) checkOne(ctx context.Context, c docker.Container, rs rules.Rul
 	defer cancel()
 	r, err := resolve.Resolve(ctx, s.reg, c, resolveOptions(rs))
 	if err != nil {
-		entry.Err, entry.FailedAt = err.Error(), time.Now()
+		entry.Err, entry.ErrKind, entry.FailedAt = err.Error(), string(registry.KindOf(err)), time.Now()
 		s.log.Debug("check: container failed", "container", c.Name, "err", err)
 		return entry
 	}
@@ -358,7 +360,7 @@ func (s *Service) save(ctx context.Context, name string, e Entry, runID int64) {
 	// A failure (e.g. no network yet after waking from sleep) keeps the last good result
 	// for this image and rules, and only records that refreshing it failed.
 	if prev, ok := s.results[name]; ok && e.Err != "" && !prev.CheckedAt.IsZero() && prev.valid(e.ImageRef, e.ImageID, e.Rules) {
-		prev.Err, prev.FailedAt = e.Err, e.FailedAt
+		prev.Err, prev.ErrKind, prev.FailedAt = e.Err, e.ErrKind, e.FailedAt
 		e = prev
 	}
 	s.results[name] = e
@@ -390,16 +392,18 @@ func toRow(name string, e Entry, runID int64) store.Result {
 		Running: r.Running, Source: string(r.Source), Latest: r.Latest, LatestInMajor: r.LatestInMajor,
 		Class: string(r.Class), Floating: r.Floating, NewImage: r.NewImage,
 		Held: r.Held, HeldBy: r.HeldBy, Rules: e.Rules,
-		Error: e.Err, CheckedAt: e.CheckedAt, FailedAt: e.FailedAt, RunID: runID,
+		Error: e.Err, ErrorKind: e.ErrKind, CheckedAt: e.CheckedAt, FailedAt: e.FailedAt, TagsFrom: r.TagsFrom, RunID: runID,
 	}
 }
 
 func fromRow(r store.Result) Entry {
 	return Entry{
-		ImageRef: r.ImageRef, ImageID: r.ImageID, Rules: r.Rules, Err: r.Error, CheckedAt: r.CheckedAt, FailedAt: r.FailedAt,
+		ImageRef: r.ImageRef, ImageID: r.ImageID, Rules: r.Rules,
+		Err: r.Error, ErrKind: r.ErrorKind, CheckedAt: r.CheckedAt, FailedAt: r.FailedAt,
 		Result: resolve.Result{
 			Running: r.Running, Source: resolve.Source(r.Source), Latest: r.Latest, LatestInMajor: r.LatestInMajor,
 			Class: version.Class(r.Class), Floating: r.Floating, NewImage: r.NewImage, Held: r.Held, HeldBy: r.HeldBy,
+			TagsFrom: r.TagsFrom,
 		},
 	}
 }

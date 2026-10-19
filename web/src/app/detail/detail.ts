@@ -9,7 +9,7 @@ import { hasResult, hasUpdate, imageName, isIgnored, ruleOrigin } from '../dashb
 import { ContainerUpdate } from '../dashboard/container-update/container-update';
 import { ContainerVersion } from '../dashboard/container-version/container-version';
 import { ContainerRuleProblems } from '../dashboard/rule-problems/rule-problems';
-import { heldText } from '../dashboard/format';
+import { errorKindHint, heldText } from '../dashboard/format';
 import { ContainerDetailData } from './detail-types';
 import { describeRules } from './rules';
 
@@ -70,6 +70,8 @@ export class ContainerDetail {
     const u = this.update();
     return hasResult(u) ? u : undefined;
   });
+  /** Advice for the failed check, by kind; empty when unclassified. */
+  protected readonly failureHint = computed(() => errorKindHint(this.update()?.errorKind));
   protected readonly rules = computed(() => this.data()?.container.rules);
   protected readonly ruleLines = computed(() => describeRules(this.rules()));
   protected readonly ignored = computed(() => {

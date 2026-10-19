@@ -57,6 +57,23 @@
     </div>
   }
 
+  <!-- ── The latest check failed (a result, if any, is kept) ── -->
+  @if (update(); as u) {
+    @if (u.error) {
+      <div class="mb-8" data-testid="check-attempt-failed">
+        <tm-callout [heading]="(u.checkedAt ? 'Refresh failed' : 'Check failed') + (u.failedAt ? ' at ' + (u.failedAt | date: 'medium') : '')">
+          <span class="block font-mono text-xs wrap-anywhere" data-testid="failure-error">{{ u.error }}</span>
+          @if (u.checkedAt) {
+            <span class="mt-1 block">Showing the result from {{ u.checkedAt | date: 'medium' }}.</span>
+          }
+          @if (failureHint(); as hint) {
+            <span class="mt-1 block" data-testid="failure-hint">{{ hint }}</span>
+          }
+        </tm-callout>
+      </div>
+    }
+  }
+
   <!-- ── Why it's flagged (internal/analysis) ───────────── -->
   @if (result(); as u) {
     @if (u.level !== 'none' && u.reasons?.length) {
@@ -296,13 +313,11 @@
                   <span class="text-fg-muted">No successful check yet</span>
                 }
                 @if (u.error) {
-                  <!-- The latest attempt failed; the result above (if any) is from the last check that worked. -->
-                  <div class="mt-1 flex items-start gap-1.5 text-fg-muted" data-testid="check-attempt-failed">
-                    <tm-icon [name]="u.checkedAt ? 'history' : 'circle-help'" [size]="14" class="mt-0.5 shrink-0" />
-                    <div class="min-w-0">
-                      {{ u.checkedAt ? 'Refresh failed' : 'Check failed' }}{{ u.failedAt ? ' ' + (u.failedAt | date: 'medium') : '' }}
-                      <span class="block font-mono text-xs break-all">{{ u.error }}</span>
-                    </div>
+                  <span class="text-fg-muted"> · {{ u.checkedAt ? 'refresh' : 'check' }} failed, see above</span>
+                }
+                @if (u.tagsFrom) {
+                  <div class="mt-1 text-xs text-fg-subtle" data-testid="tags-from">
+                    Tag list from {{ u.tagsFrom | date: 'medium' }} (the registry rate-limited the refresh)
                   </div>
                 }
               </dd>

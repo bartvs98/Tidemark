@@ -13,7 +13,10 @@
   <tm-refresh-failed [container]="container()" />
 } @else if (error(); as err) {
   <!-- No result at all yet. relative z-10: stays hoverable above the row's stretched link, so the reason shows -->
-  <tm-badge tone="unknown" icon="circle-help" [tmTooltip]="err" class="relative z-10" data-testid="check-failed">check failed</tm-badge>
+  <tm-badge tone="unknown" icon="circle-help" [tmTooltip]="err" tabindex="0" class="relative z-10" data-testid="check-failed">check failed</tm-badge>
+  @if (reason(); as r) {
+    <span class="text-xs whitespace-nowrap text-fg-muted" data-testid="failure-reason">· {{ r }}</span>
+  }
 } @else if (checking()) {
   <tm-skeleton width="4.5rem" height="1.25rem" />
 }

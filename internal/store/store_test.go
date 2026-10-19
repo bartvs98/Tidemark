@@ -100,7 +100,9 @@ func TestFailedAtMigrationOnExistingDB(t *testing.T) {
 	if r := byName["redis"]; r.Latest != "7.4.1" || !r.CheckedAt.Equal(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)) || !r.FailedAt.IsZero() {
 		t.Errorf("good row = %+v", r)
 	}
-	if r := byName["app"]; r.Error != "no such host" || !r.CheckedAt.IsZero() || !r.FailedAt.Equal(time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)) {
+	// Rows from before error_kind and tags_from: unclassified, fresh tags.
+	if r := byName["app"]; r.Error != "no such host" || !r.CheckedAt.IsZero() || !r.FailedAt.Equal(time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)) ||
+		r.ErrorKind != "" || !r.TagsFrom.IsZero() {
 		t.Errorf("error row = %+v", r)
 	}
 }
@@ -137,9 +139,10 @@ func TestResults(t *testing.T) {
 	a := Result{ContainerName: "jellyfin", ImageRef: "jellyfin/jellyfin:10.9.11", ImageID: "sha256:a", Running: "10.9.11",
 		Source: "tag", Latest: "10.10.7", Class: "minor", Floating: false, NewImage: true,
 		Held: "11.0.0", HeldBy: "allow-major", Rules: "ignore=false;allow-major=false", CheckedAt: at, RunID: runID}
-	b := Result{ContainerName: "redis", ImageRef: "redis:latest", ImageID: "sha256:b", Error: "rate limited", FailedAt: at} // never succeeded
+	b := Result{ContainerName: "redis", ImageRef: "redis:latest", ImageID: "sha256:b", Error: "rate limited", ErrorKind: "rate-limit", FailedAt: at} // never succeeded
 	c := a
-	c.ContainerName, c.Error, c.FailedAt = "kept", "no such host", at.Add(time.Hour) // failed, kept its result
+	c.ContainerName, c.Error, c.ErrorKind, c.FailedAt = "kept", "no such host", "network", at.Add(time.Hour) // failed, kept its result
+	c.TagsFrom = at.Add(-time.Hour)                                                                          // that result reused an older tag list
 	for _, r := range []Result{a, b, c} {
 		if err := s.SaveResult(ctx, r); err != nil {
 			t.Fatal(err)

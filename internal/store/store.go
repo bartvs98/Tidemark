@@ -150,30 +150,34 @@ type Result struct {
 	HeldBy        string
 	Rules         string    // fingerprint of the rules it was checked with, "" for none
 	Error         string    // the last attempt failed with this, "" if it succeeded
+	ErrorKind     string    // registry.Kind of Error, "" if unclassified
 	CheckedAt     time.Time // last successful check, zero if there never was one
 	FailedAt      time.Time // the failed attempt Error is from, zero without one
+	TagsFrom      time.Time // the result's tag list was reused from then (rate-limited), zero normally
 	RunID         int64
 }
 
 func (s *Store) SaveResult(ctx context.Context, r Result) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO results (container_name, image_ref, image_id, running, source, latest, latest_in_major,
-		                     class, floating, new_image, held, held_by, rules, error, checked_at, failed_at, run_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		                     class, floating, new_image, held, held_by, rules, error, error_kind, checked_at, failed_at, tags_from, run_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (container_name) DO UPDATE SET
 			image_ref = excluded.image_ref, image_id = excluded.image_id, running = excluded.running,
 			source = excluded.source, latest = excluded.latest, latest_in_major = excluded.latest_in_major,
 			class = excluded.class, floating = excluded.floating, new_image = excluded.new_image,
-			held = excluded.held, held_by = excluded.held_by, rules = excluded.rules, error = excluded.error, checked_at = excluded.checked_at, failed_at = excluded.failed_at, run_id = excluded.run_id`,
+			held = excluded.held, held_by = excluded.held_by, rules = excluded.rules, error = excluded.error, error_kind = excluded.error_kind,
+			checked_at = excluded.checked_at, failed_at = excluded.failed_at, tags_from = excluded.tags_from, run_id = excluded.run_id`,
 		r.ContainerName, r.ImageRef, r.ImageID, r.Running, r.Source, r.Latest, r.LatestInMajor,
-		r.Class, r.Floating, r.NewImage, r.Held, r.HeldBy, r.Rules, r.Error, tsOrEmpty(r.CheckedAt), tsOrEmpty(r.FailedAt), nullID(r.RunID))
+		r.Class, r.Floating, r.NewImage, r.Held, r.HeldBy, r.Rules, r.Error, r.ErrorKind,
+		tsOrEmpty(r.CheckedAt), tsOrEmpty(r.FailedAt), tsOrEmpty(r.TagsFrom), nullID(r.RunID))
 	return err
 }
 
 func (s *Store) Results(ctx context.Context) ([]Result, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT container_name, image_ref, image_id, running, source, latest, latest_in_major,
-		       class, floating, new_image, held, held_by, rules, error, checked_at, failed_at, COALESCE(run_id, 0)
+		       class, floating, new_image, held, held_by, rules, error, error_kind, checked_at, failed_at, tags_from, COALESCE(run_id, 0)
 		FROM results`)
 	if err != nil {
 		return nil, err
@@ -182,12 +186,12 @@ func (s *Store) Results(ctx context.Context) ([]Result, error) {
 	var out []Result
 	for rows.Next() {
 		var r Result
-		var checked, failed string
+		var checked, failed, tagsFrom string
 		if err := rows.Scan(&r.ContainerName, &r.ImageRef, &r.ImageID, &r.Running, &r.Source, &r.Latest,
-			&r.LatestInMajor, &r.Class, &r.Floating, &r.NewImage, &r.Held, &r.HeldBy, &r.Rules, &r.Error, &checked, &failed, &r.RunID); err != nil {
+			&r.LatestInMajor, &r.Class, &r.Floating, &r.NewImage, &r.Held, &r.HeldBy, &r.Rules, &r.Error, &r.ErrorKind, &checked, &failed, &tagsFrom, &r.RunID); err != nil {
 			return nil, err
 		}
-		r.CheckedAt, r.FailedAt = parseTS(checked), parseTS(failed)
+		r.CheckedAt, r.FailedAt, r.TagsFrom = parseTS(checked), parseTS(failed), parseTS(tagsFrom)
 		out = append(out, r)
 	}
 	return out, rows.Err()

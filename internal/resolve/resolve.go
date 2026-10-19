@@ -22,19 +22,27 @@
 //     Held, so the UI can still mention it. HoldMajor needs a known major: with an
 //     unknown running version (latest, nightly) it doesn't apply.
 //   - Floating-tag digest updates (NewImage) ignore holds: they're the same tag.
+//
+// When the registry rate-limits the tag list but an earlier one is cached, Resolve
+// works from that list and says so in TagsFrom.
 package resolve
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
+	"github.com/bartvs98/tidemark/internal/registry"
 	"github.com/bartvs98/tidemark/internal/version"
 )
 
+// Registry is what Resolve needs from a registry client. Tags may return tags together
+// with a *registry.StaleError: an older list, still usable.
 type Registry interface {
 	Tags(ctx context.Context, ref imageref.Ref) ([]string, error)
 	Digest(ctx context.Context, ref imageref.Ref, tag string) (string, error)
@@ -75,6 +83,9 @@ type Result struct {
 	NewImage      bool          // the floating tag now points to a different image than the one running
 	Held          string        // newest version a pin or major hold keeps back, empty if none
 	HeldBy        string        // HeldByPin or HeldByAllowMajor when Held is set
+	// TagsFrom: the tag list was reused from an earlier check, fetched at this time,
+	// because the registry rate-limited this one. Zero normally.
+	TagsFrom time.Time
 }
 
 // maxDigestProbes bounds HEAD requests when matching a running image to a tag by digest.
@@ -93,7 +104,10 @@ func Resolve(ctx context.Context, reg Registry, c docker.Container, opts Options
 		return r, err
 	}
 	rawTags, err := reg.Tags(ctx, ref)
-	if err != nil {
+	var stale *registry.StaleError
+	if errors.As(err, &stale) {
+		r.TagsFrom = stale.At
+	} else if err != nil {
 		return r, err
 	}
 	var tags []version.Version

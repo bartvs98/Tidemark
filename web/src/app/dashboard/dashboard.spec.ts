@@ -340,6 +340,33 @@ describe('Dashboard', () => {
       expect(text(rows[2].querySelector('tm-container-version'))).toBe('1.0');
     });
 
+    it.each([
+      ['rate-limit', 'rate limited'],
+      ['not-found', 'not found or private'],
+      ['timeout', 'timed out'],
+      ['network', 'network error'],
+      ['registry', 'registry error'],
+    ] as const)('shows the short reason for %s', async (kind, label) => {
+      const l = list();
+      l.containers[1].update = result({ ...failed, errorKind: kind });
+      l.containers[2].update = { ...l.containers[2].update!, errorKind: kind };
+      const el = await render((req) => req.flush(l));
+      const rows = [...el.querySelectorAll('tbody tr')];
+      const note = rows[1].querySelector<HTMLElement>('[data-testid="refresh-failed"]')!;
+      expect(text(note)).toMatch(new RegExp(`^refresh failed\\s*· ${label}$`));
+      expect(note.getAttribute('tabindex')).toBe('0');
+      expect(note.getAttribute('data-tooltip')).toContain(failed.error);
+      expect(text(rows[2].querySelector('[data-testid="failure-reason"]'))).toBe(`· ${label}`);
+      expect(rows[2].querySelector('[data-testid="check-failed"]')!.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('shows no reason without a kind', async () => {
+      const el = await render((req) => req.flush(list()));
+      const rows = [...el.querySelectorAll('tbody tr')];
+      expect(rows[1].querySelector('[data-testid="failure-reason"]')).toBeNull();
+      expect(rows[2].querySelector('[data-testid="failure-reason"]')).toBeNull();
+    });
+
     it('still counts and filters a kept result', async () => {
       const el = await render((req) => req.flush(list()));
       const buttons = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="filter"] button')];

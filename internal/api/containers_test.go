@@ -18,6 +18,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/imageref"
+	"github.com/bartvs98/tidemark/internal/registry"
 	"github.com/bartvs98/tidemark/internal/store"
 
 	"github.com/bartvs98/tidemark/internal/docker"
@@ -125,17 +126,24 @@ func TestChecksAndUpdates(t *testing.T) {
 	}
 }
 
-// flakyRegistry is tagsRegistry that can lose the network.
+// flakyRegistry is tagsRegistry that can lose the network, or rate-limit tag lists and
+// answer from a cached one fetched at limitedAt.
 type flakyRegistry struct {
 	tagsRegistry
-	down *atomic.Bool
+	down, limited *atomic.Bool
 }
+
+var limitedAt = time.Date(2026, 10, 18, 6, 0, 0, 0, time.UTC)
 
 func (r flakyRegistry) Tags(ctx context.Context, ref imageref.Ref) ([]string, error) {
 	if r.down.Load() {
-		return nil, errors.New("dial tcp: lookup index.docker.io: no such host")
+		return nil, &registry.Error{Kind: registry.KindNetwork, Msg: "index.docker.io/" + ref.Repository + ": can't resolve index.docker.io"}
 	}
-	return r.tagsRegistry.Tags(ctx, ref)
+	tags, err := r.tagsRegistry.Tags(ctx, ref)
+	if r.limited.Load() {
+		err = &registry.StaleError{At: limitedAt, Err: &registry.Error{Kind: registry.KindRateLimit, Msg: "rate limited"}}
+	}
+	return tags, err
 }
 
 // A failed check keeps the last good result: the update describes that one and says
@@ -153,8 +161,8 @@ func TestUpdateAfterFailedCheck(t *testing.T) {
 	}
 	defer db.Close()
 	src := docker.NewSnapshot("../docker/testdata/snapshot.json")
-	down := new(atomic.Bool)
-	checks := check.New(src, flakyRegistry{down: down}, db, log)
+	down, limited := new(atomic.Bool), new(atomic.Bool)
+	checks := check.New(src, flakyRegistry{down: down, limited: limited}, db, log)
 	h := New(Deps{
 		Version: "t", Log: log, Source: src, Checks: checks,
 		Changelogs: changelog.New(db, "", log, changelog.WithBaseURLs(gh.URL, gh.URL, gh.URL)),
@@ -191,7 +199,8 @@ func TestUpdateAfterFailedCheck(t *testing.T) {
 	// Never succeeded.
 	run(true)
 	u := raw()
-	if u["source"] != "unknown" || u["class"] != "none" || u["level"] != "none" || u["error"] == nil || u["failedAt"] == nil || u["checkedAt"] != nil || u["latest"] != nil {
+	if u["source"] != "unknown" || u["class"] != "none" || u["level"] != "none" || u["error"] == nil || u["errorKind"] != "network" ||
+		u["failedAt"] == nil || u["checkedAt"] != nil || u["latest"] != nil || u["tagsFrom"] != nil {
 		t.Errorf("never succeeded: %v", u)
 	}
 
@@ -199,7 +208,8 @@ func TestUpdateAfterFailedCheck(t *testing.T) {
 	run(false)
 	do(t, h, "/api/containers/jellyfin")
 	ok := raw()
-	if ok["latest"] != "10.10.7" || ok["class"] != "minor" || ok["level"] != "breaking" || ok["checkedAt"] == nil || ok["error"] != nil || ok["failedAt"] != nil {
+	if ok["latest"] != "10.10.7" || ok["class"] != "minor" || ok["level"] != "breaking" || ok["checkedAt"] == nil || ok["error"] != nil ||
+		ok["errorKind"] != nil || ok["failedAt"] != nil || ok["tagsFrom"] != nil {
 		t.Errorf("succeeded: %v", ok)
 	}
 
@@ -207,7 +217,7 @@ func TestUpdateAfterFailedCheck(t *testing.T) {
 	run(true)
 	u = raw()
 	if u["latest"] != "10.10.7" || u["class"] != "minor" || u["source"] != "tag" || u["level"] != "breaking" || u["reasons"] == nil ||
-		u["checkedAt"] != ok["checkedAt"] || u["error"] == nil || u["failedAt"] == nil {
+		u["checkedAt"] != ok["checkedAt"] || u["error"] == nil || u["errorKind"] != "network" || u["failedAt"] == nil {
 		t.Errorf("kept: %v", u)
 	}
 	// The detail page assesses the kept result too.
@@ -215,7 +225,16 @@ func TestUpdateAfterFailedCheck(t *testing.T) {
 	if err := json.Unmarshal(do(t, h, "/api/containers/jellyfin").Body.Bytes(), &d); err != nil {
 		t.Fatal(err)
 	}
-	if du := d.Container.Update; du == nil || du.Level != analysis.Breaking || du.Error == "" || du.CheckedAt == nil || du.FailedAt == nil {
+	if du := d.Container.Update; du == nil || du.Level != analysis.Breaking || du.Error == "" || du.ErrorKind != "network" || du.CheckedAt == nil || du.FailedAt == nil {
 		t.Errorf("detail of kept result = %+v", du)
+	}
+
+	// Rate-limited with a cached tag list: a successful check that says where its tags are from.
+	limited.Store(true)
+	run(false)
+	u = raw()
+	if u["latest"] != "10.10.7" || u["tagsFrom"] != limitedAt.Format(time.RFC3339) || u["checkedAt"] == nil ||
+		u["error"] != nil || u["errorKind"] != nil || u["failedAt"] != nil {
+		t.Errorf("stale tags: %v", u)
 	}
 }

@@ -53,8 +53,12 @@ type updateJSON struct {
 	Held          string     `json:"held,omitempty"`   // newest version a pin or major hold keeps back
 	HeldBy        string     `json:"heldBy,omitempty"` // pin | allow-major
 	Error         string     `json:"error,omitempty"`
+	ErrorKind     string     `json:"errorKind,omitempty"` // with Error: rate-limit | not-found | timeout | network | registry; absent when unclassified
 	CheckedAt     *time.Time `json:"checkedAt,omitempty"`
 	FailedAt      *time.Time `json:"failedAt,omitempty"` // set with Error
+	// TagsFrom: the result is from a successful check, but its tag list was reused from
+	// this time because the registry rate-limited the refresh.
+	TagsFrom *time.Time `json:"tagsFrom,omitempty"`
 	// Level is the breaking-change verdict (none | attention | breaking) from the version
 	// jump and the stored release notes in range; Reasons explain it, most severe first.
 	Level   analysis.Level `json:"level"`
@@ -231,8 +235,10 @@ func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref
 		Held:          r.Held,
 		HeldBy:        r.HeldBy,
 		Error:         e.Err,
+		ErrorKind:     e.ErrKind,
 		CheckedAt:     timeOrNil(e.CheckedAt),
 		FailedAt:      timeOrNil(e.FailedAt),
+		TagsFrom:      timeOrNil(r.TagsFrom),
 	}
 	// A channel build isn't compared with stable releases, so their notes say nothing about it.
 	if !e.CheckedAt.IsZero() && r.Class != version.None && u.Channel == "" {

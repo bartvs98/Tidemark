@@ -6,9 +6,11 @@ import (
 	"regexp"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
+	"github.com/bartvs98/tidemark/internal/registry"
 	"github.com/bartvs98/tidemark/internal/version"
 )
 
@@ -17,9 +19,12 @@ type fakeRegistry struct {
 	tags    []string
 	digests map[string]string
 	heads   []string // tags whose digest was requested
+	tagsErr error    // returned with the tags
 }
 
-func (f *fakeRegistry) Tags(context.Context, imageref.Ref) ([]string, error) { return f.tags, nil }
+func (f *fakeRegistry) Tags(context.Context, imageref.Ref) ([]string, error) {
+	return f.tags, f.tagsErr
+}
 
 func (f *fakeRegistry) Digest(_ context.Context, _ imageref.Ref, tag string) (string, error) {
 	f.heads = append(f.heads, tag)
@@ -347,5 +352,28 @@ func TestChannel(t *testing.T) {
 		if got := Channel(tag); got != want {
 			t.Errorf("Channel(%q) = %q, want %q", tag, got, want)
 		}
+	}
+}
+
+// A rate-limited tag list with an older one cached still resolves, from that list.
+func TestResolveStaleTags(t *testing.T) {
+	at := time.Date(2026, 10, 18, 6, 0, 0, 0, time.UTC)
+	limited := &registry.Error{Kind: registry.KindRateLimit, Msg: "ghcr.io/team/app: registry rate limit reached, try again later"}
+	c := container("ghcr.io/team/app:1.0.0", "", nil)
+
+	reg := &fakeRegistry{tags: []string{"1.0.0", "1.1.0"}, tagsErr: &registry.StaleError{At: at, Err: limited}}
+	got, err := Resolve(context.Background(), reg, c, Options{})
+	want := Result{Running: "1.0.0", Source: SourceTag, Latest: "1.1.0", Class: version.Minor, TagsFrom: at}
+	if err != nil || got != want {
+		t.Errorf("stale: got %+v, %v\nwant %+v", got, err, want)
+	}
+
+	// Without an older list, the failure stands.
+	if _, err := Resolve(context.Background(), &fakeRegistry{tagsErr: limited}, c, Options{}); !errors.Is(err, limited) {
+		t.Errorf("rate limited: err = %v", err)
+	}
+	reg = &fakeRegistry{tags: []string{"1.0.0", "1.1.0"}}
+	if got, err := Resolve(context.Background(), reg, c, Options{}); err != nil || !got.TagsFrom.IsZero() {
+		t.Errorf("fresh: TagsFrom = %v, err = %v", got.TagsFrom, err)
 	}
 }

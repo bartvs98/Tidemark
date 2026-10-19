@@ -13,6 +13,7 @@ import (
 
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
+	"github.com/bartvs98/tidemark/internal/registry"
 	"github.com/bartvs98/tidemark/internal/resolve"
 	"github.com/bartvs98/tidemark/internal/rules"
 	"github.com/bartvs98/tidemark/internal/store"
@@ -32,6 +33,7 @@ type countingRegistry struct {
 	calls map[string]int
 	block chan struct{} // if set, Tags waits for it
 	down  bool          // every lookup fails, like before the network is up
+	stale time.Time     // if set, tag lists are rate-limited and come from the cache of then
 }
 
 func (r *countingRegistry) Tags(_ context.Context, ref imageref.Ref) ([]string, error) {
@@ -40,10 +42,14 @@ func (r *countingRegistry) Tags(_ context.Context, ref imageref.Ref) ([]string, 
 	}
 	r.mu.Lock()
 	r.calls[ref.Repository]++
-	down := r.down
+	down, stale := r.down, r.stale
 	r.mu.Unlock()
 	if down {
-		return nil, errors.New("dial tcp: lookup index.docker.io: no such host")
+		return nil, &registry.Error{Kind: registry.KindNetwork, Msg: "index.docker.io/" + ref.Repository + ": can't resolve index.docker.io"}
+	}
+	if !stale.IsZero() {
+		limited := &registry.Error{Kind: registry.KindRateLimit, Msg: "rate limited"}
+		return []string{"1.0.0", "1.1.0"}, &registry.StaleError{At: stale, Err: limited}
 	}
 	if ref.Repository == "team/broken" {
 		return nil, errors.New("registry exploded")
@@ -107,11 +113,11 @@ func TestRun(t *testing.T) {
 			t.Errorf("%s = %+v", x.Name, e)
 		}
 	}
-	if e, _ := s.Result(c); e.Err != "registry exploded" {
-		t.Errorf("c err = %q", e.Err)
+	if e, _ := s.Result(c); e.Err != "registry exploded" || e.ErrKind != "" {
+		t.Errorf("c err = %q (kind %q), want it unclassified", e.Err, e.ErrKind)
 	}
-	if e, _ := s.Result(d); e.Err == "" {
-		t.Error("missing image should be reported")
+	if e, _ := s.Result(d); e.Err == "" || e.ErrKind != "" {
+		t.Errorf("missing image: err = %q (kind %q), want an error without a kind", e.Err, e.ErrKind)
 	}
 }
 
@@ -383,11 +389,11 @@ func TestFailedCheckKeepsLastResult(t *testing.T) {
 	kept := func(s *Service, when string) {
 		t.Helper()
 		e, ok := s.Result(app)
-		if !ok || e.Result != good.Result || !e.CheckedAt.Equal(good.CheckedAt) || e.Err == "" || e.FailedAt.Before(good.CheckedAt) {
+		if !ok || e.Result != good.Result || !e.CheckedAt.Equal(good.CheckedAt) || e.Err == "" || e.ErrKind != string(registry.KindNetwork) || e.FailedAt.Before(good.CheckedAt) {
 			t.Errorf("%s: app = %+v ok=%v, want the good result kept with the error", when, e, ok)
 		}
 		e, ok = s.Result(twin)
-		if !ok || e.Result != (resolve.Result{}) || !e.CheckedAt.IsZero() || e.Err == "" || e.FailedAt.IsZero() {
+		if !ok || e.Result != (resolve.Result{}) || !e.CheckedAt.IsZero() || e.Err == "" || e.ErrKind != string(registry.KindNetwork) || e.FailedAt.IsZero() {
 			t.Errorf("%s: twin = %+v ok=%v, want the error alone", when, e, ok)
 		}
 	}
@@ -409,7 +415,7 @@ func TestFailedCheckKeepsLastResult(t *testing.T) {
 	reg.mu.Unlock()
 	runOnce(t, again)
 	for _, c := range []docker.Container{app, twin} {
-		if e, ok := again.Result(c); !ok || e.Err != "" || !e.FailedAt.IsZero() || e.CheckedAt.Equal(good.CheckedAt) || e.Result.Latest != "1.1.0" {
+		if e, ok := again.Result(c); !ok || e.Err != "" || e.ErrKind != "" || !e.FailedAt.IsZero() || e.CheckedAt.Equal(good.CheckedAt) || e.Result.Latest != "1.1.0" {
 			t.Errorf("%s after recovery = %+v ok=%v", c.Name, e, ok)
 		}
 	}
@@ -438,5 +444,25 @@ func TestFailedCheckKeepsLastResult(t *testing.T) {
 	runOnce(t, again)
 	if e, ok := again.Result(pinned); !ok || !e.CheckedAt.IsZero() || e.Err == "" {
 		t.Errorf("pinned = %+v ok=%v, want the error alone", e, ok)
+	}
+}
+
+// A check that ran on a cached tag list (rate-limited) succeeds and remembers since when.
+func TestStaleTagsAreRecorded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.db")
+	at := time.Date(2026, 10, 18, 6, 0, 0, 0, time.UTC)
+	reg := &countingRegistry{calls: map[string]int{}, stale: at}
+	app := ctr("app", "team/app:1.0.0", "sha256:1")
+	s := New(listSource{list: []docker.Container{app}}, reg, openStore(t, path), quiet)
+	runOnce(t, s)
+	if e, ok := s.Result(app); !ok || e.Err != "" || e.CheckedAt.IsZero() || !e.Result.TagsFrom.Equal(at) || e.Result.Latest != "1.1.0" {
+		t.Errorf("stale check = %+v ok=%v", e, ok)
+	}
+	again := New(listSource{list: []docker.Container{app}}, reg, openStore(t, path), quiet)
+	if err := again.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := again.Result(app); !ok || !e.Result.TagsFrom.Equal(at) {
+		t.Errorf("after restart = %+v ok=%v", e, ok)
 	}
 }

@@ -28,6 +28,9 @@ export interface CheckStatus {
 /** How the running version was determined (internal/resolve). */
 export type UpdateSource = 'tag' | 'label' | 'digest' | 'env' | 'unknown';
 
+/** How a failed check is classified (internal/check). */
+export type ErrorKind = 'rate-limit' | 'not-found' | 'timeout' | 'network' | 'registry';
+
 /**
  * The result fields describe the last *successful* check. A failed attempt doesn't throw that
  * result away: it only sets `error` + `failedAt`. So there are three states:
@@ -49,6 +52,10 @@ export interface UpdateInfo {
   error?: string;
   /** When that failed attempt was; set together with `error`. */
   failedAt?: string;
+  /** What kind of failure `error` is, when the backend could tell; absent: only the raw text exists. */
+  errorKind?: ErrorKind;
+  /** The result is from a successful check, but its tag list was reused from this earlier time (the registry rate-limited the refresh). Not an error. */
+  tagsFrom?: string;
   /** Breaking-change verdict from the version jump and the stored release notes. */
   level: Exclude<Level, 'unknown'>;
   /** Why, most severe first: "Major version: 2 → 3", "v3.0.0: Redis 8.0 or newer is now required". */

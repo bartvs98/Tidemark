@@ -106,8 +106,9 @@
     <p class="mb-4 text-fg-muted">
       <span class="font-mono text-sm">tm-container-version</span> and <span class="font-mono text-sm">tm-container-update</span>
       for every state a container can be in. When a refresh fails, the last good result stays and
-      <span class="font-mono text-sm">tm-refresh-failed</span> says so quietly (not a risk, so no colour); only a container
-      that was never checked successfully gets the dashed "check failed" badge. Hover them for the error.
+      <span class="font-mono text-sm">tm-refresh-failed</span> says so quietly (not a risk, so no colour), with a short reason
+      when the failure could be classified ("rate limited"); only a container that was never checked successfully gets the dashed
+      "check failed" badge. Hover or focus them for the full error.
     </p>
     <tm-card flush>
       <table class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]" data-testid="update-states">

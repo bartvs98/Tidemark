@@ -53,10 +53,11 @@ const CHECKED_AT = '2026-10-17T23:00:00Z';
 const UPDATE = { source: 'tag' as const, floating: false, newImage: false, checkedAt: CHECKED_AT, level: 'none' as const };
 /** The latest attempt failed; spread over a result, that result is kept from CHECKED_AT. */
 const REFRESH_FAILED = {
-  error: 'registry-1.docker.io: dial tcp: lookup registry-1.docker.io: no such host',
+  error: 'ghcr.io/immich-app/immich-server: registry rate limit reached, try again later',
+  errorKind: 'rate-limit' as const,
   failedAt: '2026-10-18T07:02:00Z',
 };
-/** No check ever succeeded: only the error. */
+/** No check ever succeeded: only the error (this one has no kind, so no short reason). */
 const NO_RESULT: UpdateInfo = {
   source: 'unknown',
   class: 'none',
@@ -235,6 +236,10 @@ export class Styleguide {
       }),
     },
     { label: 'Check failed, no result yet', container: sample('private-app', 'ghcr.io/me/private-app:2.1', { update: NO_RESULT }) },
+    {
+      label: 'Check failed, with a reason',
+      container: sample('internal-tool', 'ghcr.io/me/internal-tool:3.0', { update: { ...NO_RESULT, errorKind: 'not-found' } }),
+    },
     { label: 'Checking, no result yet', container: sample('radarr', 'lscr.io/linuxserver/radarr:latest'), checking: true },
     { label: 'Ignored', container: sample('watchtower', 'containrrr/watchtower:latest', { rules: { ignore: true, from: { ignore: 'label' } } }) },
   ];

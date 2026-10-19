@@ -1,11 +1,11 @@
 import { Component, computed, inject, input, LOCALE_ID } from '@angular/core';
 import { TmIcon, TmTooltip } from '../../ui';
 import { ContainerSummary, hasResult, refreshFailed } from '../containers';
-import { shortTime } from '../format';
+import { errorKindLabel, shortTime } from '../format';
 
 /**
  * Quiet note that the result shown is from an earlier check, because the latest refresh failed.
- * Not a risk, so no colour and no badge: icon + "refresh failed", details on hover.
+ * Not a risk, so no colour and no badge: icon + "refresh failed" (+ the short reason when known), full details on hover.
  * Renders nothing unless there's a kept result and an error.
  */
 @Component({
@@ -17,6 +17,8 @@ import { shortTime } from '../format';
 export class ContainerRefreshFailed {
   readonly container = input.required<ContainerSummary>();
   private readonly locale = inject(LOCALE_ID);
+
+  protected readonly reason = computed(() => errorKindLabel(this.container().update?.errorKind));
 
   protected readonly title = computed(() => {
     const u = this.container().update;
