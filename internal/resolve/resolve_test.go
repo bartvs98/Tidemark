@@ -18,8 +18,9 @@ import (
 type fakeRegistry struct {
 	tags    []string
 	digests map[string]string
-	heads   []string // tags whose digest was requested
-	tagsErr error    // returned with the tags
+	heads   []string         // tags whose digest was requested
+	tagsErr error            // returned with the tags
+	headErr map[string]error // Digest error per tag (default: an unclassified "not found")
 }
 
 func (f *fakeRegistry) Tags(context.Context, imageref.Ref) ([]string, error) {
@@ -28,6 +29,9 @@ func (f *fakeRegistry) Tags(context.Context, imageref.Ref) ([]string, error) {
 
 func (f *fakeRegistry) Digest(_ context.Context, _ imageref.Ref, tag string) (string, error) {
 	f.heads = append(f.heads, tag)
+	if err, ok := f.headErr[tag]; ok {
+		return "", err
+	}
 	if d, ok := f.digests[tag]; ok {
 		return d, nil
 	}
@@ -471,5 +475,33 @@ func TestResolveStaleTags(t *testing.T) {
 	reg = &fakeRegistry{tags: []string{"1.0.0", "1.1.0"}}
 	if got, err := Resolve(context.Background(), reg, c, Options{}); err != nil || !got.TagsFrom.IsZero() {
 		t.Errorf("fresh: TagsFrom = %v, err = %v", got.TagsFrom, err)
+	}
+}
+
+// Digest probing stops at the first classified failure (it would hit every probe), but
+// a missing tag only skips that tag. Later steps still run.
+func TestDigestProbingStopsOnFailure(t *testing.T) {
+	c := container("team/app:latest", "team/app@sha256:d", nil)
+	tags := []string{"1.2.2", "1.2.3", "1.2.4", "latest"}
+	fail := func(k registry.Kind) error { return &registry.Error{Kind: k, Msg: "team/app: " + string(k)} }
+
+	for _, k := range []registry.Kind{registry.KindRateLimit, registry.KindTimeout, registry.KindNetwork, registry.KindRegistry} {
+		reg := &fakeRegistry{tags: tags, digests: map[string]string{"1.2.3": "sha256:d", "latest": "sha256:d"}, headErr: map[string]error{"1.2.4": fail(k)}}
+		got, err := Resolve(context.Background(), reg, c, Options{})
+		if err != nil || got.Running != "" || got.TagDigest != "sha256:d" {
+			t.Errorf("%s: got %+v, %v", k, got, err)
+		}
+		if want := []string{"1.2.4", "latest"}; !slices.Equal(reg.heads, want) {
+			t.Errorf("%s: heads = %v, want %v", k, reg.heads, want)
+		}
+	}
+
+	reg := &fakeRegistry{tags: tags, digests: map[string]string{"1.2.3": "sha256:d", "latest": "sha256:d"}, headErr: map[string]error{"1.2.4": fail(registry.KindNotFound)}}
+	got, err := Resolve(context.Background(), reg, c, Options{})
+	if err != nil || got.Running != "1.2.3" || got.Source != SourceDigest {
+		t.Errorf("not found: got %+v, %v", got, err)
+	}
+	if want := []string{"1.2.4", "1.2.3", "latest"}; !slices.Equal(reg.heads, want) {
+		t.Errorf("not found: heads = %v, want %v", reg.heads, want)
 	}
 }

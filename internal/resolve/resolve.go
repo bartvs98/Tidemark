@@ -388,6 +388,12 @@ func matchDigest(ctx context.Context, reg Registry, ref imageref.Ref, tags []ver
 		if err == nil && slices.Contains(local, d) {
 			return t, true
 		}
+		// A missing tag (or an unclassified error) only skips that tag; a rate limit,
+		// timeout, network or server failure would hit every further probe too.
+		switch registry.KindOf(err) {
+		case registry.KindRateLimit, registry.KindTimeout, registry.KindNetwork, registry.KindRegistry:
+			return version.Version{}, false
+		}
 	}
 	return version.Version{}, false
 }

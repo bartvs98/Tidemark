@@ -2,7 +2,8 @@
 // (Docker Hub, GHCR, Quay, lscr.io, …) using anonymous, read-only requests.
 //
 // Digests come from HEAD requests, which don't count towards Docker Hub's pull
-// rate limit. Results are cached so a check run doesn't repeat requests.
+// rate limit. Results are cached so a check run doesn't repeat requests, and concurrent
+// requests for the same tag list or digest share one request.
 package registry
 
 import (
@@ -19,6 +20,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/bartvs98/tidemark/internal/imageref"
 )
@@ -27,7 +29,20 @@ const (
 	defaultTTL        = time.Hour
 	perRegistryLimit  = 4 // concurrent requests per registry host
 	defaultReqTimeout = 60 * time.Second
+	staleTTL          = 5 * time.Minute // how long a rate-limited tag list outcome is reused
 )
+
+// retryStatusCodes is go-containerregistry's default list without 429: retrying a rate
+// limit (after 1 s, then 3 s) only keeps the per-host slots taken and asks again too soon.
+var retryStatusCodes = []int{
+	http.StatusRequestTimeout,
+	http.StatusInternalServerError,
+	http.StatusBadGateway,
+	http.StatusServiceUnavailable,
+	http.StatusGatewayTimeout,
+	499, // nginx: client closed request
+	522, // Cloudflare: connection timeout
+}
 
 // Kind classifies a registry failure, so the UI can say what went wrong.
 type Kind string
@@ -84,7 +99,21 @@ type Client struct {
 	mu      sync.Mutex
 	tags    map[string]cached[[]string]
 	digests map[string]cached[string]
+	limited map[string]limitedTags // rate-limited tag list outcomes, reused for staleTTL
 	slots   map[string]chan struct{}
+
+	tagFlights    singleflight.Group
+	digestFlights singleflight.Group
+}
+
+// limitedTags is a rate-limited Tags outcome: the older list (with its time) when there
+// was one, and the rate-limit error.
+type limitedTags struct {
+	tags     []string
+	tagsAt   time.Time
+	haveTags bool
+	err      error
+	at       time.Time
 }
 
 type cached[T any] struct {
@@ -110,6 +139,7 @@ func New(userAgent string, opts ...Option) *Client {
 		userAgent: userAgent,
 		tags:      map[string]cached[[]string]{},
 		digests:   map[string]cached[string]{},
+		limited:   map[string]limitedTags{},
 		slots:     map[string]chan struct{}{},
 	}
 	for _, o := range opts {
@@ -119,12 +149,53 @@ func New(userAgent string, opts ...Option) *Client {
 }
 
 // Tags lists every tag of the repository. When the registry rate-limits the request
-// and the tag cache has an older list, it returns that list with a *StaleError.
+// and the tag cache has an older list, it returns that list with a *StaleError. A
+// rate-limited outcome (with or without an older list) is reused for staleTTL, so other
+// groups on the same repo don't ask the refusing registry again in the same run.
 func (c *Client) Tags(ctx context.Context, ref imageref.Ref) ([]string, error) {
 	key := ref.Registry + "/" + ref.Repository
-	if v, ok := lookup(c, c.tags, key); ok {
-		return v, nil
+	if r, ok := c.cachedTags(key); ok {
+		return r.tags, r.err
 	}
+	res, err := shared(ctx, &c.tagFlights, key, func(ctx context.Context) (tagsResult, error) {
+		if r, ok := c.cachedTags(key); ok { // a flight that just finished may have filled it
+			return r, nil
+		}
+		tags, err := c.fetchTags(ctx, key, ref.Registry)
+		return tagsResult{tags, err}, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.tags, res.err
+}
+
+// tagsResult carries fetchTags' list together with its error, which may be a
+// *StaleError alongside an older list.
+type tagsResult struct {
+	tags []string
+	err  error
+}
+
+// cachedTags returns a fresh tag list, or a recent rate-limited outcome.
+func (c *Client) cachedTags(key string) (tagsResult, bool) {
+	if v, ok := lookup(c, c.tags, key); ok {
+		return tagsResult{tags: v}, true
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	l, ok := c.limited[key]
+	if !ok || time.Since(l.at) >= staleTTL {
+		return tagsResult{}, false
+	}
+	if l.haveTags {
+		return tagsResult{l.tags, &StaleError{At: l.tagsAt, Err: l.err}}, true
+	}
+	return tagsResult{err: l.err}, true
+}
+
+// fetchTags runs once per key at a time (see Tags); ctx is already detached from the callers.
+func (c *Client) fetchTags(ctx context.Context, key, host string) ([]string, error) {
 	var old []string
 	var oldAt time.Time
 	haveOld := false
@@ -141,7 +212,7 @@ func (c *Client) Tags(ctx context.Context, ref imageref.Ref) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	release, err := c.acquire(ctx, ref.Registry)
+	release, err := c.acquire(ctx, host)
 	if err != nil {
 		return nil, err
 	}
@@ -153,13 +224,24 @@ func (c *Client) Tags(ctx context.Context, ref imageref.Ref) ([]string, error) {
 	// repos with thousands of signature tags (sha256-…) take only a few requests.
 	tags, err := remote.List(repo, c.options(ctx)...)
 	if err != nil {
-		err = friendly(err, key, ref.Registry)
-		if haveOld && KindOf(err) == KindRateLimit {
-			return old, &StaleError{At: oldAt, Err: err} // not cached: the next check asks again
+		err = friendly(err, key, host)
+		if KindOf(err) != KindRateLimit {
+			return nil, err
+		}
+		// Remembered briefly in memory only: the persisted list keeps its own time.
+		l := limitedTags{tags: old, tagsAt: oldAt, haveTags: haveOld, err: err, at: time.Now()}
+		c.mu.Lock()
+		c.limited[key] = l
+		c.mu.Unlock()
+		if haveOld {
+			return old, &StaleError{At: oldAt, Err: err}
 		}
 		return nil, err
 	}
-	store(c, c.tags, key, tags)
+	c.mu.Lock()
+	c.tags[key] = cached[[]string]{value: tags, at: time.Now()}
+	delete(c.limited, key)
+	c.mu.Unlock()
 	if c.tagCache != nil {
 		_ = c.tagCache.SaveTags(ctx, key, tags, time.Now()) // best effort: the memory cache still works
 	}
@@ -178,21 +260,43 @@ func (c *Client) Digest(ctx context.Context, ref imageref.Ref, tag string) (stri
 	if err != nil {
 		return "", err
 	}
-	release, err := c.acquire(ctx, ref.Registry)
-	if err != nil {
-		return "", err
-	}
-	defer release()
+	return shared(ctx, &c.digestFlights, key, func(ctx context.Context) (string, error) {
+		if v, ok := lookup(c, c.digests, key); ok { // a flight that just finished may have filled it
+			return v, nil
+		}
+		release, err := c.acquire(ctx, ref.Registry)
+		if err != nil {
+			return "", err
+		}
+		defer release()
 
-	ctx, cancel := context.WithTimeout(ctx, defaultReqTimeout)
-	defer cancel()
-	desc, err := remote.Head(t, c.options(ctx)...)
-	if err != nil {
-		return "", friendly(err, key, ref.Registry)
+		ctx, cancel := context.WithTimeout(ctx, defaultReqTimeout)
+		defer cancel()
+		desc, err := remote.Head(t, c.options(ctx)...)
+		if err != nil {
+			return "", friendly(err, key, ref.Registry)
+		}
+		d := desc.Digest.String()
+		store(c, c.digests, key, d)
+		return d, nil
+	})
+}
+
+// shared runs fetch once for all concurrent callers with the same key. The fetch runs
+// detached from the callers' contexts (keeping their values), so one caller giving up
+// doesn't cancel it for the others; each caller stops waiting when its own ctx ends.
+func shared[T any](ctx context.Context, g *singleflight.Group, key string, fetch func(context.Context) (T, error)) (T, error) {
+	ch := g.DoChan(key, func() (any, error) {
+		return fetch(context.WithoutCancel(ctx))
+	})
+	select {
+	case r := <-ch:
+		v, _ := r.Val.(T)
+		return v, r.Err
+	case <-ctx.Done():
+		var zero T
+		return zero, ctx.Err()
 	}
-	d := desc.Digest.String()
-	store(c, c.digests, key, d)
-	return d, nil
 }
 
 func (c *Client) options(ctx context.Context) []remote.Option {
@@ -201,6 +305,7 @@ func (c *Client) options(ctx context.Context) []remote.Option {
 		remote.WithAuth(authn.Anonymous),
 		remote.WithTransport(c.transport),
 		remote.WithUserAgent(c.userAgent),
+		remote.WithRetryStatusCodes(retryStatusCodes...),
 	}, c.extra...)
 }
 

@@ -100,12 +100,18 @@ func TestTagsPageSize(t *testing.T) {
 }
 
 // Rate-limited: an older persisted list is returned with a StaleError, and isn't cached
-// as fresh. Without one, the error alone.
+// as fresh. Without one, the error alone. A 429 is asked once (no retries), and the
+// outcome is reused for a few minutes without asking again; a later success replaces it.
 func TestStaleTagsOnRateLimit(t *testing.T) {
-	host, _, requests := hookedRegistry(t, func(w http.ResponseWriter, r *http.Request) bool {
+	var lists atomic.Int32
+	var allow atomic.Bool
+	host, _, _ := hookedRegistry(t, func(w http.ResponseWriter, r *http.Request) bool {
 		if strings.HasSuffix(r.URL.Path, "/tags/list") {
-			http.Error(w, `{"errors":[{"code":"TOOMANYREQUESTS"}]}`, http.StatusTooManyRequests)
-			return true
+			lists.Add(1)
+			if !allow.Load() {
+				http.Error(w, `{"errors":[{"code":"TOOMANYREQUESTS"}]}`, http.StatusTooManyRequests)
+				return true
+			}
 		}
 		return false
 	})
@@ -113,14 +119,22 @@ func TestStaleTagsOnRateLimit(t *testing.T) {
 	key := host + "/team/app"
 	ctx := context.Background()
 
-	tags, err := fastRetries(New("t")).Tags(ctx, ref)
+	c := New("t") // default retry settings: a retried 429 would show as more requests
+	tags, err := c.Tags(ctx, ref)
 	if KindOf(err) != KindRateLimit || errors.As(err, new(*StaleError)) || tags != nil {
 		t.Errorf("without a cached list: tags=%v err=%v kind=%q", tags, err, KindOf(err))
+	}
+	if n := lists.Load(); n != 1 {
+		t.Errorf("429 asked %d times, want 1 (no retries)", n)
+	}
+	if _, err := c.Tags(ctx, ref); KindOf(err) != KindRateLimit || lists.Load() != 1 {
+		t.Errorf("again: err=%v, %d requests; the rate limit must be remembered", err, lists.Load())
 	}
 
 	at := time.Now().Add(-5 * time.Hour).UTC()
 	tc := &memTagCache{tags: map[string][]string{key: {"1.0.0", "old"}}, at: map[string]time.Time{key: at}}
-	c := fastRetries(New("t", WithTagCache(tc)))
+	c = New("t", WithTagCache(tc))
+	lists.Store(0)
 	tags, err = c.Tags(ctx, ref)
 	var stale *StaleError
 	if !errors.As(err, &stale) || !stale.At.Equal(at) || KindOf(err) != KindRateLimit || !slices.Equal(tags, []string{"1.0.0", "old"}) {
@@ -129,12 +143,141 @@ func TestStaleTagsOnRateLimit(t *testing.T) {
 	if !strings.Contains(err.Error(), "rate limit") {
 		t.Errorf("stale message = %q", err)
 	}
-	before := requests.Load()
-	if _, err := c.Tags(ctx, ref); !errors.As(err, &stale) || requests.Load() == before {
-		t.Errorf("second call: err=%v, %d requests; the stale list must not be cached", err, requests.Load()-before)
+	tags, err = c.Tags(ctx, ref)
+	if !errors.As(err, &stale) || !stale.At.Equal(at) || !slices.Equal(tags, []string{"1.0.0", "old"}) || lists.Load() != 1 {
+		t.Errorf("second call: tags=%v err=%v, %d requests; the stale outcome must be reused", tags, err, lists.Load())
 	}
 	if !tc.at[key].Equal(at) {
 		t.Error("the stale list must not be saved again")
+	}
+
+	// After staleTTL the registry is asked again, and a success replaces the outcome.
+	c.mu.Lock()
+	l := c.limited[key]
+	l.at = time.Now().Add(-staleTTL)
+	c.limited[key] = l
+	c.mu.Unlock()
+	allow.Store(true)
+	tags, err = c.Tags(ctx, ref)
+	if err != nil || len(tags) != 3 || lists.Load() != 2 {
+		t.Errorf("after staleTTL: tags=%v err=%v requests=%d", tags, err, lists.Load())
+	}
+	if _, ok := c.limited[key]; ok {
+		t.Error("a successful fetch must drop the rate-limited outcome")
+	}
+}
+
+// gatedRegistry holds every request whose path ends in suffix until the returned
+// release is called, counting them.
+func gatedRegistry(t *testing.T, suffix string) (host string, digests map[string]string, count *atomic.Int32, release func()) {
+	t.Helper()
+	count = &atomic.Int32{}
+	gate := make(chan struct{})
+	var once sync.Once
+	release = func() { once.Do(func() { close(gate) }) }
+	t.Cleanup(release)
+	host, digests, _ = hookedRegistry(t, func(_ http.ResponseWriter, r *http.Request) bool {
+		if strings.Contains(r.URL.Path, suffix) {
+			count.Add(1)
+			<-gate
+		}
+		return false
+	})
+	return host, digests, count, release
+}
+
+// Concurrent callers for the same tag list or digest share one request.
+func TestConcurrentCallersShareRequest(t *testing.T) {
+	const n = 10
+	t.Run("tags", func(t *testing.T) {
+		host, _, count, release := gatedRegistry(t, "/tags/list")
+		ref, _ := imageref.Parse(host + "/team/app:1.0.0")
+		c := New("t")
+		var wg sync.WaitGroup
+		errs := make(chan error, n)
+		for range n {
+			wg.Go(func() {
+				tags, err := c.Tags(context.Background(), ref)
+				if err == nil && len(tags) != 3 {
+					err = fmt.Errorf("tags = %v", tags)
+				}
+				errs <- err
+			})
+		}
+		time.Sleep(100 * time.Millisecond) // let every caller join the flight
+		release()
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Error(err)
+			}
+		}
+		if count.Load() != 1 {
+			t.Errorf("%d tag list requests, want 1", count.Load())
+		}
+	})
+	t.Run("digest", func(t *testing.T) {
+		host, digests, count, release := gatedRegistry(t, "/manifests/latest")
+		ref, _ := imageref.Parse(host + "/team/app:latest")
+		c := New("t")
+		var wg sync.WaitGroup
+		errs := make(chan error, n)
+		for range n {
+			wg.Go(func() {
+				d, err := c.Digest(context.Background(), ref, "latest")
+				if err == nil && d != digests["latest"] {
+					err = fmt.Errorf("digest = %s", d)
+				}
+				errs <- err
+			})
+		}
+		time.Sleep(100 * time.Millisecond)
+		release()
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Error(err)
+			}
+		}
+		if count.Load() != 1 {
+			t.Errorf("%d manifest requests, want 1", count.Load())
+		}
+	})
+}
+
+// A caller that gives up stops waiting, but the shared request goes on for the others.
+func TestCancelledCallerKeepsSharedRequest(t *testing.T) {
+	host, _, count, release := gatedRegistry(t, "/tags/list")
+	ref, _ := imageref.Parse(host + "/team/app:1.0.0")
+	c := New("t")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	first := make(chan error, 1)
+	go func() { _, err := c.Tags(ctx, ref); first <- err }()
+	type result struct {
+		tags []string
+		err  error
+	}
+	second := make(chan result, 1)
+	time.Sleep(50 * time.Millisecond)
+	go func() { tags, err := c.Tags(context.Background(), ref); second <- result{tags, err} }()
+	time.Sleep(50 * time.Millisecond)
+
+	cancel()
+	select {
+	case err := <-first:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("cancelled caller: err = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the cancelled caller kept waiting")
+	}
+	release()
+	r := <-second
+	if r.err != nil || len(r.tags) != 3 || count.Load() != 1 {
+		t.Errorf("other caller: tags=%v err=%v requests=%d", r.tags, r.err, count.Load())
 	}
 }
 
