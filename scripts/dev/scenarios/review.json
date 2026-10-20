@@ -1,0 +1,15 @@
+{
+  "base": "scripts/dev/demo-snapshot.json",
+  "steps": [
+    { "api": "PUT /api/containers/grafana/review", "body": { "kind": "reviewed", "version": "{latest:grafana}" } },
+    { "api": "PUT /api/containers/uptime-kuma/review", "body": { "kind": "snoozed", "until": "{in:7d}" } },
+    { "api": "PUT /api/containers/nginx/review", "body": { "kind": "snoozed", "version": "{latest:nginx}" } },
+    { "snapshot": [{ "container": "traefik", "newImage": true }] },
+    { "check": true },
+
+    { "shot": "dashboard", "path": "/", "view": "list", "do": [{ "click": "[data-testid=snoozed-section] button" }] },
+    { "shot": "reviewed", "path": "/containers/grafana", "full": false },
+    { "shot": "snooze-menu", "path": "/containers/homeassistant", "full": false, "do": [{ "click": "[data-testid=snooze] button" }] },
+    { "shot": "history", "path": "/containers/traefik", "element": "main", "do": [{ "click": "[role=tab]", "text": "History" }] }
+  ]
+}

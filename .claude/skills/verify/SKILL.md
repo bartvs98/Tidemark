@@ -18,6 +18,7 @@ node scripts/dev/verify.mjs --browsers chrome,firefox --pages dashboard --views 
 node scripts/dev/verify.mjs --no-build          # reuse the last build when only re-shooting
 node scripts/dev/verify.mjs --serve             # build + run the server only, for manual poking (stop with Ctrl+C / background it)
 node scripts/dev/verify.mjs --data <dir>        # start from a copy of an earlier run's data dir (stored notes: no GitHub calls)
+node scripts/dev/verify.mjs --scenario scripts/dev/scenarios/review.json --themes dark   # seeded states, named + cropped shots
 node scripts/dev/verify.mjs --help
 ```
 

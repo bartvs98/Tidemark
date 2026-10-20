@@ -51,7 +51,7 @@ cd web; npm start                                                              #
 Use the **`verify` skill** (`node scripts/dev/verify.mjs`): builds, runs the binary against the snapshot, screenshots into `.verify/`, reports page errors and failed requests. First time: `npm install --prefix scripts/dev`. Look at the screenshots before reporting.
 
 - **Shoot only what changed.** Screenshots are the most expensive thing to read. Default: the changed pages at 1280 in both themes, plus 390 when layout changes. Crop to the element when one component changed. Firefox and the full matrix only for CSS or layout-wide changes.
-- **States that need data** (rules, reviews, opened menus, other tabs): copy `snapshots/home.json` to the scratchpad and edit the copy (don't print its contents), seed state via the API against `--serve`, and shoot with a small Puppeteer script (resolve `puppeteer-core` from `scripts/dev`). Pass `--snapshot <copy> --data <dir>`.
+- **States that need data** (rules, reviews, image changes, opened menus, other tabs): write a scenario (`--scenario`, format in [scripts/dev/scenarios/README.md](scripts/dev/scenarios/README.md)): it patches a copy of the snapshot, seeds state through the API and takes named, optionally cropped shots. Commit scenarios worth keeping, on the demo host; for one-off checks against the owner's snapshot keep the file in the scratchpad.
 - **README images** (`docs/brand/`) come from `node scripts/dev/readme-images.mjs` against `--serve --snapshot scripts/dev/demo-snapshot.json` (a made-up host, never the owner's snapshot). Re-render them in the same PR when the dashboard looks noticeably different, and look at them before committing.
 
 ## Gotchas

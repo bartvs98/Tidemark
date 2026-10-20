@@ -84,6 +84,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 /scripts/snapshot.sh          export a host's container/image metadata for development (no container env;
                               only image *_VERSION variables)
 /scripts/dev/verify.mjs       visual verification: build, run against a snapshot, screenshot (verify skill)
+/scripts/dev/scenarios/       verify scenarios: seeded states and named shots on the demo host
 /.github/workflows/image.yml  CI, see Deployment
 /.github/workflows/cleanup.yml  deletes old image versions from GHCR, see Deployment
 Dockerfile
