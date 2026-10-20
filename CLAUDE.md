@@ -7,6 +7,7 @@ Self-hosted dashboard that shows, for every container on a Docker host (running 
 Each fact lives in one doc. Read the section you need, not the whole file.
 
 - [docs/ROADMAP.md](docs/ROADMAP.md): finished steps (one or two lines each), open steps in full, parked ideas. **Continue from the first unchecked step.**
+- [docs/AUDIT.md](docs/AUDIT.md): the 20 Oct 2026 audit's findings with status, worked off as roadmap step H8. Tick a finding there when its fix is merged.
 - [docs/FEATURES.md](docs/FEATURES.md): behaviour and decision rules. Read the section for the behaviour you're changing.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): stack, package layout, check pipeline, data model, API shapes, frontend, security, CI and releasing. Read before changing a package, a table or an endpoint.
 - [README.md](README.md): for users: install, env vars, rules syntax. The only config reference.
