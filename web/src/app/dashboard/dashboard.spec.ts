@@ -719,6 +719,7 @@ describe('Dashboard', () => {
       const rows = [...ignored.querySelectorAll('tbody tr')];
       expect(rows.map((r) => text(r.querySelector('a')))).toEqual(['filebrowser', 'watchtower']);
       expect(text(rows[1])).toContain('media · Up 2 days'); // its stack, since it's not in that section
+      expect(rows.every((r) => r.hasAttribute('data-dimmed'))).toBe(true); // quiet: faded, full again on hover
       const marks = [...ignored.querySelectorAll('[data-testid="ignored"]')];
       expect(marks.map(text)).toEqual(['Ignored', 'Ignored']);
       expect(marks[0].getAttribute('data-tooltip')).toBe('Not checked for updates: ignored in the config file.');
@@ -732,7 +733,11 @@ describe('Dashboard', () => {
       const ignored = el.querySelector('[data-testid="ignored-section"]')!;
       ignored.querySelector<HTMLButtonElement>('h2 button')!.click();
       await TestBed.inject(ApplicationRef).whenStable();
-      expect(ignored.querySelectorAll('tm-container-tile').length).toBe(2);
+      const tiles = [...ignored.querySelectorAll('tm-container-tile')];
+      expect(tiles.length).toBe(2);
+      // Faded like up-to-date tiles, and the colour comes back on hover (the group- classes).
+      expect(tiles.every((t) => t.hasAttribute('data-dimmed') && t.className.includes('hover:opacity-100'))).toBe(true);
+      expect(tiles[0].querySelector('tm-app-icon')!.className).toContain('group-hover:grayscale-0');
     });
 
     it('leaves ignored containers out of the Updates and Breaking filters', async () => {
@@ -874,7 +879,7 @@ describe('Dashboard', () => {
       expect(el.querySelectorAll('tr[data-current]').length).toBe(0);
     });
 
-    it('in stack mode, keeps stacks whole, dims current rows in stacks with work and tucks settled stacks into "Up to date"', async () => {
+    it('in stack mode, keeps stacks whole, dims current rows and tucks settled stacks into "Up to date"', async () => {
       const el = await render((req) => req.flush(body()));
       expect(sectionNames(el)).toEqual(['media', 'recipes', 'secrets', 'Up to date', 'Ignored']);
       const rowNames = (rows: Element[]) => rows.map((r) => text(r.querySelector('a')));
@@ -900,9 +905,9 @@ describe('Dashboard', () => {
       expect(sub.map((s) => text(s.querySelector('h3')))).toEqual(['networking']);
       expect(sub[0].textContent).toContain('1 container');
       expect(rowNames([...sub[0].querySelectorAll('tbody tr')])).toEqual(['adguard']);
-      // Toned down, but not dimmed: the whole section is already quiet.
+      // Toned down and dimmed, as everywhere: hover brings the colour back.
       expect(sub[0].querySelector('tr[data-current]')).not.toBeNull();
-      expect(sub[0].querySelector('tr[data-dimmed]')).toBeNull();
+      expect(sub[0].querySelector('tr[data-dimmed]')).not.toBeNull();
     });
 
     it('puts settled ungrouped containers in "Up to date" too, and keeps the open state across groupings', async () => {
@@ -920,7 +925,7 @@ describe('Dashboard', () => {
       await settle();
       const current = el.querySelector('[data-testid="severity-current"]')!;
       expect(current.querySelector('h2 button')!.getAttribute('aria-expanded')).toBe('true');
-      expect(el.querySelector('tr[data-dimmed]')).toBeNull(); // no dimming outside the stack grouping
+      expect(current.querySelectorAll('tr[data-dimmed]').length).toBe(3); // dimmed in the severity grouping too
     });
 
     it('opens "Up to date" when a search only matches settled stacks', async () => {
@@ -1019,8 +1024,16 @@ describe('Dashboard', () => {
       el.querySelector<HTMLButtonElement>('[data-testid="stacks-current"] h2 button')!.click();
       await settle();
       expect([...el.querySelectorAll('[data-testid="stacks-current"] tm-section h3')].map(text)).toEqual(['media', 'networking']);
-      expect(el.querySelector('tr[data-dimmed]')).toBeNull(); // reviewed rows aren't dimmed, and settled stacks don't dim
       const row = [...el.querySelectorAll('tbody tr')].find((r) => text(r.querySelector('a')) === 'jellyfin')!;
+      expect(row.hasAttribute('data-dimmed')).toBe(false); // reviewed rows aren't dimmed (their badges fade)
+      const dimmed = [...el.querySelectorAll('[data-testid="stacks-current"] tr[data-dimmed] a')].map(text);
+      expect(dimmed).toEqual(['sonarr', 'adguard']);
+      // Snoozed rows are quiet too: dimmed.
+      el.querySelector<HTMLButtonElement>('[data-testid="snoozed-section"] h2 button')!.click();
+      await settle();
+      const snoozed = [...el.querySelectorAll('[data-testid="snoozed-section"] tbody tr')];
+      expect(snoozed.length).toBe(2);
+      expect(snoozed.every((r) => r.hasAttribute('data-dimmed'))).toBe(true);
       expect(row.querySelector('tm-update-class')!.classList).toContain('opacity-50');
       expect(row.querySelector('[data-testid="level"]')!.classList).toContain('opacity-50');
       const marker = row.querySelector('[data-testid="reviewed"]')!;

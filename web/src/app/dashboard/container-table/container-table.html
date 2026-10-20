@@ -1,8 +1,8 @@
-<!-- dimCurrent: the card goes transparent and rows paint their own surface (tm-table-dim), so dimmed rows show the page. -->
-<tm-card flush [class.bg-transparent!]="dimCurrent()">
+<!-- dimQuiet: the card goes transparent and rows paint their own surface (tm-table-dim), so dimmed rows show the page. -->
+<tm-card flush [class.bg-transparent!]="dimQuiet()">
   <div class="overflow-x-auto">
     <!-- tm-table-stack: below 640px each row stacks (name, then version + update), see components.css -->
-    <table class="tm-table tm-table-stack table-fixed sm:min-w-[44rem]" [class.tm-table-dim]="dimCurrent()">
+    <table class="tm-table tm-table-stack table-fixed sm:min-w-[44rem]" [class.tm-table-dim]="dimQuiet()">
       <colgroup>
         @for (col of columns; track col.label) {
           <col [class]="col.width" />
@@ -18,7 +18,7 @@
       <tbody>
         @for (c of containers(); track c.id) {
           <!-- data-current: up to date, so the row is toned down; rows with an update stay prominent.
-               data-dimmed (dimCurrent): the whole row fades and shows the page behind it, like a quiet tile;
+               data-dimmed (dimQuiet): the whole row fades and shows the page behind it, like a quiet tile;
                hover and keyboard focus bring back the opacity and the icon and name colours. -->
           <tr
             class="tm-row-link"

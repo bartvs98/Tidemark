@@ -151,8 +151,8 @@
       readers. Rows are <span class="font-mono text-sm">tr.tm-row-link</span>: the name is a stretched link, so the whole
       row is clickable (here it stays on this page). Below 640px, <span class="font-mono text-sm">tm-table-stack</span>
       stacks each row: name first, then version and update. Rows that are up to date are toned down
-      automatically (<span class="font-mono text-sm">data-current</span>), so the ones with an update stand out; in a stack
-      that has something to do, <span class="font-mono text-sm">dimCurrent</span> also fades those rows as a whole
+      automatically (<span class="font-mono text-sm">data-current</span>), so the ones with an update stand out; with
+      <span class="font-mono text-sm">dimQuiet</span> (the dashboard sets it everywhere) quiet rows (up to date, snoozed, ignored) also fade as a whole
       (<span class="font-mono text-sm">data-dimmed</span>, 60%, full again on hover or keyboard focus; sonarr below). With
       <span class="font-mono text-sm">showStack</span> the stack name sits before the status, for lists that aren't grouped by stack.
       Stacks with nothing to do go together into one collapsed, muted "Up to date" section, each a
@@ -162,7 +162,7 @@
     <div class="flex flex-col gap-10">
       @for (stack of stacks; track stack.name) {
         <tm-section [heading]="stack.name ?? 'Ungrouped'" [icon]="stack.name ? 'layers' : 'box'" [meta]="stack.containers.length + ' containers'">
-          <tm-container-table [containers]="stack.containers" [link]="sampleLink" dimCurrent />
+          <tm-container-table [containers]="stack.containers" [link]="sampleLink" dimQuiet />
         </tm-section>
       }
       <tm-section heading="With showStack" icon="layers" meta="3 containers">
@@ -195,7 +195,7 @@
       <span class="font-mono text-sm">tm-container-tile</span>: the dashboard's tile view. The whole tile is a stretched
       link; keyboard focus outlines it. Up-to-date tiles are quiet (no surface, muted name); tiles with an update stay
       prominent. <span class="font-mono text-sm">showStack</span> adds the stack name before the status;
-      <span class="font-mono text-sm">dimCurrent</span> fades an up-to-date tile as a whole, as in a stack that has something to do.
+      <span class="font-mono text-sm">dimQuiet</span> fades a quiet tile as a whole, as on the dashboard.
     </p>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       @for (c of tiles; track c.id) {
@@ -208,10 +208,10 @@
         <tm-container-tile [container]="c" [link]="sampleLink" showStack />
       }
     </div>
-    <h3 class="mt-6 mb-2 text-sm font-medium text-fg-muted">With dimCurrent</h3>
+    <h3 class="mt-6 mb-2 text-sm font-medium text-fg-muted">With dimQuiet</h3>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       @for (c of stackSamples; track c.id) {
-        <tm-container-tile [container]="c" [link]="sampleLink" dimCurrent />
+        <tm-container-tile [container]="c" [link]="sampleLink" dimQuiet />
       }
     </div>
   </section>

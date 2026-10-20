@@ -29,15 +29,15 @@ export class ContainerTile {
   readonly checking = input(false);
   /** Show the stack before the status, e.g. when grouped by severity. */
   readonly showStack = input(false, { transform: booleanAttribute });
-  /** Fade the tile as a whole when it's up to date (`data-dimmed`); see tm-container-table's `dimCurrent`. */
-  readonly dimCurrent = input(false, { transform: booleanAttribute });
+  /** Fade the tile as a whole when it's quiet (`data-dimmed`); see tm-container-table's `dimQuiet`. */
+  readonly dimQuiet = input(false, { transform: booleanAttribute });
   /** Where the tile links to; the styleguide points this somewhere harmless. */
   readonly link = input<ContainerLink>(DETAIL_LINK);
   protected readonly image = computed(() => imageName(this.container()));
   protected readonly current = computed(() => isCurrent(this.container()));
   /** Ignored, snoozed or up to date: toned down. */
   protected readonly quiet = computed(() => this.current() || isIgnored(this.container()) || isSnoozed(this.container()));
-  protected readonly dimmed = computed(() => this.dimCurrent() && this.current());
+  protected readonly dimmed = computed(() => this.dimQuiet() && this.quiet());
   protected readonly hostClass = computed(() => `${this.quiet() ? QUIET : PROMINENT}${this.dimmed() ? ` ${DIM_CLASS}` : ''}`);
   protected readonly dimIcon = computed(() => (this.dimmed() ? DIM_ICON : ''));
   protected readonly nameClass = computed(() => {

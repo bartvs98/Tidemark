@@ -19,7 +19,7 @@ export type ContainerLink = (c: ContainerSummary) => string | unknown[];
 export const DETAIL_LINK: ContainerLink = (c) => ['/containers', c.name];
 
 /**
- * `dimCurrent`: an up-to-date row or tile fades as a whole and drops its surface (the row shows the
+ * `dimQuiet`: a quiet row or tile (up to date, snoozed or ignored) fades as a whole and drops its surface (the row shows the
  * page background, the tile already has none). Hover and keyboard focus bring it all back: full
  * opacity, the icon's colour and the name's colour (DIM_ICON / DIM_NAME, via the `group` here).
  */
@@ -45,10 +45,10 @@ export class ContainerTable {
   /** Show each container's stack before its status, e.g. when grouped by severity. */
   readonly showStack = input(false, { transform: booleanAttribute });
   /**
-   * Fade up-to-date rows as a whole (`data-dimmed`), so in a stack with something to do the rows
-   * that need a look stand out. Stack grouping only; reviewed rows aren't dimmed (their badges fade).
+   * Fade quiet rows (up to date, snoozed, ignored) as a whole (`data-dimmed`), so the rows that need
+   * a look stand out; the dashboard passes it everywhere. Reviewed rows aren't dimmed (their badges fade).
    */
-  readonly dimCurrent = input(false, { transform: booleanAttribute });
+  readonly dimQuiet = input(false, { transform: booleanAttribute });
   /** Where each row links to; the styleguide points this somewhere harmless. */
   readonly link = input<ContainerLink>(DETAIL_LINK);
 
@@ -64,7 +64,7 @@ export class ContainerTable {
   }
 
   protected dimmed(c: ContainerSummary): boolean {
-    return this.dimCurrent() && isCurrent(c);
+    return this.dimQuiet() && this.quiet(c);
   }
 
   /** Bold only for an open update; a reviewed one has been looked at. */

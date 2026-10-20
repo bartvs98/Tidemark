@@ -35,7 +35,7 @@
   }
   /* A row whose stretched link (after:absolute inset-0 on a link inside) opens it.
      Elements that must stay interactive on their own (tooltips) get position: relative + z-index. */
-  /* tm-table-dim (dimCurrent): the card is transparent and only rows that aren't dimmed paint the
+  /* tm-table-dim (dimQuiet): the card is transparent and only rows that aren't dimmed paint the
      surface, so a dimmed row shows the page behind it, like a quiet tile. :where keeps this below
      the hover and focus backgrounds. */
   .tm-table-dim tbody tr:where(:not([data-dimmed])) td {
