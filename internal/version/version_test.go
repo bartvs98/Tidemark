@@ -113,7 +113,18 @@ func TestClassify(t *testing.T) {
 		{"10.10.6", "10.10.7", Patch},
 		{"v1.135.3", "v2.0.1", Major},
 		{"2026.9.0", "2026.10.1", Minor}, // calendar versions
-		{"2025.12.4", "2026.1.0", Major},
+		{"2025.12.4", "2026.1.0", Minor}, // a new year is not a breaking jump
+		{"1999.12.0", "2000.1.0", Major},
+		{"2025-01-01", "2026-03-01", Minor},
+		{"2025-01-01", "2025-01-15", Patch},
+		{"16-3.4", "16-3.5", Patch},
+		{"16-3.4", "17-3.4", Major},
+		{"4.0.5-20", "4.0.5-22", Patch},
+		{"4.0.5-22", "4.0.5-20", None},
+		{"2.4.1-1", "2.4.3-2", Patch},
+		{"2.4.1-1", "2.4.1-2", Patch},
+		{"4.0.5", "4.0.5-20", Patch},
+		{"1.2.0-1-ls5", "1.2.0-1-ls6", Digest},
 		{"16", "16.4", Minor},
 		{"16.4", "16", None},
 		{"1.20.0-ls166", "1.20.0-ls170", Digest},
@@ -163,5 +174,77 @@ func TestHasPrefixAndRawVariant(t *testing.T) {
 	}
 	if v := mustParse(t, "7.4.2-alpine3.21"); v.RawVariant != "alpine3.21" || v.Variant != "alpine" {
 		t.Errorf("raw/variant = %q/%q", v.RawVariant, v.Variant)
+	}
+}
+
+func TestParseSuffixAndDate(t *testing.T) {
+	tests := []struct {
+		tag     string
+		ok      bool
+		nums    []int
+		suffix  []int
+		pre     string
+		variant string
+		date    bool
+	}{
+		{"16-3.4", true, []int{16}, []int{3, 4}, "", "", false}, // postgis
+		{"16.4-3.4-alpine", true, []int{16, 4}, []int{3, 4}, "", "alpine", false},
+		{"4.0.2-20", true, []int{4, 0, 2}, []int{20}, "", "", false}, // node-red on Node 20
+		{"2.4.1-1", true, []int{2, 4, 1}, []int{1}, "", "", false},   // revision
+		{"2.0.0-rc-2", true, []int{2, 0, 0}, nil, "rc.2", "", false}, // a number after a pre-release joins it
+		{"2025-01-01", true, []int{2025, 1, 1}, nil, "", "", true},
+		{"2025-01-01-alpine", true, []int{2025, 1, 1}, nil, "", "alpine", true},
+		{"2025-12-31_1", true, []int{2025, 12, 31}, []int{1}, "", "", true},
+		{"2025-13-01", true, []int{2025}, []int{13, 1}, "", "", false}, // not a date
+		{"v2025-01-01", true, []int{2025}, []int{1, 1}, "", "", false},
+		{"2025.01.01", true, []int{2025, 1, 1}, nil, "", "", false},    // a calendar version, not a date
+		{"20250101", false, nil, nil, "", "", false},                   // bare 7+ digits stay rejected
+		{"1.2.3-99999999999999999999", false, nil, nil, "", "", false}, // overflow
+	}
+	for _, tt := range tests {
+		v, ok := Parse(tt.tag)
+		if ok != tt.ok {
+			t.Errorf("Parse(%q) ok = %v, want %v", tt.tag, ok, tt.ok)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		if !slices.Equal(v.Nums, tt.nums) || !slices.Equal(v.Suffix, tt.suffix) || v.Pre != tt.pre || v.Variant != tt.variant || v.Date != tt.date {
+			t.Errorf("Parse(%q) = %+v", tt.tag, v)
+		}
+	}
+}
+
+func TestCompareSuffix(t *testing.T) {
+	// Each tag ranks above the one before it.
+	order := []string{"4.0.4-22", "4.0.5", "4.0.5-18", "4.0.5-20", "4.0.5-22", "16-3.5", "16.4-3.4", "16.4-3.4.2", "17-3.4", "17-3.5"}
+	for i := 1; i < len(order); i++ {
+		a, b := mustParse(t, order[i-1]), mustParse(t, order[i])
+		if Compare(a, b) >= 0 || Compare(b, a) <= 0 {
+			t.Errorf("want %s < %s", a.Raw, b.Raw)
+		}
+	}
+	if Compare(mustParse(t, "2.0.0-rc-2"), mustParse(t, "2.0.0")) >= 0 {
+		t.Error("2.0.0-rc-2 should rank below 2.0.0")
+	}
+}
+
+func TestFamilySuffixAndDate(t *testing.T) {
+	date, semver := mustParse(t, "2025-01-01"), mustParse(t, "1.2.3")
+	if date.SameFamily(semver) || date.SameVariant(semver) {
+		t.Error("dates and versions must be separate families")
+	}
+	if !date.SameFamily(mustParse(t, "2025-02-01")) {
+		t.Error("two dates should be one family")
+	}
+	if Matches(date, mustParse(t, "2025.1.1")) {
+		t.Error("a date should not match the calendar version 2025.1.1")
+	}
+	if !mustParse(t, "16-3.4").SameFamily(mustParse(t, "17-3.5")) || !mustParse(t, "4.0.5").SameFamily(mustParse(t, "4.0.5-20")) {
+		t.Error("a numeric suffix should not split the family")
+	}
+	if Matches(mustParse(t, "4.0.5-20"), mustParse(t, "4.0.5")) || !Matches(mustParse(t, "v4.0.5-20"), mustParse(t, "4.0.5-20")) {
+		t.Error("Matches should require an equal suffix")
 	}
 }

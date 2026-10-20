@@ -28,6 +28,10 @@ func TestActive(t *testing.T) {
 		{"unparseable, equal", store.Review{Kind: Reviewed, Version: "latest"}, "latest", true},
 		{"unparseable, different", store.Review{Kind: Reviewed, Version: "latest"}, "stable", false},
 		{"one side unparseable", store.Review{Kind: Snoozed, Version: "1.6.0"}, "edge", false},
+		{"build, same digest", store.Review{Kind: Reviewed, Version: "sha256:aaa"}, "sha256:aaa", true},
+		{"build, new digest", store.Review{Kind: Reviewed, Version: "sha256:aaa"}, "sha256:bbb", false},
+		{"build snoozed, new digest", store.Review{Kind: Snoozed, Version: "sha256:aaa"}, "sha256:bbb", false},
+		{"build review, digest unknown", store.Review{Kind: Reviewed, Version: "sha256:aaa"}, "", false},
 		{"no version", store.Review{Kind: Reviewed}, "", false},
 		{"unknown kind", store.Review{Kind: "other", Version: "1.6.0"}, "1.6.0", false},
 	}

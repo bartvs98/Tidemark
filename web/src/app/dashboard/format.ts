@@ -1,5 +1,5 @@
 import { formatDate } from '@angular/common';
-import { ContainerSummary, ErrorKind, ReviewState, UpdateInfo } from './containers';
+import { ContainerSummary, ErrorKind, isBuildKey, ReviewState, UpdateInfo } from './containers';
 
 /**
  * The quiet line under the versions when a rule keeps a newer version back:
@@ -34,8 +34,10 @@ function shortDate(iso: string, locale: string): string {
 
 /** Tooltip of the "Reviewed" marker: "Reviewed up to 1.6.0 on 20 Oct." */
 export function reviewedTitle(r: ReviewState, locale: string): string {
+  const on = formatDate(r.at, 'd MMM', locale);
+  if (r.version && isBuildKey(r.version)) return `Reviewed this build on ${on}. It shows as new again when a new build comes out.`;
   const upTo = r.version ? ` up to ${r.version}` : '';
-  return `Reviewed${upTo} on ${formatDate(r.at, 'd MMM', locale)}. It shows as new again when a newer version comes out.`;
+  return `Reviewed${upTo} on ${on}. It shows as new again when a newer version comes out.`;
 }
 
 /**
@@ -47,6 +49,9 @@ export function snoozedText(r: ReviewState, locale: string): { text: string; val
   if (r.until) {
     const until = shortDate(r.until, locale);
     return { text: `until ${until}`, title: `${on}. It shows again from ${formatDate(r.until, 'd MMM, HH:mm', locale)}.` };
+  }
+  if (r.version && isBuildKey(r.version)) {
+    return { text: 'until a new build', title: `${on}. It shows again when a new build comes out.` };
   }
   return {
     text: 'until newer than',

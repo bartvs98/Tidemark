@@ -254,15 +254,39 @@ export class Styleguide {
     update: { ...UPDATE, running: 'v1.135.3', latest: 'v2.0.1', class: 'major', level: 'breaking', reasons: [{ text: 'Major version: v1.135.3 → v2.0.1' }] },
     review: { kind: 'snoozed', version: 'v2.0.1', at: '2026-10-18T09:00:00Z' },
   });
-  protected readonly reviewSamples = [this.reviewed, this.snoozedUntil, this.snoozedNewer];
+  /** A channel tag (or a floating tag without a version): reviews and snoozes are tied to the build, not a version. */
+  private readonly buildUpdate = {
+    ...UPDATE,
+    running: 'nightly',
+    class: 'digest' as const,
+    channel: 'nightly',
+    floating: true,
+    newImage: true,
+    tagDigest: 'sha256:3f9a1c0d2b7e8a41',
+    reviewKey: 'sha256:3f9a1c0d2b7e8a41',
+  };
+  protected readonly reviewedBuild = sample('sonarr-nightly', 'lscr.io/linuxserver/sonarr:nightly', {
+    stack: 'media',
+    update: this.buildUpdate,
+    review: { kind: 'reviewed', version: 'sha256:3f9a1c0d2b7e8a41', at: '2026-10-18T09:00:00Z' },
+  });
+  protected readonly snoozedBuild = sample('radarr-nightly', 'lscr.io/linuxserver/radarr:nightly', {
+    stack: 'media',
+    update: this.buildUpdate,
+    review: { kind: 'snoozed', version: 'sha256:3f9a1c0d2b7e8a41', at: '2026-10-18T09:00:00Z' },
+  });
+  protected readonly reviewSamples = [this.reviewed, this.snoozedUntil, this.snoozedNewer, this.reviewedBuild, this.snoozedBuild];
   /** What the detail header's review actions show, per state. */
   protected readonly reviewActionStates: { label: string; container: ContainerSummary }[] = [
     { label: 'No review yet', container: { ...this.snoozedUntil, review: undefined } },
     { label: 'Reviewed', container: this.reviewed },
     { label: 'Snoozed until a date', container: this.snoozedUntil },
     { label: 'Snoozed until a newer version', container: this.snoozedNewer },
+    { label: 'Channel tag, no review yet: against the build', container: { ...this.reviewedBuild, review: undefined } },
+    { label: 'Reviewed this build', container: this.reviewedBuild },
+    { label: 'Snoozed until a new build', container: this.snoozedBuild },
     {
-      label: 'No latest version known: both disabled',
+      label: 'No version or build known: both disabled',
       container: { ...this.snoozedUntil, review: undefined, update: { ...UPDATE, running: 'dev', class: 'digest', newImage: true } },
     },
   ];

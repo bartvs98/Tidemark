@@ -472,9 +472,11 @@ func (s *Service) changes(ctx context.Context, key string, running, latest *vers
 	return out, nil
 }
 
-// sameRelease: same version numbers, pre-release and build; prefix and variant don't matter
-// ("v10.9.11" is the release of image tag "10.9.11").
+// sameRelease: same version numbers, pre-release and build; prefix, variant and numeric
+// suffix don't matter ("v10.9.11" is the release of image tag "10.9.11", "v4.0.2" of
+// node-red's "4.0.2-20").
 func sameRelease(a, b version.Version) bool {
+	a.Suffix, b.Suffix = nil, nil
 	return version.Compare(a, b) == 0 && len(a.Nums) == len(b.Nums)
 }
 

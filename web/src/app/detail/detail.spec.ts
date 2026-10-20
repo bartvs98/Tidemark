@@ -23,7 +23,7 @@ function detail(overrides: Partial<ContainerDetailData> = {}): ContainerDetailDa
       state: 'running',
       status: 'Up 3 weeks',
       created: '2026-10-01T00:00:00Z',
-      update: { running: '2026.9.0', source: 'label', latest: '2026.10.1', class: 'minor', floating: true, newImage: true, checkedAt: '2026-10-16T12:00:00Z', level: 'breaking',
+      update: { running: '2026.9.0', source: 'label', latest: '2026.10.1', reviewKey: '2026.10.1', class: 'minor', floating: true, newImage: true, checkedAt: '2026-10-16T12:00:00Z', level: 'breaking',
         reasons: [{ text: 'Major version: 2026 → 2027' }, { text: 'removed X', tag: '2026.10.0', line: '- removed X' }] },
     },
     image: { digests: ['homeassistant/home-assistant@sha256:1'], labels: { 'org.opencontainers.image.version': '2026.9.0' } },
@@ -469,16 +469,48 @@ describe('ContainerDetail', () => {
       expect(await answer('PUT', detail())).toEqual({ kind: 'snoozed', version: '2026.10.1' });
     });
 
+    it('reviews and snoozes against the build when the tag has no usable latest version', async () => {
+      const build = 'sha256:3f9a1c0d2b7e8a41';
+      const d = detail();
+      d.container.update = { ...d.container.update!, latest: undefined, tagDigest: build, reviewKey: build };
+      let el = await render('homeassistant', (req) => req.flush(d));
+      expect(el.querySelector('[data-testid="review-actions"] [data-testid="mark-reviewed"]')!.parentElement?.getAttribute('data-tooltip')).toContain(
+        'looked at this build',
+      );
+      el.querySelector<HTMLButtonElement>('[data-testid="review-actions"] [data-testid="mark-reviewed"]')!.click();
+      await settle();
+      expect(await answer('PUT', d)).toEqual({ kind: 'reviewed', version: build });
+      expect(toasts().at(-1)?.message).toBe('Marked this build as reviewed');
+
+      await pickSnooze(el, 'Until a new build');
+      expect(await answer('PUT', d)).toEqual({ kind: 'snoozed', version: build });
+      expect(toasts().at(-1)?.message).toBe('Snoozed until a new build');
+
+      const reviewed = detail();
+      reviewed.container.name = 'other';
+      reviewed.container.update = d.container.update;
+      reviewed.container.review = { kind: 'reviewed', version: build, at: '2026-10-20T08:00:00Z' };
+      el = await render('other', (req) => req.flush(reviewed));
+      expect(text(el.querySelector('[data-testid="review-actions"] [data-testid="review-status"]'))).toBe('Reviewed this build · 20 Oct');
+
+      const snoozed = detail();
+      snoozed.container.name = 'third';
+      snoozed.container.update = d.container.update;
+      snoozed.container.review = { kind: 'snoozed', version: build, at: '2026-10-20T08:00:00Z' };
+      el = await render('third', (req) => req.flush(snoozed));
+      expect(text(el.querySelector('[data-testid="review-actions"] [data-testid="review-status"]'))).toBe('Snoozed until a new build');
+    });
+
     it("can't mark or snooze by version without a latest version, and says why", async () => {
       const d = detail();
-      d.container.update = { ...d.container.update!, latest: undefined };
+      d.container.update = { ...d.container.update!, latest: undefined, reviewKey: undefined };
       const el = await render('homeassistant', (req) => req.flush(d));
       const mark = el.querySelector<HTMLButtonElement>('[data-testid="review-actions"] [data-testid="mark-reviewed"]')!;
       expect(mark.disabled).toBe(true);
-      expect(mark.parentElement?.getAttribute('data-tooltip')).toContain('latest version is unknown');
+      expect(mark.parentElement?.getAttribute('data-tooltip')).toContain('no version or build');
       const newer = [...el.querySelectorAll<HTMLElement>('[data-testid="snooze"] [role="menuitem"]')].find((i) => text(i) === 'Until a newer version')!;
       expect(newer.getAttribute('aria-disabled')).toBe('true');
-      expect(newer.getAttribute('data-tooltip')).toContain('latest version is unknown');
+      expect(newer.getAttribute('data-tooltip')).toContain('no version or build');
       await pickSnooze(el, 'Until a newer version');
       http.expectNone(`${URL}/review`);
     });

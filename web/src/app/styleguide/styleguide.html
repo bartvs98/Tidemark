@@ -165,7 +165,7 @@
           <tm-container-table [containers]="stack.containers" [link]="sampleLink" dimCurrent />
         </tm-section>
       }
-      <tm-section heading="With showStack" icon="layers" meta="2 containers">
+      <tm-section heading="With showStack" icon="layers" meta="3 containers">
         <tm-container-table [containers]="stackSamples" [link]="sampleLink" showStack />
       </tm-section>
       <tm-section heading="Up to date" icon="circle-check" [meta]="settledStacks.length + ' stacks'" collapsible muted [(open)]="settledOpen">
@@ -223,7 +223,7 @@
       An update the user has dealt with (<span class="font-mono text-sm">review</span> on the container). <strong>Reviewed</strong>:
       the badges fade and a quiet "Reviewed" marker (check icon + word) joins them; the row stays in place.
       <strong>Snoozed</strong>: the badges fade, the version cell says "until 3 Nov" or "until newer than v2.0.1", and the row or tile is
-      toned down like an up-to-date one. Snoozed containers move to a collapsed "Snoozed" section above "Ignored". Neither state has a
+      toned down like an up-to-date one. A channel tag, or a floating tag without a version, is reviewed and snoozed against the <strong>build</strong> (its registry digest): "Reviewed this build", "until a new build", never the digest itself. Snoozed containers move to a collapsed "Snoozed" section above "Ignored". Neither state has a
       colour of its own: it is not a risk.
     </p>
     <h3 class="mb-2 text-sm font-medium text-fg-muted">List</h3>
@@ -235,15 +235,15 @@
       }
     </div>
     <h3 class="mt-6 mb-2 text-sm font-medium text-fg-muted">The "Snoozed" section</h3>
-    <tm-section heading="Snoozed" icon="clock" meta="2 containers" collapsible muted [(open)]="snoozedOpen">
+    <tm-section heading="Snoozed" icon="clock" meta="3 containers" collapsible muted [(open)]="snoozedOpen">
       @if (snoozedOpen()) {
-        <tm-container-table [containers]="[snoozedUntil, snoozedNewer]" [link]="sampleLink" showStack />
+        <tm-container-table [containers]="[snoozedUntil, snoozedNewer, snoozedBuild]" [link]="sampleLink" showStack />
       }
     </tm-section>
 
     <h3 class="mt-8 mb-1 text-sm font-medium text-fg-muted">Detail tab row: <span class="font-mono">tm-review-actions</span></h3>
     <p class="mb-3 text-sm text-fg-muted">
-      Without a review: "Mark reviewed" and a "Snooze" menu. With one: a quiet status plus Undo / Unsnooze. Without a latest version both
+      Without a review: "Mark reviewed" and a "Snooze" menu. With one: a quiet status plus Undo / Unsnooze. Without a version or build both
       actions are disabled, with the reason on hover. They call the API on click, so on this page a click only shows a failure toast. In a plain box, not a card: a card would clip the open menu.
     </p>
     <div class="rounded-lg border border-line bg-surface pb-28 shadow-raised">

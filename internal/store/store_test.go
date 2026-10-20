@@ -138,7 +138,7 @@ func TestResults(t *testing.T) {
 
 	a := Result{ContainerName: "jellyfin", ImageRef: "jellyfin/jellyfin:10.9.11", ImageID: "sha256:a", Running: "10.9.11",
 		Source: "tag", Latest: "10.10.7", Class: "minor", Floating: false, NewImage: true,
-		Held: "11.0.0", HeldBy: "allow-major", Rules: "ignore=false;allow-major=false", CheckedAt: at, RunID: runID}
+		Held: "11.0.0", HeldBy: "allow-major", TagDigest: "sha256:t", Rules: "ignore=false;allow-major=false", CheckedAt: at, RunID: runID}
 	b := Result{ContainerName: "redis", ImageRef: "redis:latest", ImageID: "sha256:b", Error: "rate limited", ErrorKind: "rate-limit", FailedAt: at} // never succeeded
 	c := a
 	c.ContainerName, c.Error, c.ErrorKind, c.FailedAt = "kept", "no such host", "network", at.Add(time.Hour) // failed, kept its result

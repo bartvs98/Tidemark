@@ -219,3 +219,52 @@ func TestDetailHistory(t *testing.T) {
 		t.Errorf("orphan history = %v", orphan.History)
 	}
 }
+
+// A channel tag or an unknown latest ties a review to the build (the tag's digest); a
+// version review stays on the latest version.
+func TestReviewKeyAndBuildReviews(t *testing.T) {
+	now := time.Now()
+	checked := now
+	mk := func(channel, latest, digest string) *updateJSON {
+		u := &updateJSON{Channel: channel, Latest: latest, TagDigest: digest, Class: "digest", CheckedAt: &checked}
+		u.ReviewKey = reviewKey(u)
+		return u
+	}
+	if k := mk("nightly", "1.2.0", "sha256:aaaa").ReviewKey; k != "sha256:aaaa" {
+		t.Errorf("channel key = %q", k)
+	}
+	if k := mk("", "", "sha256:aaaa").ReviewKey; k != "sha256:aaaa" {
+		t.Errorf("unknown-latest key = %q", k)
+	}
+	if k := mk("", "1.2.0", "sha256:aaaa").ReviewKey; k != "1.2.0" {
+		t.Errorf("version key = %q", k)
+	}
+	if k := mk("", "", "").ReviewKey; k != "" {
+		t.Errorf("no key = %q", k)
+	}
+
+	reviews := map[string]store.Review{"c": {Kind: "reviewed", Version: "sha256:aaaa"}}
+	for _, channel := range []string{"nightly", ""} { // channel tag, then floating tag with unknown latest
+		latest := ""
+		if channel != "" {
+			latest = "1.2.0"
+		}
+		if reviewFor(reviews, "c", mk(channel, latest, "sha256:aaaa"), now) == nil {
+			t.Errorf("%q: same build should stay reviewed", channel)
+		}
+		if reviewFor(reviews, "c", mk(channel, latest, "sha256:bbbb"), now) != nil {
+			t.Errorf("%q: a new build should end the review", channel)
+		}
+	}
+	if reviewFor(reviews, "c", mk("", "", ""), now) != nil {
+		t.Error("a build review without a known digest should not show")
+	}
+	// A version review is unchanged by the digest.
+	vr := map[string]store.Review{"c": {Kind: "reviewed", Version: "1.2.0"}}
+	if reviewFor(vr, "c", mk("", "1.2.0", "sha256:bbbb"), now) == nil {
+		t.Error("version review should survive a rebuild")
+	}
+	if reviewFor(vr, "c", mk("", "1.3.0", "sha256:bbbb"), now) != nil {
+		t.Error("version review should end on a newer version")
+	}
+}

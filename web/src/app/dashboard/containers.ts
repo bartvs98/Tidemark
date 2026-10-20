@@ -44,6 +44,10 @@ export interface UpdateInfo {
   class: 'none' | 'patch' | 'minor' | 'major' | 'digest';
   /** Pre-release channel tag (nightly, dev, edge): not compared with releases; `latest` is just the newest stable one. */
   channel?: string;
+  /** The floating tag's current registry digest, when known. */
+  tagDigest?: string;
+  /** What a review or "snooze until newer" is set against: `latest`, or `tagDigest` (a build) for a channel tag or an unknown latest. Absent when neither. */
+  reviewKey?: string;
   floating: boolean;
   newImage: boolean;
   /** When the last successful check was; absent if there never was one. */
@@ -132,12 +136,17 @@ export interface ContainerSummary {
  */
 export interface ReviewState {
   kind: 'reviewed' | 'snoozed';
-  /** Reviewed: read up to this version. Snoozed: until a version newer than this. */
+  /** Reviewed: read up to this version. Snoozed: until a version newer than this. A `sha256:` digest means a build (see `isBuildKey`). */
   version?: string;
   /** Snoozed until this time. */
   until?: string;
   /** When it was set. */
   at: string;
+}
+
+/** A review key that is a build (the tag's registry digest) rather than a version. */
+export function isBuildKey(v: string): boolean {
+  return v.startsWith('sha256:');
 }
 
 /** Body of PUT /api/containers/{name}/review. */

@@ -10,18 +10,18 @@ The fixes are roadmap step [H8](ROADMAP.md#between-mvp-and-step-8). Each part (A
 - [x] **nice**: GitHub's secondary rate limit (403/429 with `Retry-After`) wasn't recognised, so the next calls went out straight away. It now pauses GitHub calls.
 - [x] **nice**: The release-note prefetch after a check had no deadline; it now stops after 1 min per image.
 
-## B. Version resolution (`resolve`, `version`)
+## B. Version resolution (PR #20) ✅
 
-- [ ] **should**: Digest matching only probes tags with the most version parts in the whole tag list, so one old `9.6.24` stops `postgres:latest` from ever matching `17.0`, and the running version stays unknown. `PG_VERSION` is also rejected for word tags, because "pg" isn't part of "postgres". Pick candidates by recency, and drop a tag only when a more precise one with the same prefix exists.
-- [ ] **should**: A purely numeric suffix token is dropped (`version.go`, "a purely numeric token is dropped"):
+- [x] **should**: Digest matching only probes tags with the most version parts in the whole tag list, so one old `9.6.24` stops `postgres:latest` from ever matching `17.0`, and the running version stays unknown. `PG_VERSION` is also rejected for word tags, because "pg" isn't part of "postgres". Candidates are now picked by recency, and a tag is dropped only when a more precise one with the same prefix exists; `PG_VERSION` counts for `postgres`.
+- [x] **should**: A purely numeric suffix token is dropped (`version.go`, "a purely numeric token is dropped"):
   - postgis `16-3.4` gets `17-3.4` as its latest, although `17-3.5` exists.
   - node-red `4.0.2-20` is offered `4.0.5-18`, which switches its Node runtime.
   - Date tags like `2025-01-01` never show an update.
 
-  Keep the numeric suffix in the variant (or use it as a sort key); treat `YYYY-MM-DD` as a date or reject it.
-- [ ] **should**: For word tags, a version label skips the family check. `foo:alpine` with label `1.2.3` is offered the plain image. `foo:nightly` with a label gets a stable "minor" update, which contradicts the channel-tag rule in [FEATURES §2](FEATURES.md). Accept the label only for the same variant, and never for channel tags.
-- [ ] **nice**: Calendar versions count as major (Home Assistant `2024.12.4` → `2025.1.0`), so every January is "breaking" by the version jump alone. Treat a year rollover as minor for the jump signal and let the notes decide.
-- [ ] **decision**: Reviews on channel tags. A new build of a channel tag (`nightly`) should end a review or a snooze by version, because that build *is* the update. A rebuild of the same version (official images every few weeks) keeps the review: there are no new notes to read. Decided with the owner.
+  The suffix is now a sort key with the running line preferred, and date tags form their own family.
+- [x] **should**: For word tags, a version label skips the family check. `foo:alpine` with label `1.2.3` is offered the plain image. `foo:nightly` with a label gets a stable "minor" update, which contradicts the channel-tag rule in [FEATURES §2](FEATURES.md). The label now counts only for the same variant, and never for channel tags.
+- [x] **nice**: Calendar versions count as major (Home Assistant `2024.12.4` → `2025.1.0`), so every January is "breaking" by the version jump alone. A year rollover is now minor; the notes decide.
+- [x] **decision**: Reviews on channel tags. A new build of a channel tag (`nightly`) should end a review or a snooze by version, because that build *is* the update. A rebuild of the same version (official images every few weeks) keeps the review: there are no new notes to read. Decided with the owner, and extended to floating tags without a known latest version: reviews there are set against the build (the tag's registry digest).
 
 ## C. Docker inventory (PR #17) ✅
 

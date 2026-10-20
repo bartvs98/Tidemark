@@ -434,7 +434,7 @@ func toRow(name string, e Entry, runID int64) store.Result {
 		ContainerName: name, ImageRef: e.ImageRef, ImageID: e.ImageID,
 		Running: r.Running, Source: string(r.Source), Latest: r.Latest, LatestInMajor: r.LatestInMajor,
 		Class: string(r.Class), Floating: r.Floating, NewImage: r.NewImage,
-		Held: r.Held, HeldBy: r.HeldBy, Rules: e.Rules,
+		Held: r.Held, HeldBy: r.HeldBy, TagDigest: r.TagDigest, Rules: e.Rules,
 		Error: e.Err, ErrorKind: e.ErrKind, CheckedAt: e.CheckedAt, FailedAt: e.FailedAt, TagsFrom: r.TagsFrom, RunID: runID,
 	}
 }
@@ -445,7 +445,7 @@ func fromRow(r store.Result) Entry {
 		Err: r.Error, ErrKind: r.ErrorKind, CheckedAt: r.CheckedAt, FailedAt: r.FailedAt,
 		Result: resolve.Result{
 			Running: r.Running, Source: resolve.Source(r.Source), Latest: r.Latest, LatestInMajor: r.LatestInMajor,
-			Class: version.Class(r.Class), Floating: r.Floating, NewImage: r.NewImage, Held: r.Held, HeldBy: r.HeldBy,
+			Class: version.Class(r.Class), Floating: r.Floating, NewImage: r.NewImage, Held: r.Held, HeldBy: r.HeldBy, TagDigest: r.TagDigest,
 			TagsFrom: r.TagsFrom,
 		},
 	}

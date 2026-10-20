@@ -43,20 +43,24 @@ type checkJSON struct {
 // and FailedAt say so and the rest is the result kept from before (CheckedAt absent if no
 // check ever succeeded: then the result is empty, source unknown, class none).
 type updateJSON struct {
-	Running       string     `json:"running,omitempty"`       // running version (tag text), empty if unknown
-	Source        string     `json:"source"`                  // tag | label | digest | env | unknown
-	Latest        string     `json:"latest,omitempty"`        // newest release in the same family
-	LatestInMajor string     `json:"latestInMajor,omitempty"` // newest within the running major, for major jumps
-	Class         string     `json:"class"`                   // none | patch | minor | major | digest
-	Channel       string     `json:"channel,omitempty"`       // pre-release channel tag (nightly, dev, edge): Latest is only the newest stable release
-	Floating      bool       `json:"floating"`
-	NewImage      bool       `json:"newImage"`
-	Held          string     `json:"held,omitempty"`   // newest version a pin or major hold keeps back
-	HeldBy        string     `json:"heldBy,omitempty"` // pin | allow-major
-	Error         string     `json:"error,omitempty"`
-	ErrorKind     string     `json:"errorKind,omitempty"` // with Error: rate-limit | not-found | timeout | network | registry; absent when unclassified
-	CheckedAt     *time.Time `json:"checkedAt,omitempty"`
-	FailedAt      *time.Time `json:"failedAt,omitempty"` // set with Error
+	Running       string `json:"running,omitempty"`       // running version (tag text), empty if unknown
+	Source        string `json:"source"`                  // tag | label | digest | env | unknown
+	Latest        string `json:"latest,omitempty"`        // newest release in the same family
+	LatestInMajor string `json:"latestInMajor,omitempty"` // newest within the running major, for major jumps
+	Class         string `json:"class"`                   // none | patch | minor | major | digest
+	Channel       string `json:"channel,omitempty"`       // pre-release channel tag (nightly, dev, edge): Latest is only the newest stable release
+	Floating      bool   `json:"floating"`
+	NewImage      bool   `json:"newImage"`
+	TagDigest     string `json:"tagDigest,omitempty"` // the floating tag's current registry digest, when known
+	// ReviewKey is what a review or "snooze until newer" is set against: Latest, or TagDigest
+	// when the tag is a channel or Latest is unknown (then it is tied to the build). Absent when neither.
+	ReviewKey string     `json:"reviewKey,omitempty"`
+	Held      string     `json:"held,omitempty"`   // newest version a pin or major hold keeps back
+	HeldBy    string     `json:"heldBy,omitempty"` // pin | allow-major
+	Error     string     `json:"error,omitempty"`
+	ErrorKind string     `json:"errorKind,omitempty"` // with Error: rate-limit | not-found | timeout | network | registry; absent when unclassified
+	CheckedAt *time.Time `json:"checkedAt,omitempty"`
+	FailedAt  *time.Time `json:"failedAt,omitempty"` // set with Error
 	// TagsFrom: the result is from a successful check, but its tag list was reused from
 	// this time because the registry rate-limited the refresh.
 	TagsFrom *time.Time `json:"tagsFrom,omitempty"`
@@ -240,17 +244,28 @@ func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref
 		NewImage:      r.NewImage,
 		Held:          r.Held,
 		HeldBy:        r.HeldBy,
+		TagDigest:     r.TagDigest,
 		Error:         e.Err,
 		ErrorKind:     e.ErrKind,
 		CheckedAt:     timeOrNil(e.CheckedAt),
 		FailedAt:      timeOrNil(e.FailedAt),
 		TagsFrom:      timeOrNil(r.TagsFrom),
 	}
+	u.ReviewKey = reviewKey(u)
 	// A channel build isn't compared with stable releases, so their notes say nothing about it.
 	if !e.CheckedAt.IsZero() && r.Class != version.None && u.Channel == "" {
 		s.assessUpdate(ctx, u, c, ref, rs)
 	}
 	return u
+}
+
+// reviewKey is what a review is set against: the latest version, or the build (the tag's
+// digest) when the tag is a channel or there is no latest version to compare.
+func reviewKey(u *updateJSON) string {
+	if u.Channel != "" || u.Latest == "" {
+		return u.TagDigest
+	}
+	return u.Latest
 }
 
 func timeOrNil(t time.Time) *time.Time {

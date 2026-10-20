@@ -2,7 +2,7 @@ import { Component, computed, inject, input, LOCALE_ID, output, signal } from '@
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { MenuOption, TmButton, TmIcon, TmMenu, TmTooltip, Toasts } from '../../ui';
-import { ContainerSummary, ReviewRequest } from '../../dashboard/containers';
+import { ContainerSummary, isBuildKey, ReviewRequest } from '../../dashboard/containers';
 import { daysFromNow, shortDate } from '../dates';
 
 type SnoozeChoice = 'day' | 'week' | 'month' | 'newer';
@@ -14,7 +14,7 @@ const SNOOZE_DAYS: Record<Exclude<SnoozeChoice, 'newer'>, { days: number; label:
   month: { days: 30, label: '1 month' },
 };
 
-const NO_LATEST = 'The latest version is unknown, so there is nothing to mark it against.';
+const NO_KEY = "There's no version or build to mark it against.";
 
 /**
  * Mark reviewed / Snooze ▾ on the detail page's tab row, or the quiet "Reviewed up to …" / "Snoozed until …"
@@ -38,14 +38,21 @@ export class ReviewActions {
 
   protected readonly pending = signal<Pending | null>(null);
   protected readonly review = computed(() => this.container().review);
-  protected readonly latest = computed(() => this.container().update?.latest);
+  /** What a review is set against: the latest version, or the build (digest) for a channel tag or an unknown latest. */
+  protected readonly key = computed(() => this.container().update?.reviewKey);
+  /** The stored review is against a build, not a version. */
+  protected readonly buildReview = computed(() => isBuildKey(this.review()?.version ?? ''));
+  protected readonly isBuild = computed(() => isBuildKey(this.key() ?? ''));
   protected readonly reviewHint = computed(() => {
-    const latest = this.latest();
-    return latest ? `You've read the changes up to ${latest}. The alert ends when a newer version comes out.` : NO_LATEST;
+    const key = this.key();
+    if (!key) return NO_KEY;
+    return this.isBuild()
+      ? "You've looked at this build. The alert ends when a new build comes out."
+      : `You've read the changes up to ${key}. The alert ends when a newer version comes out.`;
   });
   protected readonly snoozeOptions = computed<MenuOption<SnoozeChoice>[]>(() => [
     ...(Object.keys(SNOOZE_DAYS) as (keyof typeof SNOOZE_DAYS)[]).map((value) => ({ value, label: SNOOZE_DAYS[value].label })),
-    { value: 'newer', label: 'Until a newer version', disabled: !this.latest(), hint: this.latest() ? undefined : NO_LATEST },
+    { value: 'newer', label: this.isBuild() ? 'Until a new build' : 'Until a newer version', disabled: !this.key(), hint: this.key() ? undefined : NO_KEY },
   ]);
 
   protected date(iso: string): string {
@@ -53,14 +60,15 @@ export class ReviewActions {
   }
 
   protected markReviewed(): void {
-    const version = this.latest();
-    if (version) void this.save({ kind: 'reviewed', version }, `Marked as reviewed up to ${version}`);
+    const version = this.key();
+    if (!version) return;
+    void this.save({ kind: 'reviewed', version }, this.isBuild() ? 'Marked this build as reviewed' : `Marked as reviewed up to ${version}`);
   }
 
   protected snooze(choice: SnoozeChoice): void {
     if (choice === 'newer') {
-      const version = this.latest();
-      if (version) void this.save({ kind: 'snoozed', version }, 'Snoozed until a newer version');
+      const version = this.key();
+      if (version) void this.save({ kind: 'snoozed', version }, this.isBuild() ? 'Snoozed until a new build' : 'Snoozed until a newer version');
       return;
     }
     const { days, label } = SNOOZE_DAYS[choice];

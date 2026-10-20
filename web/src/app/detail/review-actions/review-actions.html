@@ -3,12 +3,19 @@
   <span class="inline-flex items-center gap-1.5 text-sm text-fg-muted" data-testid="review-status">
     @if (r.kind === 'reviewed') {
       <tm-icon name="check" [size]="14" />
-      <span>
-        Reviewed up to <span class="font-mono text-fg">{{ r.version }}</span> · {{ date(r.at) }}
-      </span>
+      @if (buildReview()) {
+        <span>Reviewed this build · {{ date(r.at) }}</span>
+      } @else {
+        <span>
+          Reviewed up to <span class="font-mono text-fg">{{ r.version }}</span> · {{ date(r.at) }}
+        </span>
+      }
     } @else if (r.until) {
       <tm-icon name="clock" [size]="14" />
       <span>Snoozed until {{ date(r.until) }}</span>
+    } @else if (buildReview()) {
+      <tm-icon name="clock" [size]="14" />
+      <span>Snoozed until a new build</span>
     } @else {
       <tm-icon name="clock" [size]="14" />
       <span>
@@ -37,7 +44,7 @@
       size="sm"
       icon="check"
       [loading]="pending() === 'reviewed'"
-      [disabled]="!latest() || !!pending()"
+      [disabled]="!key() || !!pending()"
       (click)="markReviewed()"
       data-testid="mark-reviewed"
     >

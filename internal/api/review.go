@@ -58,7 +58,7 @@ func reviewFor(reviews map[string]store.Review, name string, u *updateJSON, now 
 	if !ok || u == nil || u.CheckedAt == nil || u.Class == string(version.None) {
 		return nil
 	}
-	if !review.Active(r, u.Latest, now) {
+	if !review.Active(r, u.ReviewKey, now) {
 		return nil
 	}
 	return toReviewJSON(r)

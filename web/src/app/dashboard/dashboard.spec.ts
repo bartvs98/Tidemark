@@ -4,6 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { Dashboard } from './dashboard';
+import { reviewedTitle, snoozedText } from './format';
 import {
   ContainerList,
   ContainerSummary,
@@ -18,6 +19,7 @@ import {
   orderStacks,
   refreshFailed,
   ReviewState,
+  isBuildKey,
   splitIgnored,
   splitSnoozed,
   UpdateInfo,
@@ -167,6 +169,17 @@ const snoozedUntil = (until = '2026-11-03T09:00:00Z'): ReviewState => ({ kind: '
 const snoozedVersion = (version = '2.0.0'): ReviewState => ({ kind: 'snoozed', version, at: '2026-10-20T09:00:00Z' });
 
 describe('review helpers', () => {
+  it('words a review against a build (a digest) without showing the digest', () => {
+    const build = 'sha256:3f9a1c0d2b7e8a41';
+    expect(isBuildKey(build)).toBe(true);
+    expect(isBuildKey('2.0.0')).toBe(false);
+    expect(reviewedTitle(reviewed(build), 'en-US')).toBe('Reviewed this build on 20 Oct. It shows as new again when a new build comes out.');
+    const z = snoozedText(snoozedVersion(build), 'en-US');
+    expect(z.text).toBe('until a new build');
+    expect(z.value).toBeUndefined();
+    expect(z.title).not.toContain('sha256');
+  });
+
   it('keeps reviewed updates in the filters and stack order as settled, and splits snoozed ones off', () => {
     const rev = container('rev', 'a', { update: checked('major', 'breaking'), review: reviewed() });
     const snz = container('snz', 'b', { update: checked('major', 'breaking'), review: snoozedUntil() });

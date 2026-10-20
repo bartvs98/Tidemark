@@ -4,14 +4,18 @@
 // Running version, first hit wins:
 //  1. the tag, when it's a full version (1.4.2, v1.15.0-ls175)
 //  2. the image's version label, but only if the registry has a tag with that exact
-//     version: labels are inherited from base images (mongo:8.3 says "24.04")
+//     version: labels are inherited from base images (mongo:8.3 says "24.04"). With a
+//     word tag the label must be that word's variant (latest: plain), and channel tags
+//     (nightly, dev) never take one
 //  3. the registry tag whose digest equals the running image's digest
 //  4. an image *_VERSION variable (PG_VERSION=16.10) that matches a tag and fits the
 //     running tag; official images are rebuilt under the same tags, so old digests vanish
 //  5. a partial version tag (16-alpine, 8.3) as-is
 //  6. unknown
 //
-// Latest is the newest stable tag in the running version's family (same variant).
+// Latest is the newest stable tag in the running version's family (same variant, and
+// dates only with dates), on the running tag's numeric suffix line when that exists
+// (node-red 4.0.2-20 → 4.0.5-20, postgis 16-3.4 → 17-3.5).
 // Per-container Options adjust that:
 //   - TagPattern: only registry tags matching it count as versions, for every step
 //     above; the running tag itself is still read as a version.
@@ -83,6 +87,7 @@ type Result struct {
 	NewImage      bool          // the floating tag now points to a different image than the one running
 	Held          string        // newest version a pin or major hold keeps back, empty if none
 	HeldBy        string        // HeldByPin or HeldByAllowMajor when Held is set
+	TagDigest     string        // the floating tag's current digest in the registry, when it was fetched (floating tag with a local digest); empty otherwise
 	// TagsFrom: the tag list was reused from an earlier check, fetched at this time,
 	// because the registry rate-limited this one. Zero normally.
 	TagsFrom time.Time
@@ -140,10 +145,13 @@ func Resolve(ctx context.Context, reg Registry, c docker.Container, opts Options
 		running, have, r.Source = tagV, true, SourceTag
 	}
 
-	// 2. The version label, if the registry has that exact tag.
+	// 2. The version label, if the registry has that exact tag. With a word tag it must be
+	// that word's variant ("latest": plain), and a channel tag (nightly) never takes one:
+	// its build is usually ahead of any release.
 	if lv, ok := labelVersion(c.Image.Labels, tags); ok {
 		switch {
-		case !have && (!tagIsVersion || (lv.SameFamily(tagV) && lv.HasPrefix(tagV))):
+		case !have && !tagIsVersion && family.Stable() && lv.SameVariant(family),
+			!have && tagIsVersion && lv.SameFamily(tagV) && lv.HasPrefix(tagV) && fitsSuffix(lv, tagV):
 			running, have, r.Source = lv, true, SourceLabel
 		case have && lv.Build > running.Build && lv.SameFamily(running) && slices.Equal(lv.Nums, running.Nums):
 			// Pinned "1.20.0" whose label says "1.20.0-ls166": the label knows the build.
@@ -212,10 +220,13 @@ func Resolve(ctx context.Context, reg Registry, c docker.Container, opts Options
 
 	// A floating tag can move to a new image without any version change we can see.
 	if r.Floating && len(local) > 0 {
-		if d, err := reg.Digest(ctx, ref, ref.Tag); err == nil && !slices.Contains(local, d) {
-			r.NewImage = true
-			if r.Class == version.None {
-				r.Class = version.Digest
+		if d, err := reg.Digest(ctx, ref, ref.Tag); err == nil {
+			r.TagDigest = d
+			if !slices.Contains(local, d) {
+				r.NewImage = true
+				if r.Class == version.None {
+					r.Class = version.Digest
+				}
 			}
 		}
 	}
@@ -250,8 +261,15 @@ func wordFamily(word string) version.Version {
 	if !ok {
 		return version.Version{}
 	}
-	v.Nums, v.Raw = nil, ""
+	v.Nums, v.Suffix, v.Raw = nil, nil, ""
 	return v
+}
+
+// fitsSuffix reports whether t is on running's suffix line: its suffix starts with
+// running's ("16.4-3.4" and "16-3.4.2" fit "16-3.4", "16.4-3.5" doesn't). Without a
+// running suffix, anything fits.
+func fitsSuffix(t, running version.Version) bool {
+	return len(t.Suffix) >= len(running.Suffix) && slices.Equal(t.Suffix[:len(running.Suffix)], running.Suffix)
 }
 
 func labelVersion(labels map[string]string, tags []version.Version) (version.Version, bool) {
@@ -278,10 +296,14 @@ func labelVersion(labels map[string]string, tags []version.Version) (version.Ver
 	return version.Version{}, false
 }
 
+// envAliases maps *_VERSION names that aren't part of the image name to the repository
+// they name: PG_VERSION is postgres's.
+var envAliases = map[string]string{"pg": "postgres"}
+
 // envVersion looks for a *_VERSION variable naming a release the registry has, written
 // like the running tag ("16.10" → "16.10-alpine"). With a version tag it must extend
-// that tag; with a word tag (latest) the variable must be named after the image, so a
-// NODE_VERSION inherited from a Node base image doesn't count.
+// that tag; with a word tag (latest) the variable must be named after the image (or an
+// alias in envAliases), so a NODE_VERSION inherited from a Node base image doesn't count.
 func envVersion(env map[string]string, tags []version.Version, ref imageref.Ref, family version.Version, tagIsVersion bool) (version.Version, bool) {
 	segs := strings.Split(ref.Repository, "/")
 	repo := alnum(segs[len(segs)-1])
@@ -299,13 +321,14 @@ func envVersion(env map[string]string, tags []version.Version, ref imageref.Ref,
 			if !ev.HasPrefix(family) {
 				continue
 			}
-		} else if name := alnum(strings.TrimSuffix(k, "_VERSION")); name == "" || !strings.Contains(repo, name) {
+		} else if name := alnum(strings.TrimSuffix(k, "_VERSION")); name == "" ||
+			!strings.Contains(repo, name) && (envAliases[name] == "" || !strings.Contains(repo, envAliases[name])) {
 			continue
 		}
 		var best version.Version
 		found := false
 		for _, t := range tags {
-			if !t.Stable() || t.Variant != family.Variant || !slices.Equal(t.Nums, ev.Nums) {
+			if !t.Stable() || !t.SameVariant(family) || !slices.Equal(t.Nums, ev.Nums) || !fitsSuffix(t, family) {
 				continue
 			}
 			if !found || (t.RawVariant == family.RawVariant && best.RawVariant != family.RawVariant) {
@@ -331,7 +354,10 @@ func alnum(s string) string {
 
 // matchDigest probes the most likely tags, newest first, for the running image's digest.
 // Candidates are written like the running tag (same raw variant, so "16.10-alpine" for
-// "16-alpine", not "16.10-alpine3.22") at the most precise level the registry uses.
+// "16-alpine", not "16.10-alpine3.22"; same suffix line, so "16.4-3.4" for "16-3.4").
+// A tag is skipped when a more precise one starts with it ("17" when "17.6" exists): it
+// points to the same image. Precision is per line, so an old "9.6.24" doesn't push out
+// a current "18.0"; it just sorts last.
 func matchDigest(ctx context.Context, reg Registry, ref imageref.Ref, tags []version.Version,
 	family version.Version, tagIsVersion bool, word string, local []string) (version.Version, bool) {
 
@@ -340,15 +366,18 @@ func matchDigest(ctx context.Context, reg Registry, ref imageref.Ref, tags []ver
 		rawVariant = word
 	}
 	var cands []version.Version
-	precision := 0
 	for _, t := range tags {
-		if !t.Stable() || t.RawVariant != rawVariant || (tagIsVersion && !t.HasPrefix(family)) {
+		if !t.Stable() || t.RawVariant != rawVariant || t.Date != family.Date ||
+			(tagIsVersion && (!t.HasPrefix(family) || !fitsSuffix(t, family))) {
 			continue
 		}
 		cands = append(cands, t)
-		precision = max(precision, len(t.Nums))
 	}
-	cands = slices.DeleteFunc(cands, func(t version.Version) bool { return len(t.Nums) < precision })
+	cands = slices.DeleteFunc(slices.Clone(cands), func(t version.Version) bool {
+		return slices.ContainsFunc(cands, func(o version.Version) bool {
+			return len(o.Nums) > len(t.Nums) && o.HasPrefix(t) && slices.Equal(o.Suffix, t.Suffix)
+		})
+	})
 	slices.SortFunc(cands, func(a, b version.Version) int { return version.Compare(b, a) })
 
 	for i, t := range cands {
@@ -399,12 +428,33 @@ func (h hold) reason(v version.Version) string {
 }
 
 // newest returns the highest tag in the family, preferring the family's own
-// spelling ("v1.4.0" over "1.4.0" when the running tag has a v) on ties.
+// spelling ("v1.4.0" over "1.4.0" when the running tag has a v) on ties. Among tags
+// with the newest numbers it prefers the family's suffix line: node-red "4.0.2-20"
+// gets "4.0.5-20", not "4.0.5-22" (another Node runtime), and "4.0.2" gets "4.0.5".
+// When that line doesn't exist for the newest numbers, the highest suffix wins, so
+// a revision line that ends ("2.4.1-1" → only "2.4.3-2") doesn't freeze updates.
 func newest(tags []version.Version, family version.Version, keep func(version.Version) bool) (version.Version, bool) {
+	best, found := highest(tags, family, keep)
+	if !found {
+		return best, false
+	}
+	sameLine := func(t version.Version) bool {
+		return (keep == nil || keep(t)) && slices.Equal(t.Nums, best.Nums) && t.Pre == best.Pre &&
+			(len(t.Suffix) > 0) == (len(family.Suffix) > 0) && (len(t.Suffix) == 0 || t.Suffix[0] == family.Suffix[0])
+	}
+	if line, ok := highest(tags, family, sameLine); ok {
+		best = line
+	}
+	return best, true
+}
+
+// highest returns the highest tag in the family that keep allows, with newest's
+// spelling tie-breaks.
+func highest(tags []version.Version, family version.Version, keep func(version.Version) bool) (version.Version, bool) {
 	var best version.Version
 	found := false
 	for _, t := range tags {
-		if t.Variant != family.Variant || (keep != nil && !keep(t)) {
+		if !t.SameVariant(family) || (keep != nil && !keep(t)) {
 			continue
 		}
 		if !found {
