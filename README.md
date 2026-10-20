@@ -15,7 +15,7 @@
 
 ![The Tidemark dashboard in dark mode](docs/brand/screenshot.png)
 
-Status: **early prototype.** The MVP (steps 0–7 and the brand and design steps B1–B3 of the [roadmap](docs/ROADMAP.md)) is done and runs on real images. Only public images are supported.
+Status: **in daily use on a home server.** Checking, changelogs, breaking-change highlighting, rules, reviewing and snoozing, and update history are done. Next on the [roadmap](docs/ROADMAP.md): Telegram notifications, AI changelog summaries and gated one-click updates. Only public images are supported.
 
 ## Run it with Docker
 
