@@ -14,7 +14,7 @@
 
     <div class="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
       <h1 id="dashboard-heading" class="text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl" data-testid="headline">
-        @if (list.hasValue()) {
+        @if (data()) {
           {{ headline() }}
         } @else if (list.error()) {
           Containers
@@ -41,7 +41,7 @@
     </div>
 
     <p class="mt-2 min-h-5 text-fg-muted" data-testid="summary">
-      @if (list.hasValue()) {
+      @if (data()) {
         {{ summary() }}
         @if (check()?.finishedAt && !checking()) {
           <span class="text-fg-subtle" [tmTooltip]="check()!.finishedAt | date: 'medium'">
@@ -67,7 +67,7 @@
       }
     </p>
 
-    @if (list.hasValue() && containerCount()) {
+    @if (data() && containerCount()) {
       <!-- Figures: icon + word each; only Breaking and Attention get colour, and only when there are any. -->
       <dl class="mt-8 grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4" data-testid="stats">
         <div data-testid="stat-breaking">
@@ -100,7 +100,7 @@
 
   <!-- The tide gauge: the line is the latest version, the water how much of it you run. -->
   <div class="relative h-[120px] overflow-hidden rounded-xl border border-line bg-surface sm:h-[180px] lg:h-auto lg:min-h-[180px]">
-    @if (list.hasValue() && containerCount()) {
+    @if (data() && containerCount()) {
       <tm-tide-gauge size="hero" class="absolute inset-0 [--tm-gauge-line:56px] sm:[--tm-gauge-line:64px]" [level]="gauge().level" [label]="gauge().label" data-testid="gauge" />
       @if (stats().checked) {
         <p class="relative p-4 text-sm text-fg-muted tabular-nums sm:p-5" aria-hidden="true">
@@ -120,7 +120,14 @@
   </tm-callout>
 }
 
-@if (list.hasValue()) {
+@if (data() && list.error()) {
+  <tm-callout tone="attention" heading="Couldn't refresh" class="mb-8" data-testid="refresh-error">
+    Showing the containers as last loaded; Tidemark tries again {{ checking() ? 'in a moment' : 'within a minute' }}.
+    <span class="mt-1 block font-mono text-xs break-all">{{ errorMessage() }}</span>
+  </tm-callout>
+}
+
+@if (data()) {
   @if (stacks().length === 0) {
     <tm-card>
       <tm-empty-state heading="No containers found" description="Docker reported no containers on this host." />

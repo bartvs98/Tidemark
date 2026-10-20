@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, effect, inject, linkedSignal, signal, viewChild } from '@angular/core';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -50,6 +50,8 @@ const GROUP_KEY = 'tidemark.group';
 /** Session only: survives a trip to a detail page, but a reload later starts unfiltered. */
 const QUERY_KEY = 'tidemark.query';
 const POLL_MS = 1500;
+/** Without a running check: slow, so scheduled and startup checks show up without a reload. */
+const IDLE_POLL_MS = 60_000;
 
 const VIEWS: SegmentOption<ViewMode>[] = [
   { value: 'list', label: 'List', icon: 'list' },
@@ -101,7 +103,12 @@ export class Dashboard {
   protected readonly starting = signal(false);
 
   // value() throws while the resource is in an error state, so always go through hasValue().
-  private readonly data = computed(() => (this.list.hasValue() ? this.list.value() : undefined));
+  // A linkedSignal can see its previous value: a failed refresh keeps the last good list
+  // (shown with a callout) instead of emptying the page.
+  protected readonly data = linkedSignal<ContainerList | undefined, ContainerList | undefined>({
+    source: () => (this.list.hasValue() ? this.list.value() : undefined),
+    computation: (list, previous) => list ?? previous?.value,
+  });
 
   private readonly containers = computed(() => this.data()?.containers ?? []);
   protected readonly containerCount = computed(() => this.containers().length);
@@ -279,11 +286,12 @@ export class Dashboard {
       if (this.searchOnlySettled()) this.currentOpen.set(true);
     });
 
-    // While a check runs, poll so results appear as they come in. Depend on the status
-    // object (new on every response), not the boolean, which stays `true` between polls.
+    // While a check runs, poll fast so results appear as they come in; otherwise slowly.
+    // Depend on the status object (new on every response), not the boolean, which stays
+    // `true` between polls, and on the resource status, so a failed poll schedules the next.
     effect((onCleanup) => {
-      if (!this.check()?.running) return;
-      const timer = setTimeout(() => this.list.reload(), POLL_MS);
+      this.list.status();
+      const timer = setTimeout(() => this.list.reload(), this.check()?.running ? POLL_MS : IDLE_POLL_MS);
       onCleanup(() => clearTimeout(timer));
     });
 
@@ -322,8 +330,9 @@ export class Dashboard {
     try {
       await firstValueFrom(this.http.post('/api/checks', null));
       this.list.reload();
-    } catch {
-      this.toasts.show("Couldn't start a check. Is the server running?", 'attention');
+    } catch (err) {
+      const reason = err instanceof HttpErrorResponse ? (err.error as { error?: string } | null)?.error : undefined;
+      this.toasts.show(reason ? `Couldn't start a check: ${reason}` : "Couldn't start a check. Is the server running?", 'attention');
     } finally {
       this.starting.set(false);
     }

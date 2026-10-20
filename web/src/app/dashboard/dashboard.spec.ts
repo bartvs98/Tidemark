@@ -596,6 +596,44 @@ describe('Dashboard', () => {
 
       await vi.advanceTimersByTimeAsync(5000);
       http.expectNone('/api/containers');
+
+      // Then slowly, so scheduled checks show up without a reload.
+      await vi.advanceTimersByTimeAsync(60_000);
+      http.expectOne('/api/containers').flush({ ...running(3), check: { running: false, done: 3, total: 3 } });
+      await settle();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the list and keeps polling when one poll fails', async () => {
+    vi.useFakeTimers();
+    const settle = () => vi.advanceTimersByTimeAsync(20);
+    try {
+      const running = (done: number): ContainerList => ({
+        source: { kind: 'docker', location: 'x' },
+        check: { running: true, done, total: 3 },
+        containers: [container('jellyfin', 'media')],
+      });
+      const fixture = TestBed.createComponent(Dashboard);
+      const el: HTMLElement = fixture.nativeElement;
+      fixture.detectChanges();
+      http.expectOne('/api/containers').flush(running(1));
+      await settle();
+
+      await vi.advanceTimersByTimeAsync(1500);
+      http.expectOne('/api/containers').flush({ error: 'restarting' }, { status: 502, statusText: 'Bad Gateway' });
+      await settle();
+      fixture.detectChanges();
+      expect(el.querySelector('[data-testid="refresh-error"]')?.textContent).toContain('restarting');
+      expect(el.textContent).toContain('jellyfin');
+      expect(el.textContent).not.toContain("Can't list containers");
+
+      await vi.advanceTimersByTimeAsync(1500);
+      http.expectOne('/api/containers').flush(running(2));
+      await settle();
+      fixture.detectChanges();
+      expect(el.querySelector('[data-testid="refresh-error"]')).toBeNull();
     } finally {
       vi.useRealTimers();
     }

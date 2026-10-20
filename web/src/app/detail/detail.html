@@ -3,6 +3,13 @@
 </a>
 
 @if (data(); as d) {
+  @if (detail.error()) {
+    <tm-callout tone="attention" heading="Couldn't refresh" class="mb-8" data-testid="refresh-error">
+      Showing this container as last loaded.
+      <span class="mt-1 block font-mono text-xs break-all">{{ errorMessage() }}</span>
+      <button tmButton size="sm" icon="refresh-cw" class="mt-3" (click)="detail.reload()">Try again</button>
+    </tm-callout>
+  }
   <!-- ── Header ─────────────────────────────────────────── -->
   <!-- A card; for breaking/attention its border becomes the slowly moving severity frame (the level badge still says it in words). -->
   <header

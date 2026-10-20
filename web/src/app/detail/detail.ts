@@ -1,4 +1,4 @@
-import { afterNextRender, Component, computed, effect, ElementRef, inject, Injector, input, signal, viewChildren } from '@angular/core';
+import { afterNextRender, Component, computed, effect, ElementRef, inject, Injector, input, linkedSignal, signal, viewChildren } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse, httpResource } from '@angular/common/http';
 import { Title } from '@angular/platform-browser';
@@ -74,8 +74,12 @@ export class ContainerDetail {
 
   protected readonly detail = httpResource<ContainerDetailData>(() => `/api/containers/${encodeURIComponent(this.name())}`);
 
-  // value() throws in the error state, so always go through hasValue().
-  protected readonly data = computed(() => (this.detail.hasValue() ? this.detail.value() : undefined));
+  // value() throws in the error state, so always go through hasValue(). A failed reload
+  // (after a review, say) keeps the last good data for the same container, with a callout.
+  protected readonly data = linkedSignal<{ name: string; data?: ContainerDetailData }, ContainerDetailData | undefined>({
+    source: () => ({ name: this.name(), data: this.detail.hasValue() ? this.detail.value() : undefined }),
+    computation: (next, previous) => next.data ?? (previous?.source.name === next.name ? previous.value : undefined),
+  });
   protected readonly changelog = computed(() => this.data()?.changelog);
   protected readonly update = computed(() => this.data()?.container.update);
   /** The last successful result; kept when a later refresh failed, absent if no check ever succeeded. */
