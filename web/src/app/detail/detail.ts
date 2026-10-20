@@ -1,9 +1,9 @@
 import { afterNextRender, Component, computed, effect, ElementRef, inject, Injector, input, linkedSignal, signal, viewChildren } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { DatePipe, Location } from '@angular/common';
 import { HttpErrorResponse, httpResource } from '@angular/common/http';
 import { Title } from '@angular/platform-browser';
-import { RouterLink } from '@angular/router';
-import { TM_TABS, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmClamp, TmEmptyState, TmIcon, TmLevel, TmSkeleton, TmTideGauge, TmTooltip } from '../ui';
+import { Router, RouterLink } from '@angular/router';
+import { TM_TABS, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmClamp, TmEmptyState, TmIcon, TmLevel, TmTideGauge, TmTooltip } from '../ui';
 import { TmMarkdown } from '../ui/markdown/markdown';
 import { hasResult, hasUpdate, imageName, isIgnored, Reason, ruleOrigin } from '../dashboard/containers';
 import { ContainerUpdate } from '../dashboard/container-update/container-update';
@@ -13,6 +13,7 @@ import { errorKindHint, heldText } from '../dashboard/format';
 import { ContainerDetailData } from './detail-types';
 import { describeRules } from './rules';
 import { History } from './history/history';
+import { DetailSkeleton } from './detail-skeleton/detail-skeleton';
 import { ReviewActions } from './review-actions/review-actions';
 
 const HOW: Record<string, string> = {
@@ -50,6 +51,7 @@ const SOURCE: Record<string, string> = {
     ContainerUpdate,
     ContainerVersion,
     History,
+    DetailSkeleton,
     ReviewActions,
     TmAppIcon,
     TmBadge,
@@ -61,7 +63,6 @@ const SOURCE: Record<string, string> = {
     TmIcon,
     TmLevel,
     TmMarkdown,
-    TmSkeleton,
     TmTideGauge,
     TmTooltip,
     ...TM_TABS,
@@ -154,12 +155,27 @@ export class ContainerDetail {
   protected readonly imageName = imageName;
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly injector = inject(Injector);
   private readonly clamps = viewChildren(TmClamp);
 
   constructor() {
     const title = inject(Title);
     effect(() => title.setTitle(`${this.name()} · Tidemark`));
+  }
+
+  /**
+   * "← Containers" (a plain link, so routerLink doesn't navigate as well): when this page was
+   * opened from the dashboard, go back in history instead of forward to "/", so the router
+   * restores the dashboard's scroll position (as the Back button does).
+   */
+  protected backToDashboard(event: MouseEvent): void {
+    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    const previous = this.router.lastSuccessfulNavigation()?.previousNavigation?.finalUrl;
+    if (previous && this.router.serializeUrl(previous).split(/[?#]/)[0] === '/') this.location.back();
+    else void this.router.navigateByUrl('/');
   }
 
   /** Shows a quoted line in its release notes: open the release and its clamp, scroll there, focus and highlight it. */

@@ -1,4 +1,4 @@
-<a routerLink="/" class="mb-8 inline-flex items-center gap-1.5 text-sm text-fg-muted no-underline hover:text-fg hover:no-underline">
+<a href="/" (click)="backToDashboard($event)" class="mb-8 inline-flex items-center gap-1.5 text-sm text-fg-muted no-underline hover:text-fg hover:no-underline">
   <tm-icon name="arrow-left" [size]="14" />Containers
 </a>
 
@@ -87,27 +87,30 @@
     @if (u.level !== 'none' && reasons().length) {
       <div class="mb-8" data-testid="reasons">
         <tm-callout [tone]="u.level" [heading]="u.level === 'breaking' ? 'Read before updating' : 'Worth a look before updating'">
-          <ul class="mt-1 flex list-disc flex-col gap-1.5 pl-5">
-            @for (reason of reasons(); track $index) {
-              <li class="wrap-anywhere" data-testid="reason">
-                <!-- A quote: its release, as a button to the line in the notes below when they're loaded. -->
-                @if (reason.target; as t) {
-                  <button
-                    type="button"
-                    class="me-1.5 inline-flex cursor-pointer items-center gap-0.5 rounded-sm font-mono text-sm text-accent-text hover:underline"
-                    [tmTooltip]="'Show this line in the ' + t.tag + ' notes'"
-                    (click)="jumpTo(t)"
-                    data-testid="reason-jump"
-                  >
-                    {{ t.tag }}<tm-icon name="arrow-down" [size]="12" />
-                  </button>
-                } @else if (reason.tag) {
-                  <span class="me-1.5 font-mono text-sm">{{ reason.tag }}</span>
-                }
-                <span data-testid="reason-text">{{ reason.text }}</span>
-              </li>
-            }
-          </ul>
+          <!-- Every flagged line; a long list is capped like the notes. -->
+          <tm-clamp max="10rem">
+            <ul class="mt-1 flex list-disc flex-col gap-1.5 pl-5">
+              @for (reason of reasons(); track $index) {
+                <li class="wrap-anywhere" data-testid="reason">
+                  <!-- A quote: its release, as a button to the line in the notes below when they're loaded. -->
+                  @if (reason.target; as t) {
+                    <button
+                      type="button"
+                      class="me-1.5 inline-flex cursor-pointer items-center gap-0.5 rounded-sm font-mono text-sm text-accent-text hover:underline"
+                      [tmTooltip]="'Show this line in the ' + t.tag + ' notes'"
+                      (click)="jumpTo(t)"
+                      data-testid="reason-jump"
+                    >
+                      {{ t.tag }}<tm-icon name="arrow-down" [size]="12" />
+                    </button>
+                  } @else if (reason.tag) {
+                    <span class="me-1.5 font-mono text-sm">{{ reason.tag }}</span>
+                  }
+                  <span data-testid="reason-text">{{ reason.text }}</span>
+                </li>
+              }
+            </ul>
+          </tm-clamp>
         </tm-callout>
       </div>
     }
@@ -426,14 +429,5 @@
     </tm-empty-state>
   </tm-card>
 } @else {
-  <div class="flex flex-col gap-8" aria-label="Loading">
-    <div class="flex items-center gap-4 rounded-xl border border-line bg-surface px-5 py-6 sm:gap-6 sm:px-8 sm:py-8">
-      <tm-skeleton width="64px" height="64px" />
-      <div class="flex flex-1 flex-col gap-2">
-        <tm-skeleton width="30%" height="2.5rem" />
-        <tm-skeleton width="45%" />
-      </div>
-    </div>
-    <tm-skeleton height="10rem" />
-  </div>
+  <tm-detail-skeleton />
 }

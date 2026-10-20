@@ -1,0 +1,49 @@
+<!-- Header: same card as the loaded page (without the severity frame). -->
+<div class="mb-8 rounded-xl border border-line bg-surface px-5 py-6 shadow-raised sm:px-8 sm:py-8">
+  <div class="flex flex-wrap items-start justify-between gap-x-10 gap-y-6">
+    <div class="flex min-w-0 items-center gap-4 sm:gap-6">
+      <tm-skeleton width="64px" height="64px" class="shrink-0" />
+      <div class="flex flex-col gap-1.5">
+        <tm-skeleton width="12rem" height="2.5rem" />
+        <tm-skeleton width="15rem" height="1.25rem" />
+      </div>
+    </div>
+    <div class="flex flex-col gap-4 sm:items-end">
+      <div class="flex items-start gap-4">
+        <tm-skeleton width="8rem" height="1.25rem" />
+        <div class="flex gap-2"><tm-skeleton width="3.5rem" height="1.25rem" /><tm-skeleton width="5.5rem" height="1.25rem" /></div>
+      </div>
+      <div class="flex items-center gap-3">
+        <tm-skeleton width="56px" height="32px" />
+        <tm-skeleton width="6.5rem" height="1.25rem" />
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Links: sm buttons (32px). -->
+<div class="mb-10 flex flex-wrap gap-2">
+  <tm-skeleton width="12rem" height="2rem" class="!rounded-lg" />
+  <tm-skeleton width="9rem" height="2rem" class="!rounded-lg" />
+  <tm-skeleton width="7rem" height="2rem" class="!rounded-lg" />
+  <tm-skeleton width="9rem" height="2rem" class="!rounded-lg" />
+</div>
+
+<!-- Tabs: the tab row with its bottom line; each tab is px-3 py-2 around a 24px line. -->
+<div class="flex gap-1 border-b border-line">
+  @for (w of tabs; track $index) {
+    <div class="px-3 py-2"><tm-skeleton [width]="w" height="1.5rem" /></div>
+  }
+</div>
+
+<!-- Release cards: summary row px-5 py-4 around a 24px line. -->
+<div class="flex flex-col gap-4 pt-2">
+  @for (row of [1, 2]; track row) {
+    <div class="flex items-center gap-2.5 rounded-xl border border-line bg-surface px-5 py-4 shadow-raised">
+      <tm-skeleton width="14px" height="14px" />
+      <tm-skeleton width="4rem" height="1.25rem" />
+      <tm-skeleton width="5rem" height="1.25rem" />
+      <tm-skeleton width="5.5rem" height="1.25rem" class="ml-auto" />
+    </div>
+  }
+</div>

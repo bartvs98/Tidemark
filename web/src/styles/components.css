@@ -163,17 +163,33 @@
   .tm-prose :is(th, td) { padding: 0.35rem 0.6rem; border: 1px solid var(--color-line); }
   .tm-prose details > summary { cursor: pointer; color: var(--color-fg-muted); }
   /* Lines the breaking-change analysis flagged (internal/analysis), like a highlighter.
-     The spread shadow pads the background without shifting the text. */
+     Two offset shadows pad the background sideways without shifting the text; not up and down,
+     so stacked flagged list items keep their gap instead of overlapping (the dark soft colours
+     are translucent, so an overlap shows as a darker band). */
   .tm-prose :is(.tm-flag-breaking, .tm-flag-attention) {
+    --tm-flag-bg: var(--color-attention-soft);
     border-radius: 2px;
+    background-color: var(--tm-flag-bg);
+    box-shadow:
+      -0.25rem 0 0 var(--tm-flag-bg),
+      0.25rem 0 0 var(--tm-flag-bg);
   }
   .tm-prose .tm-flag-breaking {
-    background-color: var(--color-breaking-soft);
-    box-shadow: 0 0 0 0.25rem var(--color-breaking-soft);
+    --tm-flag-bg: var(--color-breaking-soft);
   }
-  .tm-prose .tm-flag-attention {
-    background-color: var(--color-attention-soft);
-    box-shadow: 0 0 0 0.25rem var(--color-attention-soft);
+  /* The words that set the level (Hit.match); the line's title says it in words. */
+  .tm-prose .tm-flag-match {
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-thickness: 1.5px;
+    text-decoration-color: var(--color-attention);
+    text-underline-offset: 3px;
+  }
+  .tm-prose .tm-flag-breaking .tm-flag-match {
+    text-decoration-color: var(--color-breaking);
+  }
+  .tm-prose .tm-flag-attention .tm-flag-match {
+    text-decoration-color: var(--color-attention);
   }
   /* A flagged line just jumped to from the reasons: a focus-coloured ring that fades (static under reduced motion). */
   .tm-prose .tm-flag-jumped {

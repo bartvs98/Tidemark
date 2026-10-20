@@ -138,6 +138,37 @@ describe('renderMarkdown flags', () => {
     expect(el.querySelectorAll('[data-flag]').length).toBe(2);
   });
 
+  it('says why in the title and underlines the matched words in the line itself', () => {
+    const el = dom(
+      renderMarkdown(notes + '\n\n* removed: the **old** API\n  * removed here too', undefined, [
+        { line: '## ⚠ BREAKING CHANGES', level: 'breaking', match: 'BREAKING' },
+        { line: '* the config file moved', level: 'breaking', section: '⚠ BREAKING <CHANGES>' },
+        { line: '> ⚠️ Keycloak support was dropped', level: 'attention', match: 'not in the text' },
+        { line: '* removed: the **old** API', level: 'attention', match: 'Removed' },
+      ]),
+    );
+    const h2 = el.querySelector<HTMLElement>('h2')!;
+    expect(h2.title).toBe('Breaking · matched “BREAKING”');
+    expect(h2.querySelector('.tm-flag-match')?.textContent).toBe('BREAKING');
+    expect(h2.textContent).toBe('⚠ BREAKING CHANGES');
+
+    const moved = el.querySelectorAll('li')[0];
+    expect(moved.title).toBe('Breaking · under “⚠ BREAKING <CHANGES>”');
+    expect(moved.querySelector('.tm-flag-match')).toBeNull();
+
+    // Not found in the rendered text: the title still says it.
+    const quote = el.querySelector<HTMLElement>('blockquote p')!;
+    expect(quote.title).toBe('Attention · matched “not in the text”');
+    expect(quote.querySelector('.tm-flag-match')).toBeNull();
+
+    // Case-insensitive, first occurrence in its own text, never in a nested list.
+    const removed = [...el.querySelectorAll('li')].find((li) => li.title.startsWith('Attention'))!;
+    const spans = removed.querySelectorAll('.tm-flag-match');
+    expect(spans.length).toBe(1);
+    expect(spans[0].textContent).toBe('removed');
+    expect(removed.querySelector('li')?.textContent).toBe('removed here too');
+  });
+
   it('renders the same without flags', () => {
     expect(renderMarkdown(notes, undefined, [])).toBe(renderMarkdown(notes));
     expect(dom(renderMarkdown(notes)).querySelector('[class^="tm-flag"]')).toBeNull();

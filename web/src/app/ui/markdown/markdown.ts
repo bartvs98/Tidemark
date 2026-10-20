@@ -62,7 +62,22 @@ export interface MarkdownFlag {
   /** The markdown source line, trimmed. */
   line: string;
   level: 'none' | 'attention' | 'breaking';
+  /** The text that set the level, underlined in the rendered line where it's found. */
+  match?: string;
+  /** The flagged heading the line inherits its level from. */
+  section?: string;
 }
+
+const LEVEL_WORD = { attention: 'Attention', breaking: 'Breaking' } as const;
+
+/** Why a line is flagged, for its hover title: "Attention · matched “is removed”". */
+function flagWhy(f: MarkdownFlag): string {
+  if (f.level === 'none') return '';
+  const why = f.section ? `under “${f.section}”` : f.match ? `matched “${f.match}”` : '';
+  return why ? `${LEVEL_WORD[f.level]} · ${why}` : '';
+}
+
+const escapeAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 // List and quote markers differ between a source line and the token that renders it
 // ("> - foo" vs a list item whose raw text starts "- foo"), so compare without them.
@@ -79,7 +94,8 @@ interface Mark {
  * Renders markdown to sanitised HTML. With a GitHub repo URL, "#123" links to the issue
  * or pull request and "@name" to the user, like on GitHub. Headings, paragraphs and list
  * items holding a flagged line get class "tm-flag-breaking" or "tm-flag-attention", and
- * `data-flag` with the indexes of those flags, space-separated (select with `[data-flag~="2"]`).
+ * `data-flag` with the indexes of those flags, space-separated (select with `[data-flag~="2"]`),
+ * and a `title` saying why; the text that matched is wrapped in `span.tm-flag-match`.
  */
 export function renderMarkdown(markdown: string, githubRepo?: string, flags: MarkdownFlag[] = []): string {
   const md = new Marked({ gfm: true, breaks: false });
@@ -107,8 +123,12 @@ export function renderMarkdown(markdown: string, githubRepo?: string, flags: Mar
       }
       return found.indexes.length ? found : undefined;
     };
-    const mark = (html: string, m?: Mark) =>
-      m ? html.replace(/^<(\w+)/, `<$1 class="tm-flag-${m.level}" data-flag="${m.indexes.join(' ')}"`) : html;
+    const mark = (html: string, m?: Mark) => {
+      if (!m) return html;
+      const why = [...new Set(m.indexes.map((i) => flagWhy(flags[i])).filter(Boolean))].join('\n');
+      const title = why ? ` title="${escapeAttr(why)}"` : '';
+      return html.replace(/^<(\w+)/, `<$1 class="tm-flag-${m.level}" data-flag="${m.indexes.join(' ')}"${title}`);
+    };
     md.use({
       renderer: {
         heading(this: Renderer, token: Tokens.Heading) {
@@ -146,7 +166,48 @@ export function renderMarkdown(markdown: string, githubRepo?: string, flags: Mar
       ],
     });
   }
-  return imagesToLinks(DOMPurify.sanitize(md.parse(markdown, { async: false }) as string, PURIFY));
+  return underlineMatches(imagesToLinks(DOMPurify.sanitize(md.parse(markdown, { async: false }) as string, PURIFY)), flags);
+}
+
+/**
+ * Wraps the first occurrence of each flag's `match` in its flagged element (own text only, not a
+ * nested list) in `span.tm-flag-match`. A match split across formatting (or not in the rendered
+ * text at all) stays unmarked; the title still says it. Runs on sanitised HTML and only adds spans.
+ */
+function underlineMatches(html: string, flags: MarkdownFlag[]): string {
+  if (!flags.some((f) => f.match && f.level !== 'none')) return html;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  for (const el of Array.from(tpl.content.querySelectorAll<HTMLElement>('[data-flag]'))) {
+    const matches = new Set(
+      (el.dataset['flag'] ?? '')
+        .split(' ')
+        .map((i) => flags[+i]?.match?.toLowerCase())
+        .filter((m): m is string => !!m),
+    );
+    // Own text: not inside a nested list, nor inside a match already wrapped.
+    const own = (n: Node) => {
+      for (let p = n.parentElement; p && p !== el; p = p.parentElement) {
+        if (p.matches('ul, ol, .tm-flag-match')) return NodeFilter.FILTER_REJECT;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    };
+    for (const match of matches) {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: own });
+      for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+        const at = node.data.toLowerCase().indexOf(match);
+        if (at < 0) continue;
+        const hit = node.splitText(at);
+        hit.splitText(match.length);
+        const span = document.createElement('span');
+        span.className = 'tm-flag-match';
+        hit.replaceWith(span);
+        span.append(hit);
+        break;
+      }
+    }
+  }
+  return tpl.innerHTML;
 }
 
 /** Sanitised markdown, styled by `.tm-prose`. */

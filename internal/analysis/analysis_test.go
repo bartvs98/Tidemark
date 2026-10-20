@@ -61,11 +61,46 @@ func TestLineLevel(t *testing.T) {
 		{"- denonavr: keep Telnet connected when a zone's entity is removed (@TheEvilCoder42 - #184147)", None},
 		{"- RediSearch/RediSearch#10375 `FT.CURSOR READ`: crash after the underlying index was dropped (MOD-16703)", None},
 		{"* **collections:** stop saying an empty folder is dropped", None},
+		{"* **jellyfin:** clear a title's other watchlist spellings when it is removed, and share one identity rule ([c8c9efb](https://github.com/x/y/commit/c8c9efb))", None},
 	}
 	for _, c := range cases {
-		if got := lineLevel(c.line); got != c.want {
+		if got, _ := lineLevel(c.line); got != c.want {
 			t.Errorf("lineLevel(%q) = %v, want %v", c.line, got, c.want)
 		}
+	}
+}
+
+func TestLineLevelMatch(t *testing.T) {
+	cases := []struct{ line, want string }{
+		{"### ⚠ BREAKING CHANGES", "BREAKING"},
+		{"- **Breaking:** the `/v1` API is gone", "Breaking"},
+		{"* feat!: drop Node 18", "feat!"},
+		{"- fix(api)!: return 404 for unknown ids", "fix(api)!"},
+		{"💥 New config format", "💥"},
+		{"- **Duo:** the legacy endpoints are removed. No current client uses them.", "are removed"},
+		{"- `AI_API_KEY` and  `AI_MODEL_NAME`  settings have been removed", "have been removed"},
+		{"**Important:** Please read the [migration guide](https://doc.traefik.io/x).", "read the migration guide"},
+		{"**Important:** the old flag is gone", "Important"},
+		{"- Drop support for Python 3.12", "Drop support"},
+		{"- **Duo:** `DUO_USE_IFRAME` (the deprecated Traditional Prompt) is removed and ignored if set.", "is removed"},
+	}
+	for _, c := range cases {
+		if _, got := lineLevel(c.line); got != c.want {
+			t.Errorf("lineLevel(%q) match = %q, want %q", c.line, got, c.want)
+		}
+	}
+}
+
+func TestAnalyzeSaysWhy(t *testing.T) {
+	rel := Analyze("## ⚠️ Breaking changes\n- the `/v1` API is gone\n- settings have been removed\n### Bug fixes\n- Drop support for X", nil)
+	want := []Hit{
+		{Line: "## ⚠️ Breaking changes", Level: Breaking, Match: "Breaking changes", Label: true},
+		{Line: "- the `/v1` API is gone", Level: Breaking, Section: "⚠️ Breaking changes"},
+		{Line: "- settings have been removed", Level: Breaking, Section: "⚠️ Breaking changes"},
+		{Line: "- Drop support for X", Level: Attention, Match: "Drop support"},
+	}
+	if !slices.Equal(rel.Hits, want) {
+		t.Errorf("hits =\n%+v\nwant\n%+v", rel.Hits, want)
 	}
 }
 
@@ -182,7 +217,7 @@ func TestAssess(t *testing.T) {
 			t.Errorf("line %q not found in hits %+v", rs.Line, r.Releases[0].Hits)
 		}
 	})
-	t.Run("quotes breaking first, then the rest as a count", func(t *testing.T) {
+	t.Run("quotes every flagged line, breaking first", func(t *testing.T) {
 		r := Assess(Input{Class: version.Minor, Running: v("2.6.13"), Latest: v("2.6.15"), Releases: []Notes{
 			{"2.6.15", "- **removed** basic auth from rest API\n- Removed MySQL libraries\n- settings have been removed\n- Dropped support for X"},
 			{"2.6.14", "- **[api]** BREAKING: `/v1` is gone"},
@@ -191,7 +226,8 @@ func TestAssess(t *testing.T) {
 			"2.6.14: [api] BREAKING: /v1 is gone",
 			"2.6.15: removed basic auth from rest API",
 			"2.6.15: Removed MySQL libraries",
-			"and 2 more flagged lines",
+			"2.6.15: settings have been removed",
+			"2.6.15: Dropped support for X",
 		}
 		var got []string
 		for _, rs := range r.Reasons {

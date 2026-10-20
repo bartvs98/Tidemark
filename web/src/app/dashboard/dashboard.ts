@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, linkedSignal, signal, viewChild } from '@angular/core';
+import { Component, computed, effect, inject, linkedSignal, signal, untracked, viewChild } from '@angular/core';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
@@ -19,6 +19,7 @@ import {
   Toasts,
 } from '../ui';
 import { ContainerColumnBar } from './column-bar/column-bar';
+import { DashboardSkeleton } from './dashboard-skeleton/dashboard-skeleton';
 import { ContainerTable } from './container-table/container-table';
 import { ContainerTile } from './container-tile/container-tile';
 import {
@@ -41,6 +42,7 @@ import {
   splitIgnored,
   splitSnoozed,
 } from './containers';
+import { DashboardState } from './dashboard-state';
 
 export type ViewMode = 'list' | 'tiles';
 
@@ -71,6 +73,7 @@ const GROUPS: SegmentOption<Grouping>[] = [
     ContainerColumnBar,
     ContainerTable,
     ContainerTile,
+    DashboardSkeleton,
     TmBadge,
     TmButton,
     TmCallout,
@@ -90,6 +93,7 @@ const GROUPS: SegmentOption<Grouping>[] = [
 export class Dashboard {
   private readonly http = inject(HttpClient);
   private readonly toasts = inject(Toasts);
+  private readonly state = inject(DashboardState);
 
   protected readonly list = httpResource<ContainerList>(() => '/api/containers');
 
@@ -104,10 +108,11 @@ export class Dashboard {
 
   // value() throws while the resource is in an error state, so always go through hasValue().
   // A linkedSignal can see its previous value: a failed refresh keeps the last good list
-  // (shown with a callout) instead of emptying the page.
+  // (shown with a callout) instead of emptying the page. Before the first response it's the list
+  // from the last visit (DashboardState), so coming back from a detail page shows no skeleton.
   protected readonly data = linkedSignal<ContainerList | undefined, ContainerList | undefined>({
     source: () => (this.list.hasValue() ? this.list.value() : undefined),
-    computation: (list, previous) => list ?? previous?.value,
+    computation: (list, previous) => list ?? previous?.value ?? untracked(this.state.list),
   });
 
   private readonly containers = computed(() => this.data()?.containers ?? []);
@@ -166,9 +171,9 @@ export class Dashboard {
     () => this.shown().length === 0 && this.shownSnoozed().length === 0 && this.shownIgnored().length === 0,
   );
   /** The "Up to date" section (severity mode's group, stack mode's settled stacks): collapsed by default, like "Ignored". One signal, so it stays open or closed across both groupings. */
-  protected readonly currentOpen = signal(false);
-  protected readonly snoozedOpen = signal(false);
-  protected readonly ignoredOpen = signal(false);
+  protected readonly currentOpen = this.state.currentOpen;
+  protected readonly snoozedOpen = this.state.snoozedOpen;
+  protected readonly ignoredOpen = this.state.ignoredOpen;
   protected readonly reviewIcons = REVIEW_ICONS;
   /** Counts include reviewed updates (they stay in place), not snoozed or ignored ones. */
   protected readonly filters = computed<SegmentOption<Filter>[]>(() => {
@@ -279,6 +284,10 @@ export class Dashboard {
     effect(() => store(FILTER_KEY, this.filter()));
     effect(() => store(GROUP_KEY, this.group()));
     effect(() => storeSession(QUERY_KEY, this.query()));
+    effect(() => {
+      const data = this.data();
+      if (data) this.state.list.set(data);
+    });
 
     // Searching for something that's only in settled stacks: open "Up to date" so the matches show.
     // Runs when that turns true; closing the section again is up to the user.

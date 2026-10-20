@@ -1,0 +1,84 @@
+<!-- Same wrapper and control heights as the toolbar in dashboard.html (all md, 36px). -->
+<div class="mb-6 flex flex-wrap items-center gap-3">
+  <tm-skeleton width="13.25rem" height="2.25rem" class="!rounded-lg" />
+  <tm-skeleton height="2.25rem" class="order-first !w-full !rounded-lg sm:order-none sm:!w-64" />
+  <div class="flex flex-wrap items-center gap-3 sm:ml-auto">
+    <tm-skeleton width="10.25rem" height="2.25rem" class="!rounded-lg" />
+    <tm-skeleton width="4.375rem" height="2.25rem" class="!rounded-lg" />
+  </div>
+</div>
+
+@if (view() === 'list') {
+  <tm-column-bar />
+}
+<div class="flex flex-col gap-12 sm:gap-14">
+  @for (count of sections; track $index) {
+    <!-- tm-section's header: icon, name (text-xl), meta. -->
+    <div>
+      <div class="mb-4 flex min-h-8 items-center gap-2.5">
+        <tm-skeleton width="1rem" height="1rem" />
+        <tm-skeleton width="8rem" height="1.5rem" />
+        <tm-skeleton width="5rem" height="0.875rem" />
+      </div>
+      @if (view() === 'list') {
+        <!-- tm-container-table: same card, columns and phone stacking (tm-table-stack). -->
+        <tm-card flush>
+          <div class="overflow-x-auto">
+            <table class="tm-table tm-table-stack table-fixed sm:min-w-[44rem]">
+              <colgroup>
+                @for (col of columns; track col.label) {
+                  <col [class]="col.width" />
+                }
+              </colgroup>
+              <tbody>
+                @for (row of rows(count); track row) {
+                  <tr>
+                    <td data-stack="full" class="sm:py-3.5">
+                      <div class="flex items-center gap-3">
+                        <tm-skeleton width="20px" height="20px" class="shrink-0" />
+                        <div class="flex h-10 min-w-0 flex-1 flex-col justify-center gap-1.5">
+                          <tm-skeleton width="45%" height="1rem" />
+                          <tm-skeleton width="60%" height="0.75rem" />
+                        </div>
+                      </div>
+                    </td>
+                    <td data-stack="hide" class="sm:py-3.5"><tm-skeleton width="75%" height="0.875rem" /></td>
+                    <td data-stack="indent" class="sm:py-3.5">
+                      <div class="flex flex-col gap-1.5">
+                        <tm-skeleton width="7rem" height="1.25rem" />
+                        <tm-skeleton width="9rem" height="0.75rem" />
+                      </div>
+                    </td>
+                    <td class="sm:py-3.5">
+                      <div class="flex gap-2"><tm-skeleton width="3.5rem" height="1.25rem" /><tm-skeleton width="4.5rem" height="1.25rem" /></div>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </tm-card>
+      } @else {
+        <!-- tm-container-tile: same grid, padding and inner rows. -->
+        <div class="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+          @for (row of rows(count); track row) {
+            <div class="flex min-w-0 flex-col rounded-xl border border-line bg-surface p-5 shadow-raised">
+              <div class="mb-5 flex items-start gap-3">
+                <tm-skeleton width="32px" height="32px" class="shrink-0" />
+                <div class="flex min-w-0 flex-1 flex-col gap-1">
+                  <tm-skeleton width="50%" height="1.25rem" />
+                  <tm-skeleton width="70%" height="0.75rem" />
+                  <tm-skeleton width="40%" height="0.75rem" />
+                </div>
+              </div>
+              <div class="mt-auto flex flex-col gap-2 border-t border-line pt-4">
+                <tm-skeleton width="8rem" height="1.25rem" />
+                <div class="flex gap-2"><tm-skeleton width="3.5rem" height="1.25rem" /><tm-skeleton width="4.5rem" height="1.25rem" /></div>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

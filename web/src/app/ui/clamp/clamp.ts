@@ -78,7 +78,7 @@ export class TmClamp {
   private countHidden(el: HTMLElement, cap: number): number {
     const selector = this.marks();
     if (!selector) return 0;
-    // The fade (h-16) makes whatever starts under it unreadable.
+    // The fade (the mask's last 4rem) makes whatever starts under it unreadable.
     const visible = cap - this.px('4rem');
     const top = el.getBoundingClientRect().top;
     return [...el.querySelectorAll(selector)].filter((m) => m.getBoundingClientRect().top - top > visible).length;

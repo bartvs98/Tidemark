@@ -5,6 +5,8 @@ import { errorKindLabel, reviewedTitle } from '../format';
 import { ContainerRefreshFailed } from '../refresh-failed/refresh-failed';
 
 const TOOLTIP_LINE = 140;
+/** Quoted lines the tooltip shows; the detail page lists them all. */
+const TOOLTIP_QUOTES = 3;
 const clip = (s: string) => (s.length > TOOLTIP_LINE ? s.slice(0, TOOLTIP_LINE - 1).trimEnd() + '…' : s);
 
 /**
@@ -46,8 +48,17 @@ export class ContainerUpdate {
   protected readonly error = computed(() => this.container().update?.error);
   protected readonly reason = computed(() => errorKindLabel(this.container().update?.errorKind));
   protected readonly kind = computed(() => (this.result()?.class ?? 'none') as UpdateClass);
-  /** One line per reason, quotes prefixed with their release; cut short, since the tooltip is small. */
-  protected readonly reasons = computed(
-    () => this.result()?.reasons?.map((r) => clip(r.tag ? `${r.tag}: ${r.text}` : r.text)).join('\n') || null,
-  );
+  /**
+   * One line per reason, quotes prefixed with their release; cut short, since the tooltip is small:
+   * the first three quotes (breaking ones come first), then "and N more flagged lines".
+   */
+  protected readonly reasons = computed(() => {
+    let quotes = 0;
+    const lines = (this.result()?.reasons ?? [])
+      .filter((r) => !r.line || ++quotes <= TOOLTIP_QUOTES)
+      .map((r) => clip(r.tag ? `${r.tag}: ${r.text}` : r.text));
+    const more = quotes - TOOLTIP_QUOTES;
+    if (more > 0) lines.push(`and ${more} more flagged ${more === 1 ? 'line' : 'lines'}`);
+    return lines.join('\n') || null;
+  });
 }

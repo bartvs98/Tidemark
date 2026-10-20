@@ -56,6 +56,12 @@ func (l *Level) UnmarshalText(b []byte) error {
 type Hit struct {
 	Line  string `json:"line"` // the source line, trimmed, as it appears in the markdown
 	Level Level  `json:"level"`
+	// Match is the text that set the line's level ("is removed", "BREAKING"), as it reads in the
+	// rendered line where possible. Empty when the level comes from Section.
+	Match string `json:"match,omitempty"`
+	// Section is the flagged heading (as plain text) the line inherits its level from, when that
+	// level is higher than the line's own.
+	Section string `json:"section,omitempty"`
 	// Label: a section heading ("## Breaking changes") whose lines inherit its level.
 	Label bool `json:"-"`
 }
@@ -95,9 +101,6 @@ type Reason struct {
 	Line string `json:"line,omitempty"` // quotes only: that line's Hit.Line exactly as in Result.Releases[i].Hits, so the UI can find it
 }
 
-// maxQuoted is how many flagged lines Reasons quotes.
-const maxQuoted = 3
-
 // Assess combines the version jump with the flags in each release's notes.
 func Assess(in Input) Result {
 	var out Result
@@ -131,18 +134,13 @@ func Assess(in Input) Result {
 			quotes = append(quotes, quote{n.Tag, text, h.Line, h.Level})
 		}
 	}
-	// Breaking lines first, then attention, each in release order (newest first).
-	quoted := 0
+	// Every flagged line, breaking first, then attention, each in release order (newest first).
 	for _, lvl := range []Level{Breaking, Attention} {
 		for _, q := range quotes {
-			if q.level == lvl && quoted < maxQuoted {
+			if q.level == lvl {
 				out.Reasons = append(out.Reasons, Reason{Text: q.text, Tag: q.tag, Line: q.line})
-				quoted++
 			}
 		}
-	}
-	if extra := len(quotes) - quoted; extra > 0 {
-		out.Reasons = append(out.Reasons, Reason{Text: fmt.Sprintf("and %d more flagged %s", extra, pluralLines(extra))})
 	}
 	return out
 }
@@ -180,8 +178,9 @@ func Analyze(body string, known map[string]bool) Release {
 	type section struct {
 		depth int // 1–6 for headings, 7 for a bold-only label line
 		level Level
-		hit   int // index of the label's hit in hits, or -1
-		items int // content lines under it
+		text  string // the label as plain text, for Hit.Section
+		hit   int    // index of the label's hit in hits, or -1
+		items int    // content lines under it
 	}
 	var (
 		rel     Release
@@ -223,28 +222,32 @@ func Analyze(body string, known map[string]bool) Release {
 		}
 
 		isKnown := known[sameText(line)]
-		lvl := lineLevel(line)
+		lvl, match := lineLevel(line)
 		if isKnown {
-			lvl = None
+			lvl, match = None, ""
 		}
-		inherited := None
+		inherited, from := None, ""
 		for i := range open {
-			inherited = max(inherited, open[i].level)
+			if open[i].level >= inherited {
+				inherited, from = open[i].level, open[i].text // the innermost of the highest level
+			}
 			if depth == 0 {
 				open[i].items++
 			}
 		}
-		if depth == 0 && !isKnown {
-			lvl = max(lvl, inherited) // an attention line under "Breaking changes" is breaking
+		hit := Hit{Line: line, Level: lvl, Match: match, Label: depth > 0}
+		if depth == 0 && !isKnown && inherited > lvl {
+			// An attention line under "Breaking changes" is breaking.
+			hit.Level, hit.Match, hit.Section = inherited, "", from
 		}
 
 		idx := -1
-		if lvl > None {
+		if hit.Level > None {
 			idx = len(rel.Hits)
-			rel.Hits = append(rel.Hits, Hit{Line: line, Level: lvl, Label: depth > 0})
+			rel.Hits = append(rel.Hits, hit)
 		}
-		if depth > 0 && lvl > None {
-			open = append(open, section{depth: depth, level: lvl, hit: idx})
+		if depth > 0 && hit.Level > None {
+			open = append(open, section{depth: depth, level: hit.Level, text: plain(line), hit: idx})
 		}
 	}
 	closeTo(0)
@@ -280,6 +283,13 @@ var (
 	// Conventional commits: "feat!: …", "fix(api)!: …", after the list marker.
 	conventionalBang = regexp.MustCompile(`^\w+(\([^)]*\))?!:`)
 
+	// Passive "removed" only where it reads as an announcement: "settings have been removed",
+	// "X is removed and ignored", not "while the entity is removed (@user - #123)" or "clear its
+	// spellings when it is removed, and …" (a condition: reRemovedClause).
+	isRemoved       = regexp.MustCompile(`(?i)\b(is|are) (now )?removed(\s*$|[.,;:]|\s+(and|in favou?r)\b)`)
+	isRemovedCore   = regexp.MustCompile(`(?i)\b(is|are) (now )?removed\b`) // its Hit.Match, without what follows
+	reRemovedClause = regexp.MustCompile(`(?i)\b(when|whenever|if|once|after|before|until|while|unless)\s+(\S+\s+){0,3}(is|are) (now )?removed\b`)
+
 	attentionPatterns = []*regexp.Regexp{
 		regexp.MustCompile(`⚠`),
 		regexp.MustCompile(`(?i)\baction (is )?required\b`),
@@ -289,11 +299,9 @@ var (
 		regexp.MustCompile(`(?i)\b(must|need to|needs to|have to|has to|should) (migrate|update (your|their)|change (your|their)|re-?create|re-?configure|re-?index)\b`),
 		regexp.MustCompile(`(?i)\bexisting (users|installs|installations|setups|instances|deployments)\b.{0,40}\b(should|must|need|needs|have to)\b`),
 		regexp.MustCompile(`(?i)\bmigrations?\b.{0,30}\b(may|will|can|might) take\b`),
-		// Passive "removed" only where it reads as an announcement: "settings have been removed",
-		// "X is removed and ignored", not "while the entity is removed (@user - #123)".
 		regexp.MustCompile(`(?i)\b(has|have) been (removed|deprecated|dropped)\b`),
 		regexp.MustCompile(`(?i)\b(is|are|was|were) (now )?deprecated\b`),
-		regexp.MustCompile(`(?i)\b(is|are) (now )?removed(\s*$|[.,;:]|\s+(and|in favou?r)\b)`),
+		isRemoved,
 		regexp.MustCompile(`(?i)\bwill be (removed|deprecated|dropped)\b`),
 		regexp.MustCompile(`(?i)\bno longer (supported|available|works?|shared|visible|accepted|honou?red)\b`),
 		regexp.MustCompile(`(?i)\b(drops?|dropped|removes?|removed|ends?|ended) support\b`),
@@ -305,22 +313,38 @@ var (
 	}
 )
 
-func lineLevel(line string) Level {
+// lineLevel is a line's own level and the text that set it (see Hit.Match).
+func lineLevel(line string) (Level, string) {
 	for _, p := range breakingPatterns {
 		if p.MatchString(line) && !breakingNegated.MatchString(line) {
-			return Breaking
+			return Breaking, matched(p, line)
 		}
 	}
-	if conventionalBang.MatchString(reEmphasis.ReplaceAllString(reMarker.ReplaceAllString(line, ""), "")) {
-		return Breaking
+	if m := conventionalBang.FindString(reEmphasis.ReplaceAllString(reMarker.ReplaceAllString(line, ""), "")); m != "" {
+		return Breaking, trimMatch(m)
 	}
 	for _, p := range attentionPatterns {
-		if p.MatchString(line) {
-			return Attention
+		if p.MatchString(line) && !(p == isRemoved && reRemovedClause.MatchString(line)) {
+			if p == isRemoved {
+				return Attention, matched(isRemovedCore, line)
+			}
+			return Attention, matched(p, line)
 		}
 	}
-	return None
+	return None, ""
 }
+
+// matched is what p matches, preferably in the plain text (as the line renders), else in the source.
+func matched(p *regexp.Regexp, line string) string {
+	m := p.FindString(plain(line))
+	if m == "" {
+		m = p.FindString(line)
+	}
+	return trimMatch(m)
+}
+
+// trimMatch drops the markdown and punctuation a pattern takes in at its edges ("- **Breaking** ").
+func trimMatch(m string) string { return strings.Trim(m, " \t*_`#>-+:,.;()[]") }
 
 // ── helpers ──────────────────────────────────────────────
 
@@ -354,11 +378,4 @@ func at(nums []int, i int) int {
 		return nums[i]
 	}
 	return 0
-}
-
-func pluralLines(n int) string {
-	if n == 1 {
-		return "line"
-	}
-	return "lines"
 }

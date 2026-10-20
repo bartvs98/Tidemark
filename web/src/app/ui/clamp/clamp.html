@@ -1,13 +1,12 @@
+<!-- The fade is a mask (the last 4rem fade out), so it works on any background: a card, a callout. -->
 <div
   class="relative"
   [class.overflow-hidden]="clamped()"
   [style.max-height]="clamped() ? max() : null"
+  [style.mask-image]="clamped() ? 'linear-gradient(to bottom, #000 calc(100% - 4rem), transparent)' : null"
   [attr.data-clamped]="clamped() || null"
 >
   <div #content><ng-content /></div>
-  @if (clamped()) {
-    <div class="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-linear-to-t from-surface" aria-hidden="true"></div>
-  }
 </div>
 @if (tall()) {
   <button tmButton variant="ghost" size="sm" [icon]="open() ? 'chevron-up' : 'chevron-down'" class="mt-2" [attr.aria-expanded]="open()" (click)="toggle()">

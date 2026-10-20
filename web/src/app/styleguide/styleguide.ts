@@ -28,6 +28,8 @@ import {
 } from '../ui';
 import { MarkdownFlag, TmMarkdown } from '../ui/markdown/markdown';
 import { ContainerColumnBar } from '../dashboard/column-bar/column-bar';
+import { DashboardSkeleton } from '../dashboard/dashboard-skeleton/dashboard-skeleton';
+import { DetailSkeleton } from '../detail/detail-skeleton/detail-skeleton';
 import { ContainerLink, ContainerTable } from '../dashboard/container-table/container-table';
 import { ContainerTile } from '../dashboard/container-tile/container-tile';
 import { ContainerSummary, groupByStack, UpdateInfo } from '../dashboard/containers';
@@ -83,6 +85,8 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
     ContainerUpdate,
     ContainerVersion,
     ContainerColumnBar,
+    DashboardSkeleton,
+    DetailSkeleton,
     ContainerTable,
     ContainerTile,
     TmAppIcon,
@@ -181,10 +185,10 @@ export class Styleguide {
   ].join('\n');
 
   protected readonly sampleFlags: MarkdownFlag[] = [
-    { line: '## Breaking changes', level: 'breaking' },
-    { line: '- The `legacy_api` option was removed (#12345), thanks @frenck.', level: 'breaking' },
-    { line: '- Config key `DB_URL` is now `DATABASE_URL`.', level: 'breaking' },
-    { line: '> Upgrade notes: back up first.', level: 'attention' },
+    { line: '## Breaking changes', level: 'breaking', match: 'Breaking changes' },
+    { line: '- The `legacy_api` option was removed (#12345), thanks @frenck.', level: 'breaking', section: 'Breaking changes' },
+    { line: '- Config key `DB_URL` is now `DATABASE_URL`.', level: 'breaking', section: 'Breaking changes' },
+    { line: '> Upgrade notes: back up first.', level: 'attention', match: 'Upgrade notes' },
   ];
 
   protected readonly longNotes = Array.from({ length: 24 }, (_, i) => `- Fix number ${i + 1} in a long release`).join('\n');

@@ -254,6 +254,29 @@ describe('Dashboard', () => {
     expect(el.textContent).toContain('Snapshot');
   });
 
+  it('comes back from a detail page with the last list and open sections, while it reloads', async () => {
+    const body: ContainerList = { source: { kind: 'docker', location: 'x' }, containers: [container('jellyfin', 'media'), container('pihole')] };
+    const first = TestBed.createComponent(Dashboard);
+    first.detectChanges();
+    http.expectOne('/api/containers').flush(body);
+    await first.whenStable();
+    first.componentInstance['ignoredOpen'].set(true);
+    first.destroy();
+
+    // The next visit renders the stored list at once (no skeleton), so the router can restore the scroll position.
+    const again = TestBed.createComponent(Dashboard);
+    again.detectChanges();
+    TestBed.tick(); // whenStable() would wait for the pending reload
+    const el = again.nativeElement as HTMLElement;
+    expect(el.querySelector('tm-skeleton')).toBeNull();
+    expect(el.querySelector('a[href="/containers/jellyfin"]')).not.toBeNull();
+    expect(again.componentInstance['ignoredOpen']()).toBe(true);
+
+    http.expectOne('/api/containers').flush({ ...body, containers: [container('jellyfin', 'media')] });
+    await again.whenStable();
+    expect(el.querySelector('a[href="/containers/pihole"]')).toBeNull();
+  });
+
   it('shows app icons, with a letter avatar when there is none', async () => {
     const body: ContainerList = {
       source: { kind: 'docker', location: 'unix:///var/run/docker.sock' },
@@ -323,6 +346,9 @@ describe('Dashboard', () => {
           update: update('minor', 'attention', [
             { text: 'settings have been removed', tag: '2.0.0', line: '- settings have been removed' },
             { text: 'x'.repeat(200), tag: '1.9.0', line: 'x' },
+            { text: 'third', tag: '1.9.0', line: '- third' },
+            { text: 'fourth', tag: '1.9.0', line: '- fourth' },
+            { text: 'fifth', tag: '1.8.0', line: '- fifth' },
           ]),
         }),
         container('mkvtoolnix', 'files', { update: update('none', 'none') }),
@@ -335,7 +361,10 @@ describe('Dashboard', () => {
     expect(levels.map((l) => l.textContent?.trim())).toEqual(['Breaking', 'Attention']); // mkvtoolnix is up to date: no badge
     expect(levels[0].getAttribute('data-tooltip')).toBe('Major version: 1.0.0 → 2.0.0');
     // Quotes carry their release; long lines are cut short for the small tooltip.
-    const [quote, long] = levels[1].getAttribute('data-tooltip')!.split('\n');
+    // The detail page lists every quote; the tooltip the first three, then a count.
+    const [quote, long, third, more] = levels[1].getAttribute('data-tooltip')!.split('\n');
+    expect(third).toBe('1.9.0: third');
+    expect(more).toBe('and 2 more flagged lines');
     expect(quote).toBe('2.0.0: settings have been removed');
     expect(long.length).toBe(140);
     expect(long.startsWith('1.9.0: xxx')).toBe(true);

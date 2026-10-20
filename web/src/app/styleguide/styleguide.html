@@ -537,7 +537,8 @@
     <h2 class="mb-1 text-xl font-semibold">Callouts &amp; release notes</h2>
     <p class="mb-4 text-fg-muted">
       Callouts explain why something is missing and what to do. Release notes are sanitised markdown (images become "Image: alt" links); lines the
-      breaking-change analysis flagged get a highlighter in the level's colour. Long notes sit in a
+      breaking-change analysis flagged get a highlighter in the level's colour, the words that triggered it a dotted underline, and
+      hovering a line says why. Long notes sit in a
       <span class="font-mono text-sm">tm-clamp</span>; with <span class="font-mono text-sm">marks</span> its button counts the
       flagged lines it hides.
     </p>
@@ -628,6 +629,22 @@
         </div>
       </tm-card>
     </div>
+  </section>
+
+  <!-- ── Page skeletons ─────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Page skeletons</h2>
+    <p class="mb-4 text-fg-muted">
+      <span class="font-mono text-sm">tm-dashboard-skeleton</span> (the toolbar and the list or tiles; the hero's headline, summary
+      and figures are skeletons in the page itself) and <span class="font-mono text-sm">tm-detail-skeleton</span> mirror the loaded
+      pages box for box, so nothing jumps when data arrives. The dashboard one follows <span class="font-mono text-sm">view</span>.
+    </p>
+    <h3 class="mb-2 font-semibold">Dashboard, list</h3>
+    <div class="mb-8"><tm-dashboard-skeleton view="list" /></div>
+    <h3 class="mb-2 font-semibold">Dashboard, tiles</h3>
+    <div class="mb-8"><tm-dashboard-skeleton view="tiles" /></div>
+    <h3 class="mb-2 font-semibold">Detail</h3>
+    <tm-detail-skeleton />
   </section>
 
   <!-- ── App icons ─────────────────────────────────────── -->
