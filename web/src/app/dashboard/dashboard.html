@@ -161,15 +161,44 @@
       }
       <div class="flex flex-col gap-12 sm:gap-14" [attr.data-view]="view()" [attr.data-group]="group()">
         @if (group() === 'stack') {
-          @for (stack of shownStacks(); track stack.name) {
+          <!-- Stacks with something to do; their up-to-date containers fade as a whole (dim), so what needs a look stands out. -->
+          @for (stack of workStacks(); track stack.name) {
+            <!-- A settled stack only lands here under the Updates or Breaking filter: muted, nothing to dim. -->
             <tm-section
               [heading]="stack.name ?? 'Ungrouped'"
               [icon]="stack.name ? 'layers' : 'box'"
               [meta]="plural(stack.containers.length, 'container')"
               [muted]="stack.current"
-              [attr.data-current]="stack.current ? '' : null"
             >
-              <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: stack.containers, ignored: false, showStack: false }" />
+              <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: stack.containers, ignored: false, showStack: false, dim: !stack.current }" />
+            </tm-section>
+          }
+          @if (settledStacks().length) {
+            <!-- Settled stacks (all up to date or reviewed): one collapsed, muted "Up to date" section, each stack a sub-section. -->
+            <tm-section
+              heading="Up to date"
+              icon="circle-check"
+              [meta]="plural(settledStacks().length, 'stack')"
+              collapsible
+              muted
+              [(open)]="currentOpen"
+              data-testid="stacks-current"
+            >
+              @if (currentOpen()) {
+                <div class="flex flex-col gap-8">
+                  @for (stack of settledStacks(); track stack.name) {
+                    <tm-section
+                      [level]="3"
+                      [heading]="stack.name ?? 'Ungrouped'"
+                      [icon]="stack.name ? 'layers' : 'box'"
+                      [meta]="plural(stack.containers.length, 'container')"
+                      muted
+                    >
+                      <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: stack.containers, ignored: false, showStack: false }" />
+                    </tm-section>
+                  }
+                </div>
+              }
             </tm-section>
           }
         } @else {
@@ -260,13 +289,14 @@
 }
 
 <!-- One group of containers as a table (list view) or a grid of tiles. Used for each stack or severity section, and for "Snoozed" and "Ignored". -->
-<ng-template #containerGroup let-containers let-ignored="ignored" let-showStack="showStack">
+<!-- dim: fade up-to-date containers as a whole (stack sections with something to do only). -->
+<ng-template #containerGroup let-containers let-ignored="ignored" let-showStack="showStack" let-dim="dim">
   @if (view() === 'list') {
-    <tm-container-table [containers]="containers" [checking]="checking()" [ignored]="ignored" [showStack]="showStack" />
+    <tm-container-table [containers]="containers" [checking]="checking()" [ignored]="ignored" [showStack]="showStack" [dimCurrent]="!!dim" />
   } @else {
     <div class="grid gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
       @for (c of containers; track c.id) {
-        <tm-container-tile [container]="c" [checking]="checking()" [showStack]="showStack" />
+        <tm-container-tile [container]="c" [checking]="checking()" [showStack]="showStack" [dimCurrent]="!!dim" />
       }
     </div>
   }

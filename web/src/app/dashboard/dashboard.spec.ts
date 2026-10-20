@@ -330,7 +330,7 @@ describe('Dashboard', () => {
 
     const buttons = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="filter"] button')];
     expect(buttons.map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['All', 'Updates 2', 'Breaking 1']);
-    expect(rowNames()).toEqual(['jellyfin', 'sonarr', 'mkvtoolnix']); // the up-to-date stack drops to the bottom
+    expect(rowNames()).toEqual(['jellyfin', 'sonarr']); // the up-to-date stack waits in the collapsed "Up to date" section
 
     buttons[2].click();
     await TestBed.inject(ApplicationRef).whenStable();
@@ -739,7 +739,8 @@ describe('Dashboard', () => {
         ],
       };
     }
-    const sectionNames = (el: HTMLElement) => [...el.querySelectorAll('tm-section')].map((s) => text(s.querySelector('h2')));
+    /** Top-level sections only; settled stacks are nested inside "Up to date". */
+    const sectionNames = (el: HTMLElement) => [...el.querySelectorAll('[data-view] > tm-section')].map((s) => text(s.querySelector('h2')));
     const settle = () => TestBed.inject(ApplicationRef).whenStable();
 
     it('shows the headline, the figures and the gauge', async () => {
@@ -793,13 +794,65 @@ describe('Dashboard', () => {
       expect(el.querySelectorAll('tr[data-current]').length).toBe(0);
     });
 
-    it('in stack mode, keeps stacks whole, drops fully up-to-date ones to the bottom and tones down current rows', async () => {
+    it('in stack mode, keeps stacks whole, dims current rows in stacks with work and tucks settled stacks into "Up to date"', async () => {
       const el = await render((req) => req.flush(body()));
-      expect(sectionNames(el)).toEqual(['media', 'recipes', 'secrets', 'networking', 'Ignored']);
-      const current = [...el.querySelectorAll('tbody tr')].filter((r) => r.hasAttribute('data-current')).map((r) => text(r.querySelector('a')));
-      expect(current).toEqual(['sonarr', 'adguard']);
-      expect(text(el.querySelector('tm-section[data-current] h2'))).toBe('networking');
+      expect(sectionNames(el)).toEqual(['media', 'recipes', 'secrets', 'Up to date', 'Ignored']);
+      const rowNames = (rows: Element[]) => rows.map((r) => text(r.querySelector('a')));
+      // sonarr is up to date in media, which has an update: toned down and dimmed as a whole.
+      expect(rowNames([...el.querySelectorAll('tbody tr[data-current]')])).toEqual(['sonarr']);
+      const dimmed = [...el.querySelectorAll('tbody tr[data-dimmed]')];
+      expect(rowNames(dimmed)).toEqual(['sonarr']);
+      expect(dimmed[0].className).toContain('opacity-60');
+      expect(dimmed[0].className).toContain('hover:opacity-100');
+      expect(dimmed[0].className).toContain('focus-within:opacity-100');
       expect(el.querySelector('[data-testid="row-stack"]')).toBeNull(); // the heading already says it
+
+      // networking only has up-to-date containers: inside the collapsed, muted "Up to date" section.
+      const settled = el.querySelector('[data-testid="stacks-current"]')!;
+      expect(text(settled.querySelector('h2'))).toBe('Up to date');
+      expect(settled.textContent).toContain('1 stack');
+      const toggle = settled.querySelector<HTMLButtonElement>('h2 button')!;
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(settled.querySelectorAll('tbody tr').length).toBe(0);
+      toggle.click();
+      await settle();
+      const sub = [...settled.querySelectorAll('tm-section')];
+      expect(sub.map((s) => text(s.querySelector('h3')))).toEqual(['networking']);
+      expect(sub[0].textContent).toContain('1 container');
+      expect(rowNames([...sub[0].querySelectorAll('tbody tr')])).toEqual(['adguard']);
+      // Toned down, but not dimmed: the whole section is already quiet.
+      expect(sub[0].querySelector('tr[data-current]')).not.toBeNull();
+      expect(sub[0].querySelector('tr[data-dimmed]')).toBeNull();
+    });
+
+    it('puts settled ungrouped containers in "Up to date" too, and keeps the open state across groupings', async () => {
+      const list = body();
+      list.containers.push(container('pihole', undefined, { update: checked('none') }));
+      const el = await render((req) => req.flush(list));
+      const settled = el.querySelector('[data-testid="stacks-current"]')!;
+      expect(settled.textContent).toContain('2 stacks');
+      settled.querySelector<HTMLButtonElement>('h2 button')!.click();
+      await settle();
+      expect([...settled.querySelectorAll('tm-section h3')].map(text)).toEqual(['networking', 'Ungrouped']);
+      expect(sectionNames(el)).not.toContain('Ungrouped');
+
+      el.querySelector<HTMLButtonElement>('[data-testid="group"] button:nth-child(2)')!.click(); // Severity
+      await settle();
+      const current = el.querySelector('[data-testid="severity-current"]')!;
+      expect(current.querySelector('h2 button')!.getAttribute('aria-expanded')).toBe('true');
+      expect(el.querySelector('tr[data-dimmed]')).toBeNull(); // no dimming outside the stack grouping
+    });
+
+    it('opens "Up to date" when a search only matches settled stacks', async () => {
+      const el = await render((req) => req.flush(body()));
+      const input = el.querySelector<HTMLInputElement>('[data-testid="search"] input')!;
+      input.value = 'adguard';
+      input.dispatchEvent(new Event('input'));
+      await settle();
+      expect(sectionNames(el)).toEqual(['Up to date']);
+      const settled = el.querySelector('[data-testid="stacks-current"]')!;
+      expect(settled.querySelector('h2 button')!.getAttribute('aria-expanded')).toBe('true');
+      expect([...settled.querySelectorAll('tbody tr a')].map(text)).toEqual(['adguard']);
     });
 
     it("groups by severity, remembers it, and shows each container's stack", async () => {
@@ -844,7 +897,10 @@ describe('Dashboard', () => {
       localStorage.setItem('tidemark.view', 'tiles');
       const el = await render((req) => req.flush(body()));
       const tiles = [...el.querySelectorAll('tm-container-tile')];
-      expect(tiles.filter((t) => t.hasAttribute('data-current')).map((t) => text(t.querySelector('h3 a')))).toEqual(['sonarr', 'adguard']);
+      expect(tiles.filter((t) => t.hasAttribute('data-current')).map((t) => text(t.querySelector('h3 a')))).toEqual(['sonarr']);
+      const dimmed = tiles.filter((t) => t.hasAttribute('data-dimmed'));
+      expect(dimmed.map((t) => text(t.querySelector('h3 a')))).toEqual(['sonarr']);
+      expect(dimmed[0].className).toContain('opacity-60');
       expect(el.querySelector('[data-testid="tile-stack"]')).toBeNull();
     });
   });
@@ -866,7 +922,7 @@ describe('Dashboard', () => {
         ],
       };
     }
-    const sectionNames = (el: HTMLElement) => [...el.querySelectorAll('tm-section')].map((s) => text(s.querySelector('h2')));
+    const sectionNames = (el: HTMLElement) => [...el.querySelectorAll('[data-view] > tm-section')].map((s) => text(s.querySelector('h2')));
 
     it('keeps a reviewed update in place, faded, with a marker, and leaves it out of the hero', async () => {
       const el = await render((req) => req.flush(body()));
@@ -878,8 +934,12 @@ describe('Dashboard', () => {
       // The gauge still measures truly up to date: 2 of the 6 checked.
       expect(el.querySelector('[data-testid="gauge"]')!.getAttribute('aria-label')).toBe('2 of 6 checked containers up to date');
 
-      // media has only a reviewed update (and an up-to-date one): it drops down with the up-to-date stacks.
-      expect(sectionNames(el)).toEqual(['secrets', 'media', 'networking', 'Snoozed']);
+      // media has only a reviewed update (and an up-to-date one): it joins the settled stacks in "Up to date".
+      expect(sectionNames(el)).toEqual(['secrets', 'Up to date', 'Snoozed']);
+      el.querySelector<HTMLButtonElement>('[data-testid="stacks-current"] h2 button')!.click();
+      await settle();
+      expect([...el.querySelectorAll('[data-testid="stacks-current"] tm-section h3')].map(text)).toEqual(['media', 'networking']);
+      expect(el.querySelector('tr[data-dimmed]')).toBeNull(); // reviewed rows aren't dimmed, and settled stacks don't dim
       const row = [...el.querySelectorAll('tbody tr')].find((r) => text(r.querySelector('a')) === 'jellyfin')!;
       expect(row.querySelector('tm-update-class')!.classList).toContain('opacity-50');
       expect(row.querySelector('[data-testid="level"]')!.classList).toContain('opacity-50');

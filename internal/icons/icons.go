@@ -5,6 +5,7 @@ package icons
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,6 +36,15 @@ type Icon struct {
 	Light bool   // a light (white) variant exists, for dark backgrounds
 	Dark  bool   // a dark (black) variant exists, for light backgrounds
 }
+
+// Built-in icons are apps the selfh.st collection doesn't have; for now just Tidemark itself.
+var (
+	//go:embed builtin/tidemark.svg
+	tidemarkSVG []byte
+
+	builtins    = map[string]Icon{"tidemark": {Ref: "tidemark", Ext: "svg"}}
+	builtinData = map[string][]byte{"tidemark": tidemarkSVG}
+)
 
 // Variants of an icon file.
 const (
@@ -183,6 +193,9 @@ func (s *Service) load(data []byte) error {
 
 // Lookup returns the icon with exactly this reference.
 func (s *Service) Lookup(ref string) (Icon, bool) {
+	if ic, ok := builtins[ref]; ok {
+		return ic, true
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	ic, ok := s.byRef[ref]
@@ -203,7 +216,10 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, ref, variant str
 		name += "-" + variant
 	}
 	path := filepath.Join(s.dir, name+"."+ic.Ext)
-	data, err := os.ReadFile(path)
+	data, err := builtinData[ic.Ref], error(nil)
+	if data == nil {
+		data, err = os.ReadFile(path)
+	}
 	if err != nil {
 		data, err = s.fetchIcon(r.Context(), ic.Ext, name, path)
 		if err != nil {

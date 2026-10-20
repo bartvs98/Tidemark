@@ -57,7 +57,7 @@
       "Names": [
         "/traefik"
       ],
-      "Image": "traefik:v3.7.12",
+      "Image": "traefik:v3.7.15",
       "ImageID": "sha256:26d3d0b308d9ad4c85f100d783f2eeb679b06a5e2b03c7045088dbf0dace73f0",
       "Created": 1789000003,
       "State": "running",
@@ -80,6 +80,66 @@
       "Labels": {
         "com.docker.compose.project": "proxy",
         "com.docker.compose.service": "nginx"
+      }
+    },
+    {
+      "Id": "1809f7cd0c75acf34f56d8c19782b99c6b5fcd14128a3cc79aca38a4f94af3ff",
+      "Names": [
+        "/prometheus"
+      ],
+      "Image": "prom/prometheus:v3.15.0",
+      "ImageID": "sha256:9fce4217c9b46d8b48f83f29739f0b2f000b2628b639fb046f62f6c8c2d3fc3e",
+      "Created": 1789000010,
+      "State": "running",
+      "Status": "Up 3 weeks",
+      "Labels": {
+        "com.docker.compose.project": "monitoring",
+        "com.docker.compose.service": "prometheus"
+      }
+    },
+    {
+      "Id": "7d1f5fe325866b74deed7de98e9e310f7d4edd43678621e2f14633bb4bb1fbbb",
+      "Names": [
+        "/mosquitto"
+      ],
+      "Image": "eclipse-mosquitto:2.0.22",
+      "ImageID": "sha256:240e608bf556c121d2c581296b0be4842893972a4f966c4c31a9e7b35178ea68",
+      "Created": 1789000011,
+      "State": "running",
+      "Status": "Up 3 weeks",
+      "Labels": {
+        "com.docker.compose.project": "home",
+        "com.docker.compose.service": "mosquitto"
+      }
+    },
+    {
+      "Id": "2f968f650a0ddcb1aff098dd009f7a161c247710277f77de40d9192006a546f3",
+      "Names": [
+        "/vaultwarden"
+      ],
+      "Image": "vaultwarden/server:1.37.2",
+      "ImageID": "sha256:88a6944fa7a417b1a60c863bf3a6a69cc2448f22f38c065932f483e56eb81c07",
+      "Created": 1789000012,
+      "State": "running",
+      "Status": "Up 3 weeks",
+      "Labels": {
+        "com.docker.compose.project": "home",
+        "com.docker.compose.service": "vaultwarden"
+      }
+    },
+    {
+      "Id": "15b6db0ddb64f55d64b3da1b196f58a6c3ebf7a3056c0db57429e2ba52976bed",
+      "Names": [
+        "/audiobookshelf"
+      ],
+      "Image": "ghcr.io/advplyr/audiobookshelf:2.37.1",
+      "ImageID": "sha256:16ccc3802da71e7e18201176e69e329bfc9d382cffe70b2b2afaaff6c5e925bb",
+      "Created": 1789000014,
+      "State": "running",
+      "Status": "Up 3 weeks",
+      "Labels": {
+        "com.docker.compose.project": "media",
+        "com.docker.compose.service": "audiobookshelf"
       }
     }
   ],
@@ -144,7 +204,7 @@
     {
       "Id": "sha256:26d3d0b308d9ad4c85f100d783f2eeb679b06a5e2b03c7045088dbf0dace73f0",
       "RepoTags": [
-        "traefik:v3.7.12"
+        "traefik:v3.7.15"
       ],
       "RepoDigests": [
         "traefik@sha256:c7d6a050a60b932936155755accb71b34a01fd1d0cae68ff18700b47ba61af64"
@@ -175,6 +235,82 @@
       "Config": {
         "Labels": {
           "org.opencontainers.image.source": "https://github.com/nginx/nginx"
+        },
+        "Env": []
+      }
+    },
+    {
+      "Id": "sha256:9fce4217c9b46d8b48f83f29739f0b2f000b2628b639fb046f62f6c8c2d3fc3e",
+      "RepoTags": [
+        "prom/prometheus:v3.15.0"
+      ],
+      "RepoDigests": [
+        "prom/prometheus@sha256:f90d1b61da5f72346722f360c2f0d04c0acc468391d5935dfdece564e80091f4"
+      ],
+      "Created": "2026-09-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Variant": null,
+      "Config": {
+        "Labels": {
+          "org.opencontainers.image.source": "https://github.com/prometheus/prometheus"
+        },
+        "Env": []
+      }
+    },
+    {
+      "Id": "sha256:240e608bf556c121d2c581296b0be4842893972a4f966c4c31a9e7b35178ea68",
+      "RepoTags": [
+        "eclipse-mosquitto:2.0.22"
+      ],
+      "RepoDigests": [
+        "eclipse-mosquitto@sha256:aab1431d519fc15ef64a6500f18b602eadefbcf5a3e659ebe1b932506700f0c4"
+      ],
+      "Created": "2026-09-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Variant": null,
+      "Config": {
+        "Labels": {
+          "org.opencontainers.image.source": "https://github.com/eclipse/mosquitto"
+        },
+        "Env": []
+      }
+    },
+    {
+      "Id": "sha256:88a6944fa7a417b1a60c863bf3a6a69cc2448f22f38c065932f483e56eb81c07",
+      "RepoTags": [
+        "vaultwarden/server:1.37.2"
+      ],
+      "RepoDigests": [
+        "vaultwarden/server@sha256:493c0a14477e5ebcc0b46ade78b67f07265586b4dbc1f4670328abd65157b504"
+      ],
+      "Created": "2026-09-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Variant": null,
+      "Config": {
+        "Labels": {
+          "org.opencontainers.image.source": "https://github.com/dani-garcia/vaultwarden"
+        },
+        "Env": []
+      }
+    },
+    {
+      "Id": "sha256:16ccc3802da71e7e18201176e69e329bfc9d382cffe70b2b2afaaff6c5e925bb",
+      "RepoTags": [
+        "ghcr.io/advplyr/audiobookshelf:2.37.1"
+      ],
+      "RepoDigests": [
+        "ghcr.io/advplyr/audiobookshelf@sha256:a46348c629f9f6685be7e70644136f7764cbed684cd4b3f6983ae280a1c24229"
+      ],
+      "Created": "2026-09-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Variant": null,
+      "Config": {
+        "Labels": {
+          "org.opencontainers.image.source": "https://github.com/advplyr/audiobookshelf"
         },
         "Env": []
       }

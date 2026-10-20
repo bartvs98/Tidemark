@@ -6,6 +6,11 @@ const HIDE_DELAY_MS = 120;
 const MARGIN = 8;
 const GAP = 6;
 let nextId = 0;
+/** The open tooltip, so opening another closes it. */
+let current: TmTooltip | null = null;
+
+const INTERACTIVE =
+  'a[href], button, input, select, textarea, summary, label, [role="button"], [role="link"], [role="menuitem"], [role="tab"], [role="option"], [role="checkbox"], [role="switch"]';
 
 /**
  * A styled tooltip that replaces the native `title`.
@@ -13,8 +18,11 @@ let nextId = 0;
  *   <span [tmTooltip]="'Pinned to 1.4'">…</span>
  *
  * Empty text means no tooltip. The text is reflected as `data-tooltip` on the host.
- * Shows after a short hover or on keyboard focus (not on mouse click); hides on leave, blur,
- * Escape and scroll. The pointer may move onto the tooltip without closing it (WCAG 1.4.13).
+ * Mouse: shows after a short hover (not on click); hides on leave or press. The pointer may move
+ * onto the tooltip without closing it (WCAG 1.4.13). Keyboard: shows on focus, hides on blur.
+ * Touch and pen: a tap toggles it; a tap elsewhere closes it. A tap on a non-interactive host has
+ * its default prevented; on a link or button (or inside one) the click goes through as usual.
+ * Escape and scroll always close it, and only one tooltip is open at a time.
  * The tooltip lives in the top layer (popover API) in `document.body`, so no sticky header or
  * stretched link covers it, and is linked with `aria-describedby` while it exists.
  */
@@ -35,6 +43,8 @@ export class TmTooltip {
   private open = false;
   private openListeners: AbortController | null = null;
   private baseDescribedBy: string | null = null;
+  /** Pointer type of the latest press on the host, to tell a touch tap's click from a mouse click. */
+  private pressType = '';
 
   constructor() {
     const { signal } = this.abort;
@@ -42,8 +52,21 @@ export class TmTooltip {
     host.addEventListener('pointerenter', (e) => {
       if ((e as PointerEvent).pointerType === 'mouse') this.scheduleShow();
     }, { signal });
-    host.addEventListener('pointerleave', () => this.scheduleHide(), { signal });
-    host.addEventListener('pointerdown', () => this.hide(), { signal });
+    host.addEventListener('pointerleave', (e) => {
+      if (!isTouch(e as PointerEvent)) this.scheduleHide();
+    }, { signal });
+    host.addEventListener('pointerdown', (e) => {
+      this.pressType = (e as PointerEvent).pointerType ?? '';
+      if (!isTouch(e as PointerEvent)) this.hide();
+    }, { signal });
+    host.addEventListener('click', (e) => {
+      const tap = this.pressType === 'touch' || this.pressType === 'pen';
+      this.pressType = '';
+      if (!tap || !this.tmTooltip()) return;
+      if (!host.closest(INTERACTIVE)) e.preventDefault();
+      if (this.open) this.hide();
+      else this.show();
+    }, { signal });
     host.addEventListener('focusin', (e) => {
       if (focusVisible(e.target as Element)) this.show();
     }, { signal });
@@ -106,6 +129,8 @@ export class TmTooltip {
     clearTimeout(this.hideTimer);
     const tip = this.ensureTip();
     if (!tip || this.open) return;
+    if (current && current !== this) current.hide();
+    current = this;
     this.open = true;
     tip.showPopover?.();
     tip.dataset['open'] = '';
@@ -117,6 +142,11 @@ export class TmTooltip {
     };
     this.doc.addEventListener('keydown', onKey, { signal, capture: true });
     this.doc.addEventListener('scroll', () => this.hide(), { signal, capture: true, passive: true });
+    this.doc.addEventListener('pointerdown', (e) => {
+      const target = e.target as Node | null;
+      if (target && (this.host.contains(target) || tip.contains(target))) return;
+      this.hide();
+    }, { signal, capture: true });
   }
 
   private hide(): void {
@@ -124,6 +154,7 @@ export class TmTooltip {
     clearTimeout(this.hideTimer);
     if (!this.open) return;
     this.open = false;
+    if (current === this) current = null;
     if (this.tip) {
       delete this.tip.dataset['open'];
       try {
@@ -158,9 +189,14 @@ export class TmTooltip {
     this.tip.remove();
     this.tip = null;
     this.open = false;
+    if (current === this) current = null;
     if (this.baseDescribedBy) this.host.setAttribute('aria-describedby', this.baseDescribedBy);
     else this.host.removeAttribute('aria-describedby');
   }
+}
+
+function isTouch(e: PointerEvent): boolean {
+  return e.pointerType === 'touch' || e.pointerType === 'pen';
 }
 
 function focusVisible(el: Element): boolean {

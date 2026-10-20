@@ -268,13 +268,14 @@ export function isCurrent(c: ContainerSummary): boolean {
 }
 
 export interface StackGroup extends Stack {
-  /** Nothing to look at (every container up to date or reviewed): the stack drops below the ones that need a look. */
+  /** Nothing to look at (every container up to date or reviewed): the stack drops below the ones that need a look, into "Up to date". */
   current: boolean;
 }
 
 /**
  * Stack mode: stacks with something to look at (an open update, a failed or pending check) first,
- * then stacks that are up to date or only have reviewed updates; A→Z within each, ungrouped last.
+ * then stacks that are up to date or only have reviewed updates (`current`; under "All" the
+ * dashboard collects those in one collapsed "Up to date" section); A→Z within each, ungrouped last.
  * Pass non-ignored, non-snoozed containers.
  */
 export function orderStacks(containers: ContainerSummary[]): StackGroup[] {

@@ -13,7 +13,7 @@
 - **Per-container rules** via labels or a config file: ignore, pin to `1.4.x`, no majors, include pre-releases, custom tag pattern, source repo override.
 - **Read-only and private.** Tidemark never changes your containers. It talks to Docker through a read-only socket proxy and never reads container environment variables.
 
-![The Tidemark dashboard, dark mode on the left and light mode on the right](docs/brand/screenshot.png)
+![The Tidemark dashboard in dark mode](docs/brand/screenshot.png)
 
 Status: **early prototype.** The MVP (steps 0–7 and the brand and design steps B1–B3 of the [roadmap](docs/ROADMAP.md)) is done and runs on real images. Only public images are supported.
 
@@ -106,7 +106,7 @@ images:
 
 Edits apply on the next check, without a restart. A version a rule holds back is still shown, quietly ("18.6 held back by pin 16"). Invalid values are skipped and flagged on the dashboard; a file that doesn't load is reported there too, and the last good one stays in use.
 
-Other labels: `tidemark.icon=<selfh.st reference>` picks an icon, `tidemark.icon=none` hides it.
+Other labels: `tidemark.icon=<selfh.st reference>` picks an icon (`tidemark` is Tidemark's own, built in), `tidemark.icon=none` hides it.
 
 ## Development
 

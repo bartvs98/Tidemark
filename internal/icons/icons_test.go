@@ -33,6 +33,7 @@ const testIndex = `[
   {"Name":"Redis Commander","Reference":"redis-commander","SVG":"No","PNG":"Yes"},
   {"Name":"The Lounge","Reference":"the-lounge","SVG":"Yes","PNG":"Yes"},
   {"Name":"authentik","Reference":"authentik","SVG":"Yes","PNG":"Yes"},
+  {"Name":"Docker","Reference":"docker","SVG":"Yes","PNG":"Yes"},
   {"Name":"Server","Reference":"server","SVG":"Yes","PNG":"Yes"},
   {"Name":"Bad","Reference":"../etc/passwd","SVG":"Yes","PNG":"Yes"},
   {"Name":"No files","Reference":"nothing","SVG":"No","PNG":"No"}
@@ -70,6 +71,12 @@ func TestResolve(t *testing.T) {
 		{"redis:7", "x", "", map[string]string{LabelIcon: "cups"}, "cups"},
 		{"redis:7", "x", "", map[string]string{LabelIcon: "none"}, ""},
 		{"redis:7", "x", "", map[string]string{LabelIcon: "unknown-ref"}, "redis"}, // bad label falls back
+		{"ghcr.io/bartvs98/tidemark:1", "tidemark", "", nil, "tidemark"},           // built in
+		{"redis:7", "x", "", map[string]string{LabelIcon: "tidemark"}, "tidemark"},
+		{"ghcr.io/bartvs98/tidemark:1", "tidemark", "", map[string]string{LabelIcon: "none"}, ""},
+		{"ghcr.io/bartvs98/tidemark:1", "tidemark", "", map[string]string{LabelIcon: "cups"}, "cups"}, // label beats built in
+		{"tecnativa/docker-socket-proxy:v0.5.0", "tidemark-socket-proxy", "", nil, "docker"},          // alias
+		{"lscr.io/linuxserver/socket-proxy:latest", "socket-proxy", "", nil, "docker"},
 	}
 	for _, tt := range tests {
 		ref, err := imageref.Parse(tt.image)
@@ -101,6 +108,24 @@ func TestResolveBeforeIndexLoaded(t *testing.T) {
 	ref, _ := imageref.Parse("redis")
 	if _, ok := s.Resolve(ref, "redis", "", nil); ok {
 		t.Error("expected no icon before the index is loaded")
+	}
+	ref, _ = imageref.Parse("ghcr.io/bartvs98/tidemark:latest")
+	if ic, ok := s.Resolve(ref, "tidemark", "", nil); !ok || ic.Ref != "tidemark" {
+		t.Errorf("built-in icon = %+v, %v; want tidemark before the index loads", ic, ok)
+	}
+}
+
+func TestServeBuiltin(t *testing.T) {
+	s := New("http://unused", t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	rec := httptest.NewRecorder()
+	s.Serve(rec, httptest.NewRequest("GET", "/api/icons/tidemark", nil), "tidemark", VariantDefault)
+	if rec.Code != 200 || rec.Header().Get("Content-Type") != "image/svg+xml" || !strings.Contains(rec.Body.String(), "<title>Tidemark</title>") {
+		t.Errorf("builtin: %d %q %q", rec.Code, rec.Header().Get("Content-Type"), rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	s.Serve(rec, httptest.NewRequest("GET", "/api/icons/tidemark?variant=light", nil), "tidemark", VariantLight)
+	if rec.Code != 404 {
+		t.Errorf("builtin light variant: %d, want 404", rec.Code)
 	}
 }
 

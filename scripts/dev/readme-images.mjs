@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Renders the README images into docs/brand/: the banner (dark + light) and a dashboard
-// screenshot split diagonally into dark and light mode.
+// screenshot in dark mode.
 //
 //   node scripts/dev/verify.mjs --serve --snapshot scripts/dev/demo-snapshot.json   # in another terminal
-//   node scripts/dev/readme-images.mjs [--base http://127.0.0.1:18080] [--view list] [--group severity]
+//   node scripts/dev/readme-images.mjs [--base http://127.0.0.1:18080] [--view list] [--group stack]
 //
 // The banner needs no server; skip the screenshot with --banner-only.
 
@@ -22,7 +22,7 @@ const opt = (name, fallback) => {
 };
 const base = opt('base', 'http://127.0.0.1:18080');
 const view = opt('view', 'list');
-const group = opt('group', 'severity');
+const group = opt('group', 'stack');
 
 const chrome = [
   process.env.CHROME_PATH,
@@ -106,56 +106,32 @@ for (const [name, t] of Object.entries(THEMES)) {
   console.log(`✓ ${file}`);
 }
 
-// ── split screenshot ─────────────────────────────────────
+// ── screenshot ───────────────────────────────────────────
 if (!args.includes('--banner-only')) {
-  const SW = 1280;
-  const SH = 1000;
-  const shots = {};
-  await page.setViewport({ width: SW, height: SH, deviceScaleFactor: 2 });
-  for (const theme of ['dark', 'light']) {
-    await page.goto(base + '/', { waitUntil: 'networkidle0' });
-    await page.evaluate(
-      (t, v, g) => {
-        localStorage.setItem('tidemark.theme', t);
-        localStorage.setItem('tidemark.view', v);
-        localStorage.setItem('tidemark.group', g);
-      },
-      theme,
-      view,
-      group,
-    );
-    await page.reload({ waitUntil: 'networkidle0' });
-    await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
-    // A server that just started runs its first check; wait for the results.
-    await page.waitForFunction(() => !document.body.innerText.includes('Checking'), { timeout: 180000 });
-    // The screenshot shows a made-up host: drop the "Snapshot" badge.
-    await page.evaluate(() =>
-      document.querySelectorAll('[data-testid=hero] tm-badge').forEach((b) => b.textContent.trim().startsWith('Snapshot') && b.remove()),
-    );
-    await new Promise((r) => setTimeout(r, 800));
-    shots[theme] = 'data:image/png;base64,' + (await page.screenshot({ encoding: 'base64' }));
-  }
-
-  // Dark on the left, light on the right, split along a slight diagonal.
-  await page.setContent(
-    `<!doctype html><html><head><style>
-      html, body { margin: 0; }
-      .split { position: relative; width: ${SW}px; height: ${SH}px; overflow: hidden; }
-      .split img { position: absolute; inset: 0; width: 100%; height: 100%; }
-      .light { clip-path: polygon(56% 0, 100% 0, 100% 100%, 44% 100%); }
-      .line { position: absolute; inset: 0; width: 100%; height: 100%; }
-    </style></head><body>
-      <div class="split">
-        <img src="${shots.dark}"><img class="light" src="${shots.light}">
-        <svg class="line" viewBox="0 0 ${SW} ${SH}" preserveAspectRatio="none">
-          <line x1="${SW * 0.56}" y1="0" x2="${SW * 0.44}" y2="${SH}" stroke="#2DD4BF" stroke-width="2"/>
-        </svg>
-      </div>
-    </body></html>`,
-    { waitUntil: 'load' },
+  // Tall enough for every demo stack and the collapsed "Up to date" section.
+  await page.setViewport({ width: 1280, height: 1150, deviceScaleFactor: 2 });
+  await page.goto(base + '/', { waitUntil: 'networkidle0' });
+  await page.evaluate(
+    (v, g) => {
+      localStorage.setItem('tidemark.theme', 'dark');
+      localStorage.setItem('tidemark.view', v);
+      localStorage.setItem('tidemark.group', g);
+    },
+    view,
+    group,
   );
+  await page.reload({ waitUntil: 'networkidle0' });
+  await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+  // A server that just started runs its first check; wait for the results.
+  await page.waitForFunction(() => !document.body.innerText.includes('Checking'), { timeout: 180000 });
+  // The screenshot shows a made-up host: drop the "Snapshot" badge, and the "Check finished" toast.
+  await page.evaluate(() => {
+    document.querySelectorAll('[data-testid=hero] tm-badge').forEach((b) => b.textContent.trim().startsWith('Snapshot') && b.remove());
+    document.querySelectorAll('tm-toaster').forEach((t) => t.remove());
+  });
+  await new Promise((r) => setTimeout(r, 800));
   const file = join(OUT, 'screenshot.png');
-  await (await page.$('.split')).screenshot({ path: file });
+  await page.screenshot({ path: file });
   console.log(`✓ ${file}`);
 }
 

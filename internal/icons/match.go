@@ -20,31 +20,38 @@ var aliases = map[string]string{
 	"mongo":             "mongodb",
 	"eclipse-mosquitto": "mosquitto",
 	"httpd":             "apache",
+	// Docker socket proxies (Tidemark's own compose file runs one) get the Docker icon.
+	"docker-socket-proxy": "docker",
+	"socket-proxy":        "docker",
 }
 
 // Resolve picks an icon for a container. Order:
 //  1. the tidemark.icon label ("none" turns icons off for that container)
-//  2. the image's last path segment: exact, alias, trimmed (woodpecker-agent → uptime-kuma), unique prefix
-//  3. the image's namespaces (vaultwarden/server → vaultwarden), exact only
-//  4. the Compose service and container name, which users choose freely, so they come last
+//  2. a built-in icon for the image's last path segment (Tidemark's own image)
+//  3. the image's last path segment: exact, alias, trimmed (woodpecker-agent → uptime-kuma), unique prefix
+//  4. the image's namespaces (vaultwarden/server → vaultwarden), exact only
+//  5. the Compose service and container name, which users choose freely, so they come last
 func (s *Service) Resolve(ref imageref.Ref, name, service string, labels map[string]string) (Icon, bool) {
+	label := strings.TrimSpace(labels[LabelIcon])
+	if label == "none" {
+		return Icon{}, false
+	}
+	if ic, ok := s.Lookup(label); ok {
+		return ic, true
+	}
+	// An unknown label reference falls through to automatic matching.
+
+	// Built-in icons work before the index loads, and even when the CDN is unreachable.
+	segs := strings.Split(ref.Repository, "/")
+	if ic, ok := builtins[segs[len(segs)-1]]; ok {
+		return ic, true
+	}
+
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.byRef == nil {
 		return Icon{}, false
 	}
-
-	if v := strings.TrimSpace(labels[LabelIcon]); v != "" {
-		if v == "none" {
-			return Icon{}, false
-		}
-		if ic, ok := s.byRef[v]; ok {
-			return ic, true
-		}
-		// Unknown reference: fall through to automatic matching.
-	}
-
-	segs := strings.Split(ref.Repository, "/")
 	if ic, ok := s.match(segs[len(segs)-1], true); ok {
 		return ic, true
 	}

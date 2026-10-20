@@ -196,6 +196,7 @@ export class Styleguide {
 
   protected readonly ignoredOpen = signal(false);
   protected readonly snoozedOpen = signal(true);
+  protected readonly settledOpen = signal(true);
 
   protected readonly menuItems: MenuOption[] = [
     { value: 'day', label: '1 day' },
@@ -345,6 +346,16 @@ export class Styleguide {
   protected readonly tiles = this.stacks
     .flatMap((s) => s.containers)
     .filter((c) => ['jellyfin', 'sonarr', 'immich-server', 'redis', 'radarr', 'private-app'].includes(c.name));
+
+  /** Settled stacks (everything up to date), as they sit inside the dashboard's "Up to date" section. */
+  protected readonly settledStacks = groupByStack([
+    sample('adguard', 'adguard/adguardhome:v0.107.62', {
+      stack: 'networking',
+      update: { ...UPDATE, running: 'v0.107.62', latest: 'v0.107.62', class: 'none' },
+    }),
+    sample('caddy', 'caddy:2.10', { stack: 'networking', update: { ...UPDATE, running: '2.10.0', latest: '2.10.0', class: 'none' } }),
+    sample('filebrowser', 'filebrowser/filebrowser:v8.13', { update: { ...UPDATE, running: 'v8.13.0', latest: 'v8.13.0', class: 'none' } }),
+  ]);
 
   /** An updatable and an up-to-date container, with the stack name shown (the "group by severity" layout). */
   protected readonly stackSamples = this.stacks.flatMap((s) => s.containers).filter((c) => ['jellyfin', 'sonarr'].includes(c.name));

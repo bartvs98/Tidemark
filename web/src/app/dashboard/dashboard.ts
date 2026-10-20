@@ -125,7 +125,24 @@ export class Dashboard {
     return this.split().active.filter((c) => matchesFilter(c, filter) && matchesQuery(c, query));
   });
   /** Stack mode: stacks that need a look first, fully up-to-date stacks after. */
-  protected readonly shownStacks = computed(() => orderStacks(this.shown()));
+  private readonly shownStacks = computed(() => orderStacks(this.shown()));
+  /**
+   * Stack mode: settled stacks (every container up to date or reviewed) go together into one
+   * collapsed "Up to date" section, under "All" only: the Updates and Breaking filters show
+   * reviewed updates on purpose, so there every stack keeps its own section (settled ones last).
+   */
+  private readonly collectSettled = computed(() => this.filter() === 'all');
+  /** Stack mode: the stacks shown as their own sections. */
+  protected readonly workStacks = computed(() => this.shownStacks().filter((s) => !this.collectSettled() || !s.current));
+  /** Stack mode: the stacks inside "Up to date". */
+  protected readonly settledStacks = computed(() => (this.collectSettled() ? this.shownStacks().filter((s) => s.current) : []));
+  /**
+   * A search whose only matches in the stacks are in settled ones: the collapsed "Up to date"
+   * section opens (see the effect below), so the matches don't hide behind it.
+   */
+  private readonly searchOnlySettled = computed(
+    () => !!this.needle() && this.workStacks().length === 0 && this.settledStacks().length > 0,
+  );
   /** Severity mode: Breaking, Attention, Updates, Check failed, Not checked yet, Up to date. */
   protected readonly shownSeverity = computed(() => groupBySeverity(this.shown()));
   /** Ignored containers have no update, so they only show under "All". */
@@ -141,7 +158,7 @@ export class Dashboard {
   protected readonly nothingShown = computed(
     () => this.shown().length === 0 && this.shownSnoozed().length === 0 && this.shownIgnored().length === 0,
   );
-  /** Severity mode's "Up to date" section: collapsed by default, like "Ignored". */
+  /** The "Up to date" section (severity mode's group, stack mode's settled stacks): collapsed by default, like "Ignored". One signal, so it stays open or closed across both groupings. */
   protected readonly currentOpen = signal(false);
   protected readonly snoozedOpen = signal(false);
   protected readonly ignoredOpen = signal(false);
@@ -255,6 +272,12 @@ export class Dashboard {
     effect(() => store(FILTER_KEY, this.filter()));
     effect(() => store(GROUP_KEY, this.group()));
     effect(() => storeSession(QUERY_KEY, this.query()));
+
+    // Searching for something that's only in settled stacks: open "Up to date" so the matches show.
+    // Runs when that turns true; closing the section again is up to the user.
+    effect(() => {
+      if (this.searchOnlySettled()) this.currentOpen.set(true);
+    });
 
     // While a check runs, poll so results appear as they come in. Depend on the status
     // object (new on every response), not the boolean, which stays `true` between polls.

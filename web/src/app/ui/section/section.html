@@ -1,25 +1,19 @@
-<header class="mb-4 flex min-h-8 items-center gap-2.5" [class.text-fg-muted]="muted()">
+<header class="flex items-center gap-2.5" [class]="level() === 3 ? 'mb-3 min-h-7' : 'mb-4 min-h-8'" [class.text-fg-muted]="muted()">
   @if (collapsible()) {
-    <h2 [id]="headingId" class="text-xl font-semibold tracking-tight">
-      <button
-        type="button"
-        class="-mx-1 flex cursor-pointer items-center gap-2 rounded-sm px-1 hover:text-fg"
-        [attr.aria-expanded]="open()"
-        [attr.aria-controls]="bodyId"
-        (click)="open.set(!open())"
-      >
-        <tm-icon name="chevron-right" [size]="14" class="text-fg-subtle transition-transform" [class.rotate-90]="open()" />
-        @if (icon(); as icon) {
-          <tm-icon [name]="icon" class="text-fg-subtle" />
-        }
-        {{ heading() }}
-      </button>
-    </h2>
+    @if (level() === 3) {
+      <h3 [id]="headingId" [class]="headingClass()"><ng-container *ngTemplateOutlet="toggle" /></h3>
+    } @else {
+      <h2 [id]="headingId" [class]="headingClass()"><ng-container *ngTemplateOutlet="toggle" /></h2>
+    }
   } @else {
     @if (icon(); as icon) {
       <tm-icon [name]="icon" class="text-fg-subtle" />
     }
-    <h2 [id]="headingId" class="text-xl font-semibold tracking-tight">{{ heading() }}</h2>
+    @if (level() === 3) {
+      <h3 [id]="headingId" [class]="headingClass()">{{ heading() }}</h3>
+    } @else {
+      <h2 [id]="headingId" [class]="headingClass()">{{ heading() }}</h2>
+    }
   }
   @if (meta()) {
     <span class="text-sm text-fg-subtle">{{ meta() }}</span>
@@ -27,3 +21,19 @@
   <div class="ml-auto flex items-center gap-2 empty:hidden"><ng-content select="[tmSectionActions]" /></div>
 </header>
 <div [id]="bodyId" [hidden]="collapsible() && !open()"><ng-content /></div>
+
+<ng-template #toggle>
+  <button
+    type="button"
+    class="-mx-1 flex cursor-pointer items-center gap-2 rounded-sm px-1 hover:text-fg"
+    [attr.aria-expanded]="open()"
+    [attr.aria-controls]="bodyId"
+    (click)="open.set(!open())"
+  >
+    <tm-icon name="chevron-right" [size]="14" class="text-fg-subtle transition-transform" [class.rotate-90]="open()" />
+    @if (icon(); as icon) {
+      <tm-icon [name]="icon" class="text-fg-subtle" />
+    }
+    {{ heading() }}
+  </button>
+</ng-template>

@@ -35,6 +35,12 @@
   }
   /* A row whose stretched link (after:absolute inset-0 on a link inside) opens it.
      Elements that must stay interactive on their own (tooltips) get position: relative + z-index. */
+  /* tm-table-dim (dimCurrent): the card is transparent and only rows that aren't dimmed paint the
+     surface, so a dimmed row shows the page behind it, like a quiet tile. :where keeps this below
+     the hover and focus backgrounds. */
+  .tm-table-dim tbody tr:where(:not([data-dimmed])) td {
+    background: var(--color-surface);
+  }
   .tm-table tr.tm-row-link {
     position: relative;
     cursor: pointer;
@@ -69,6 +75,12 @@
     }
     .tm-table-stack tbody tr:last-child {
       border-bottom: 0;
+    }
+    .tm-table-stack.tm-table-dim tbody tr:where(:not([data-dimmed])) {
+      background: var(--color-surface);
+    }
+    .tm-table-stack.tm-table-dim tbody tr td {
+      background: none;
     }
     .tm-table-stack tbody tr:is(:hover, :has(a:focus-visible)) {
       background: var(--color-hover);

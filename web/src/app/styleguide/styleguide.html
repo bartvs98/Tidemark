@@ -151,18 +151,39 @@
       readers. Rows are <span class="font-mono text-sm">tr.tm-row-link</span>: the name is a stretched link, so the whole
       row is clickable (here it stays on this page). Below 640px, <span class="font-mono text-sm">tm-table-stack</span>
       stacks each row: name first, then version and update. Rows that are up to date are toned down
-      automatically (<span class="font-mono text-sm">data-current</span>), so the ones with an update stand out. With
+      automatically (<span class="font-mono text-sm">data-current</span>), so the ones with an update stand out; in a stack
+      that has something to do, <span class="font-mono text-sm">dimCurrent</span> also fades those rows as a whole
+      (<span class="font-mono text-sm">data-dimmed</span>, 60%, full again on hover or keyboard focus; sonarr below). With
       <span class="font-mono text-sm">showStack</span> the stack name sits before the status, for lists that aren't grouped by stack.
+      Stacks with nothing to do go together into one collapsed, muted "Up to date" section, each a
+      <span class="font-mono text-sm">level</span> 3 sub-section (smaller <span class="font-mono text-sm">h3</span> heading).
     </p>
     <tm-column-bar />
     <div class="flex flex-col gap-10">
       @for (stack of stacks; track stack.name) {
         <tm-section [heading]="stack.name ?? 'Ungrouped'" [icon]="stack.name ? 'layers' : 'box'" [meta]="stack.containers.length + ' containers'">
-          <tm-container-table [containers]="stack.containers" [link]="sampleLink" />
+          <tm-container-table [containers]="stack.containers" [link]="sampleLink" dimCurrent />
         </tm-section>
       }
       <tm-section heading="With showStack" icon="layers" meta="2 containers">
         <tm-container-table [containers]="stackSamples" [link]="sampleLink" showStack />
+      </tm-section>
+      <tm-section heading="Up to date" icon="circle-check" [meta]="settledStacks.length + ' stacks'" collapsible muted [(open)]="settledOpen">
+        @if (settledOpen()) {
+          <div class="flex flex-col gap-8">
+            @for (stack of settledStacks; track stack.name) {
+              <tm-section
+                [level]="3"
+                [heading]="stack.name ?? 'Ungrouped'"
+                [icon]="stack.name ? 'layers' : 'box'"
+                [meta]="stack.containers.length + (stack.containers.length === 1 ? ' container' : ' containers')"
+                muted
+              >
+                <tm-container-table [containers]="stack.containers" [link]="sampleLink" />
+              </tm-section>
+            }
+          </div>
+        }
       </tm-section>
     </div>
   </section>
@@ -173,7 +194,8 @@
     <p class="mb-4 text-fg-muted">
       <span class="font-mono text-sm">tm-container-tile</span>: the dashboard's tile view. The whole tile is a stretched
       link; keyboard focus outlines it. Up-to-date tiles are quiet (no surface, muted name); tiles with an update stay
-      prominent. <span class="font-mono text-sm">showStack</span> adds the stack name before the status.
+      prominent. <span class="font-mono text-sm">showStack</span> adds the stack name before the status;
+      <span class="font-mono text-sm">dimCurrent</span> fades an up-to-date tile as a whole, as in a stack that has something to do.
     </p>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       @for (c of tiles; track c.id) {
@@ -184,6 +206,12 @@
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       @for (c of stackSamples; track c.id) {
         <tm-container-tile [container]="c" [link]="sampleLink" showStack />
+      }
+    </div>
+    <h3 class="mt-6 mb-2 text-sm font-medium text-fg-muted">With dimCurrent</h3>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      @for (c of stackSamples; track c.id) {
+        <tm-container-tile [container]="c" [link]="sampleLink" dimCurrent />
       }
     </div>
   </section>
@@ -255,7 +283,8 @@
     <h2 class="mb-1 text-xl font-semibold">Tooltips</h2>
     <p class="mb-4 text-fg-muted">
       <span class="font-mono text-sm">[tmTooltip]</span> replaces the native <span class="font-mono text-sm">title</span>. It
-      appears after a short hover or on keyboard focus, closes on Escape, and the pointer can move onto it. A newline in the
+      appears after a short hover or on keyboard focus, and on touch a tap toggles it (a tap elsewhere closes it). It closes
+      on Escape, only one is open at a time, and the pointer can move onto it. A newline in the
       text gives a second line. Empty text shows nothing.
     </p>
     <tm-card>

@@ -1,7 +1,8 @@
-<tm-card flush>
+<!-- dimCurrent: the card goes transparent and rows paint their own surface (tm-table-dim), so dimmed rows show the page. -->
+<tm-card flush [class.bg-transparent!]="dimCurrent()">
   <div class="overflow-x-auto">
     <!-- tm-table-stack: below 640px each row stacks (name, then version + update), see components.css -->
-    <table class="tm-table tm-table-stack table-fixed sm:min-w-[44rem]">
+    <table class="tm-table tm-table-stack table-fixed sm:min-w-[44rem]" [class.tm-table-dim]="dimCurrent()">
       <colgroup>
         @for (col of columns; track col.label) {
           <col [class]="col.width" />
@@ -16,11 +17,25 @@
       </thead>
       <tbody>
         @for (c of containers(); track c.id) {
-          <!-- data-current: up to date, so the row is toned down; rows with an update stay prominent. -->
-          <tr class="tm-row-link" [attr.data-current]="isCurrent(c) ? '' : null">
+          <!-- data-current: up to date, so the row is toned down; rows with an update stay prominent.
+               data-dimmed (dimCurrent): the whole row fades and shows the page behind it, like a quiet tile;
+               hover and keyboard focus bring back the opacity and the icon and name colours. -->
+          <tr
+            class="tm-row-link"
+            [class]="dimmed(c) ? dimClass : ''"
+            [attr.data-current]="isCurrent(c) ? '' : null"
+            [attr.data-dimmed]="dimmed(c) ? '' : null"
+          >
             <td data-stack="full" class="sm:py-3.5">
               <div class="flex items-center gap-3">
-                <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="20" [class.opacity-50]="quiet(c)" [class.grayscale]="quiet(c)" />
+                <tm-app-icon
+                  [icon]="c.icon"
+                  [name]="c.name"
+                  [size]="20"
+                  [class]="dimmed(c) ? dimIcon : ''"
+                  [class.opacity-50]="quiet(c)"
+                  [class.grayscale]="quiet(c)"
+                />
                 <div class="min-w-0">
                   <div class="flex items-center gap-2">
                     <!-- Stretched link: the whole row opens the detail page, but stays one link for keyboards and screen readers. -->
