@@ -23,8 +23,8 @@ func byName(t *testing.T, list []Container) map[string]Container {
 // checkFixture asserts the decoded testdata/snapshot.json, shared by snapshot and live client tests.
 func checkFixture(t *testing.T, list []Container) {
 	t.Helper()
-	if len(list) != 4 {
-		t.Fatalf("got %d containers, want 4", len(list))
+	if len(list) != 5 {
+		t.Fatalf("got %d containers, want 5", len(list))
 	}
 	c := byName(t, list)
 
@@ -51,8 +51,12 @@ func checkFixture(t *testing.T, list []Container) {
 	if r := c["retagged"]; r.ImageRef != "example/retagged:2.0" || r.Project != "" || r.Labels == nil {
 		t.Errorf("retagged: bare image ID should fall back to the image's tag, got %+v", r)
 	}
-	if o := c["orphan"]; !o.Image.Missing || o.Image.ID != "sha256:ddd" {
+	if o := c["orphan"]; !o.Image.Missing || o.Image.ID != "sha256:ddd" || o.Image.InspectError != "" {
 		t.Errorf("orphan: image should be marked missing, got %+v", o.Image)
+	}
+	// Pulled again without recreating: the old image has no tag left, only its digest.
+	if p := c["pulled"]; p.ImageRef != "redis@sha256:999" {
+		t.Errorf("pulled: bare image ID should fall back to the image's digest, got %q", p.ImageRef)
 	}
 }
 
@@ -152,6 +156,34 @@ func TestClientEngineError(t *testing.T) {
 	_, err := c.Containers(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "forbidden by administrative rules") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestClientImageInspectErrorIsPerContainer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/containers/json":
+			_, _ = w.Write([]byte(`[{"Id":"1","Names":["/ok"],"Image":"a:1","ImageID":"sha256:a"},{"Id":"2","Names":["/bad"],"Image":"b:1","ImageID":"sha256:b"}]`))
+		case "/images/sha256:a/json":
+			_, _ = w.Write([]byte(`{"Id":"sha256:a","RepoTags":["a:1"]}`))
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"message":"layer store broken"}`))
+		}
+	}))
+	defer srv.Close()
+
+	c, _ := NewClient("tcp://" + strings.TrimPrefix(srv.URL, "http://"))
+	list, err := c.Containers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := byName(t, list)
+	if m["ok"].Image.Missing {
+		t.Errorf("ok: %+v", m["ok"].Image)
+	}
+	if b := m["bad"].Image; !b.Missing || !strings.Contains(b.InspectError, "layer store broken") {
+		t.Errorf("bad: %+v", b)
 	}
 }
 

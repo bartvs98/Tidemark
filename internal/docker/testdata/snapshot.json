@@ -45,6 +45,16 @@
       "State": "created",
       "Status": "Created",
       "Labels": {}
+    },
+    {
+      "Id": "c-pulled",
+      "Names": ["/pulled"],
+      "Image": "sha256:eee",
+      "ImageID": "sha256:eee",
+      "Created": 1759305604,
+      "State": "running",
+      "Status": "Up 9 days",
+      "Labels": {}
     }
   ],
   "images": [
@@ -75,6 +85,15 @@
       "Id": "sha256:ccc",
       "RepoTags": ["example/retagged:2.0"],
       "RepoDigests": [],
+      "Created": "2025-01-01T00:00:00Z",
+      "Architecture": "amd64",
+      "Os": "linux",
+      "Config": { "Labels": {} }
+    },
+    {
+      "Id": "sha256:eee",
+      "RepoTags": [],
+      "RepoDigests": ["redis@sha256:999"],
       "Created": "2025-01-01T00:00:00Z",
       "Architecture": "amd64",
       "Os": "linux",

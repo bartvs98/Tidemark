@@ -46,6 +46,8 @@ type Image struct {
 	// image environment is kept.
 	VersionEnv map[string]string
 	Missing    bool // the image could not be inspected (deleted since the container was created)
+	// InspectError is set (with Missing) when inspecting the image failed for another reason.
+	InspectError string
 }
 
 const (
@@ -77,6 +79,8 @@ type apiImage struct {
 		Labels map[string]string `json:"Labels"`
 		Env    []string          `json:"Env"`
 	} `json:"Config"`
+
+	inspectErr string // set by the client when the inspect failed with something other than 404
 }
 
 func (c apiContainer) toContainer(images map[string]apiImage) Container {
@@ -93,17 +97,24 @@ func (c apiContainer) toContainer(images map[string]apiImage) Container {
 		Service:  c.Labels[labelService],
 		Labels:   orEmpty(c.Labels),
 	}
-	// When an image is re-tagged after the container started, Docker reports the bare
-	// image ID as the container's image. Fall back to the image's own tag if it has one.
-	if strings.HasPrefix(out.ImageRef, "sha256:") && len(img.RepoTags) > 0 {
-		out.ImageRef = img.RepoTags[0]
+	// When an image is re-tagged after the container started (a `docker pull` without
+	// recreating it), Docker reports the bare image ID as the container's image. Fall back
+	// to the image's own tag if it has one, else to its registry digest ("redis@sha256:…"):
+	// the old image keeps that, and it's checked like an image pinned by digest.
+	if strings.HasPrefix(out.ImageRef, "sha256:") {
+		switch {
+		case len(img.RepoTags) > 0:
+			out.ImageRef = img.RepoTags[0]
+		case len(img.RepoDigests) > 0:
+			out.ImageRef = img.RepoDigests[0]
+		}
 	}
 	return out
 }
 
 func (i apiImage) toImage(id string, found bool) Image {
-	if !found {
-		return Image{ID: id, Missing: true, Labels: map[string]string{}, VersionEnv: map[string]string{}}
+	if !found || i.inspectErr != "" {
+		return Image{ID: id, Missing: true, InspectError: i.inspectErr, Labels: map[string]string{}, VersionEnv: map[string]string{}}
 	}
 	created, _ := time.Parse(time.RFC3339Nano, i.Created)
 	platform := i.Os + "/" + i.Architecture

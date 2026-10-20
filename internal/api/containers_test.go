@@ -43,7 +43,7 @@ func TestContainers(t *testing.T) {
 	for _, c := range body.Containers {
 		names = append(names, c.Name)
 	}
-	want := []string{"orphan", "retagged", "jellyfin", "uptime-kuma"}
+	want := []string{"orphan", "pulled", "retagged", "jellyfin", "uptime-kuma"}
 	if len(names) != len(want) {
 		t.Fatalf("names = %v", names)
 	}
@@ -53,7 +53,12 @@ func TestContainers(t *testing.T) {
 		}
 	}
 
-	uptime-kuma := body.Containers[3]
+	// Pulled again without recreating: checked by the old image's digest.
+	if p := body.Containers[1]; p.Image.Repository != "library/redis" || p.Image.Tag != "" {
+		t.Errorf("pulled = %+v", p.Image)
+	}
+
+	uptime-kuma := body.Containers[4]
 	if uptime-kuma.Stack != "monitoring" || uptime-kuma.Image.Display != "louislam/uptime-kuma:latest" ||
 		uptime-kuma.Image.Registry != "docker.io" || uptime-kuma.Image.Tag != "latest" || uptime-kuma.Image.Platform != "linux/arm64/v8" {
 		t.Errorf("uptime-kuma = %+v", uptime-kuma)

@@ -351,6 +351,9 @@ func (s *Service) checkOne(ctx context.Context, c docker.Container, rs rules.Rul
 	entry := Entry{ImageRef: c.ImageRef, ImageID: c.Image.ID, Rules: rs.Fingerprint()}
 	if c.Image.Missing {
 		entry.Err, entry.FailedAt = "the container's image is no longer on this host", time.Now()
+		if c.Image.InspectError != "" {
+			entry.Err = "inspecting the image failed: " + c.Image.InspectError
+		}
 		return entry
 	}
 	ctx, cancel := context.WithTimeout(ctx, containerTimeout)

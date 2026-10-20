@@ -83,6 +83,13 @@ func TestResolve(t *testing.T) {
 			noHeads: true,
 		},
 		{
+			// After `docker pull` without recreating, the inventory falls back to the old image's digest.
+			name: "digest only: the version comes from a digest match",
+			c:    container("redis@sha256:72", "redis@sha256:72", nil),
+			reg:  &fakeRegistry{tags: []string{"7.2", "7.4", "latest"}, digests: map[string]string{"7.4": "sha256:74", "7.2": "sha256:72"}},
+			want: Result{Running: "7.2", Source: SourceDigest, Latest: "7.4", Class: version.Minor},
+		},
+		{
 			name: "variant tag: matches the same spelling, prefers it for latest",
 			c:    container("postgres:16-alpine", "postgres@sha256:169", nil),
 			reg: &fakeRegistry{

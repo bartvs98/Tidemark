@@ -68,10 +68,11 @@ func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 		var img apiImage
 		err := c.get(ctx, "/images/"+url.PathEscape(ct.ImageID)+"/json", &img)
 		if err != nil {
-			if isNotFound(err) {
-				continue // image removed; the container is reported with Image.Missing
+			if !isNotFound(err) {
+				// Only this container's check fails; the others are still listed.
+				images[ct.ImageID] = apiImage{inspectErr: err.Error()}
 			}
-			return nil, err
+			continue // a removed image: the container is reported with Image.Missing
 		}
 		images[ct.ImageID] = img
 	}
