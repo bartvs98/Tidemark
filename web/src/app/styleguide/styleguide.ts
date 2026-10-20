@@ -318,7 +318,7 @@ export class Styleguide {
     {
       label: 'Channel build (nightly), new build available',
       container: sample('mealie', 'ghcr.io/mealie-recipes/mealie:nightly', {
-        update: { ...UPDATE, source: 'unknown', channel: 'nightly', latest: 'v2.36.0', class: 'digest', newImage: true },
+        update: { ...UPDATE, source: 'unknown', channel: 'nightly', latest: 'v3.1.0', class: 'digest', newImage: true },
       }),
     },
     {
@@ -383,7 +383,7 @@ export class Styleguide {
       update: { ...UPDATE, running: 'v0.107.62', latest: 'v0.107.62', class: 'none' },
     }),
     sample('caddy', 'caddy:2.10', { stack: 'networking', update: { ...UPDATE, running: '2.10.0', latest: '2.10.0', class: 'none' } }),
-    sample('filebrowser', 'filebrowser/filebrowser:v8.13', { update: { ...UPDATE, running: 'v8.13.0', latest: 'v8.13.0', class: 'none' } }),
+    sample('filebrowser', 'filebrowser/filebrowser:v2.32', { update: { ...UPDATE, running: 'v2.32.0', latest: 'v2.32.0', class: 'none' } }),
   ]);
 
   /** An updatable and an up-to-date container, with the stack name shown (the "group by severity" layout). */

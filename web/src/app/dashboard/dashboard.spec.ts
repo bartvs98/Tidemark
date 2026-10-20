@@ -286,7 +286,7 @@ describe('Dashboard', () => {
     const icons = [...el.querySelectorAll('tm-app-icon')];
     expect(icons[0].querySelector('img')?.getAttribute('src')).toBe('/api/icons/jellyfin');
     expect(icons[1].querySelector('img')).toBeNull();
-    expect(icons[1].textContent?.trim()).toBe('S');
+    expect(icons[1].textContent?.trim()).toBe('M');
   });
 
   it('switches to tiles and remembers the choice', async () => {
@@ -818,8 +818,8 @@ describe('Dashboard', () => {
           container('sonarr', 'media', { update: checked('none') }),
           container('vault', 'secrets', { update: checked('minor', 'attention') }),
           container('adguard', 'networking', { update: checked('none') }),
-          container('stirling', 'recipes', { update: checked('patch') }),
-          container('private', 'recipes', { update: neverChecked }),
+          container('stirling-pdf', 'office', { update: checked('patch') }),
+          container('private', 'office', { update: neverChecked }),
           container('filebrowser', 'tools', { rules: { ignore: true, from: { ignore: 'label' } } }),
         ],
       };
@@ -845,15 +845,15 @@ describe('Dashboard', () => {
     it('shows a channel build (nightly) without comparing it to the newest stable release', async () => {
       const list = body();
       list.containers = [
-        container('mealie', 'streams', {
-          update: checked('digest', 'none', { running: undefined, source: 'unknown', channel: 'nightly', latest: 'v2.36.0', floating: true, newImage: true }),
+        container('mealie', 'food', {
+          update: checked('digest', 'none', { running: undefined, source: 'unknown', channel: 'nightly', latest: 'v3.1.0', floating: true, newImage: true }),
         }),
       ];
       const el = await render((req) => req.flush(list));
       const row = text(el.querySelector('tm-container-version'));
       expect(row).toContain('nightly');
       expect(row).toContain('new build available');
-      expect(row).toContain('newest stable v2.36.0');
+      expect(row).toContain('newest stable v3.1.0');
       expect(row).not.toContain('?');
       expect(row).not.toContain('running version unknown');
     });
@@ -881,7 +881,7 @@ describe('Dashboard', () => {
 
     it('in stack mode, keeps stacks whole, dims current rows and tucks settled stacks into "Up to date"', async () => {
       const el = await render((req) => req.flush(body()));
-      expect(sectionNames(el)).toEqual(['media', 'recipes', 'secrets', 'Up to date', 'Ignored']);
+      expect(sectionNames(el)).toEqual(['media', 'office', 'secrets', 'Up to date', 'Ignored']);
       const rowNames = (rows: Element[]) => rows.map((r) => text(r.querySelector('a')));
       // sonarr is up to date in media, which has an update: toned down and dimmed as a whole.
       expect(rowNames([...el.querySelectorAll('tbody tr[data-current]')])).toEqual(['sonarr']);
@@ -1001,7 +1001,7 @@ describe('Dashboard', () => {
           container('jellyfin', 'media', { update: checked('major', 'breaking'), review: reviewed() }),
           container('sonarr', 'media', { update: checked('none') }),
           container('vault', 'secrets', { update: checked('minor', 'attention') }),
-          container('stirling', 'recipes', { update: checked('patch'), review: snoozedUntil() }),
+          container('stirling-pdf', 'office', { update: checked('patch'), review: snoozedUntil() }),
           container('immich', 'photos', { update: checked('major', 'breaking'), review: snoozedVersion() }),
           container('adguard', 'networking', { update: checked('none') }),
         ],
@@ -1073,7 +1073,7 @@ describe('Dashboard', () => {
       toggle.click();
       await settle();
       const rows = [...snoozed.querySelectorAll('tbody tr')];
-      expect(rows.map((r) => text(r.querySelector('a')))).toEqual(['immich', 'stirling']);
+      expect(rows.map((r) => text(r.querySelector('a')))).toEqual(['immich', 'stirling-pdf']);
       expect(text(rows[0])).toContain('photos · Up 2 days'); // its stack, since it left that section
       expect(rows.every((r) => r.querySelector('a')!.className.includes('text-fg-muted'))).toBe(true);
       const lines = rows.map((r) => r.querySelector('[data-testid="snoozed"]')!);
@@ -1083,7 +1083,7 @@ describe('Dashboard', () => {
       expect(lines[1].getAttribute('data-tooltip')).toContain('Snoozed on 20 Oct');
       expect(rows[0].querySelector('[data-testid="level"]')!.classList).toContain('opacity-50');
       // Not in their old stacks.
-      expect(sectionNames(el)).not.toContain('recipes');
+      expect(sectionNames(el)).not.toContain('office');
       expect(sectionNames(el)).not.toContain('photos');
     });
 
@@ -1106,7 +1106,7 @@ describe('Dashboard', () => {
     it('searches inside the Snoozed section', async () => {
       const el = await render((req) => req.flush(body()));
       const input = el.querySelector<HTMLInputElement>('[data-testid="search"] input')!;
-      input.value = 'tand';
+      input.value = 'stir';
       input.dispatchEvent(new Event('input'));
       await settle();
       const snoozed = el.querySelector('[data-testid="snoozed-section"]')!;

@@ -15,7 +15,7 @@ func TestParseURL(t *testing.T) {
 		ok   bool
 	}{
 		{"https://github.com/home-assistant/core", Repo{"github.com", "home-assistant/core"}, true},
-		{"https://github.com/mealie-recipes/Mealie.git", Repo{"github.com", "mealie-recipes/Mealie"}, true},
+		{"https://github.com/mealie-recipes/mealie.git", Repo{"github.com", "mealie-recipes/mealie"}, true},
 		{"https://github.com/traefik/traefik/tree/master", Repo{"github.com", "traefik/traefik"}, true},
 		{"github.com/sergi0g/cup", Repo{"github.com", "sergi0g/cup"}, true},
 		{"git@github.com:filebrowser/filebrowser.git", Repo{"github.com", "filebrowser/filebrowser"}, true},
@@ -42,16 +42,16 @@ func TestResolve(t *testing.T) {
 		want        string
 		how         How
 	}{
-		// From real images.
+		// Real images.
 		{"homeassistant/home-assistant:latest", "https://github.com/home-assistant/core", "", "", "github.com/home-assistant/core", HowImage},
 		{"lscr.io/linuxserver/heimdall:latest", "https://github.com/linuxserver/docker-heimdall", "", "", "github.com/linuxserver/docker-heimdall", HowImage},
-		{"frooodle/s-pdf:2.6.13", "https://github.com/Stirling PDFRecipes/recipes", "", "", "github.com/Stirling PDFRecipes/recipes", HowImage},
+		{"frooodle/s-pdf:0.46.2", "https://github.com/Stirling-Tools/Stirling-PDF", "", "", "github.com/Stirling-Tools/Stirling-PDF", HowImage},
 		{"adguard/adguardhome:v0.107.79", "https://github.com/AdguardTeam/AdGuardHome", "", "", "github.com/AdguardTeam/AdGuardHome", HowImage},
 		{"vaultwarden/server:1.37.2", "https://github.com/dani-garcia/vaultwarden", "", "", "github.com/dani-garcia/vaultwarden", HowImage},
-		{"jlesage/mkvtoolnix:latest", "https://github.com/crazy-max/docker-mkvtoolnix", "", "", "github.com/crazy-max/docker-mkvtoolnix", HowImage},
+		{"jlesage/mkvtoolnix:latest", "https://github.com/jlesage/docker-mkvtoolnix", "", "", "github.com/jlesage/docker-mkvtoolnix", HowImage},
 		{"jokobsk/netalertx:latest", "https://github.com/jokob-sk/NetAlertX", "", "", "github.com/jokob-sk/NetAlertX", HowImage},
 		// Inherited base-image label is rejected; Docker Hub guess instead.
-		{"meisnate12/plex-meta-manager:v4.0.8", "https://github.com/linuxserver/docker-baseimage-ubuntu", "", "", "github.com/meisnate12/plex-meta-manager", HowGuess},
+		{"meisnate12/plex-meta-manager:v1.21.0", "https://github.com/linuxserver/docker-baseimage-ubuntu", "", "", "github.com/meisnate12/plex-meta-manager", HowGuess},
 		{"ghcr.io/gethomepage/homepage:latest", "", "", "", "github.com/gethomepage/homepage", HowRegistry},
 		{"redis:latest", "", "", "", "github.com/redis/redis", HowKnown},
 		{"lobaro/restic-backup-docker:2.1.6", "", "", "", "github.com/lobaro/restic-backup-docker", HowGuess},

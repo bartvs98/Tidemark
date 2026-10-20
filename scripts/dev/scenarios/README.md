@@ -2,7 +2,7 @@
 
 `node scripts/dev/verify.mjs --scenario scripts/dev/scenarios/<name>.json` seeds states the plain snapshot can't show (rules, reviews, image changes, open menus, other tabs) and takes named shots. Themes, widths and browsers come from the usual flags. Add `--pages` to shoot full pages too, or `--serve` to keep the seeded server running.
 
-Committed scenarios use the made-up demo host (`"base": "scripts/dev/demo-snapshot.json"`), never the owner's snapshot. `--snapshot` overrides `base` for a local run.
+Committed scenarios use the made-up demo host (`"base": "scripts/dev/demo-snapshot.json"`), never a real host's snapshot. `--snapshot` overrides `base` for a local run.
 
 ```jsonc
 {

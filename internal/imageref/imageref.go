@@ -1,4 +1,4 @@
-// Package imageref parses Docker image references like "redis", "louislam/uptime-kuma:alpine"
+// Package imageref parses Docker image references like "redis", "louislam/uptime-kuma:2"
 // or "ghcr.io/sergi0g/cup:v3.5.1@sha256:…" into registry, repository, tag and digest,
 // applying Docker's defaults (docker.io, library/, :latest).
 package imageref

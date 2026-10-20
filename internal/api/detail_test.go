@@ -102,15 +102,15 @@ func TestContainerDetail(t *testing.T) {
 
 func TestInListLink(t *testing.T) {
 	repo, _ := source.ParseURL("https://github.com/linuxserver/docker-thelounge")
-	ch := changelog.Changes{Kind: changelog.KindReleases, FromTag: "1.20.0-ls166", FromName: "1.20.0-ls166", ToTag: "1.20.0-ls168", FromIndex: 14}
+	ch := changelog.Changes{Kind: changelog.KindReleases, FromTag: "4.4.3-ls166", FromName: "4.4.3-ls166", ToTag: "4.4.3-ls168", FromIndex: 14}
 	got := toChangelogJSON(repo, source.HowImage, ch).Links.InList
-	want := "https://github.com/linuxserver/docker-thelounge/releases?page=2#:~:text=1.20.0%2Dls166,-Compare"
+	want := "https://github.com/linuxserver/docker-thelounge/releases?page=2#:~:text=4.4.3%2Dls166,-Compare"
 	if got != want {
 		t.Errorf("in-list link\n got %s\nwant %s", got, want)
 	}
 
 	ch.FromIndex = 9 // last entry of page 1: no ?page
-	if got := toChangelogJSON(repo, source.HowImage, ch).Links.InList; got != "https://github.com/linuxserver/docker-thelounge/releases#:~:text=1.20.0%2Dls166,-Compare" {
+	if got := toChangelogJSON(repo, source.HowImage, ch).Links.InList; got != "https://github.com/linuxserver/docker-thelounge/releases#:~:text=4.4.3%2Dls166,-Compare" {
 		t.Errorf("page 1 link = %s", got)
 	}
 

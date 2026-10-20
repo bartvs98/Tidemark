@@ -1,4 +1,4 @@
-# Copy to compose.yaml (or paste into a stack in Portainer) and adjust.
+# Copy to compose.yaml (or paste into a stack in Portainer or a similar manager) and adjust.
 # Secrets go in a .env file next to it (or the stack's environment).
 services:
   # Read-only gateway to the Docker API. Tidemark never touches the socket directly.

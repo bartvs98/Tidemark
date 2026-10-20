@@ -1,6 +1,6 @@
 # Tidemark: notes for Claude sessions
 
-Self-hosted dashboard that shows, for every container on a Docker host (running or stopped), the running version, the latest version, the changelog in between and whether it's breaking. Built step by step with the owner (The owner).
+Self-hosted dashboard that shows, for every container on a Docker host (running or stopped), the running version, the latest version, the changelog in between and whether it's breaking. Built step by step with the owner.
 
 ## Doc map
 
@@ -27,7 +27,7 @@ cd web && npx ng test --watch=false             # frontend tests (Vitest); one f
 cd web && npx ng build                          # builds web/dist/spa, embedded by `go build`
 ```
 
-Run locally against a snapshot of a real host (PowerShell):
+Run locally against a snapshot of a real host (`snapshots/home.json`, git-ignored; PowerShell):
 
 ```powershell
 $env:TIDEMARK_DOCKER_SNAPSHOT = "snapshots/home.json"; go run ./cmd/tidemark   # :8080
@@ -43,7 +43,7 @@ cd web; npm start                                                              #
 - **Each step ends with:** all tests green, docs updated (ROADMAP checkbox + a one- or two-line summary, plus FEATURES / ARCHITECTURE / README as relevant), the docs-sync check and, when the dashboard looks noticeably different (header, hero, list/tile layout, colours), fresh README images. Then commit, push, open a PR.
 - **Docs stay in sync, every step and every fix.** Docs describe what's built, not what was planned; each fact lives in one doc (link instead of repeating). Plans for later steps live in the ROADMAP step (ARCHITECTURE may sketch their tables and endpoints, marked "later").
   - **Docs-sync check** (roadmap steps, and fixes that change behaviour, config or the API): a read-only Sonnet agent gets the diff, the list of doc sections touched and the facts changed, checks just those sections plus what they link to (and `/styleguide` for UI), and lists what's wrong or missing. Fix that in the same commit. For small fixes and docs-only PRs, do the check inline.
-- **Feature branches + pull requests, never commit to `main`.** Images come from release tags, never from main. Branch off an up-to-date `main` (`step-8-review-state`, `fix-…`, `docs-…`), commit, push, `gh pr create` (title like the commit subject; body: only what changed; ends with the PR attribution line). How it was verified and anything the owner should look at go in the chat summary. CI tests and builds the image on the PR without publishing it (`gh pr checks`; docs-only PRs have no checks). **The owner reviews and merges (squash)**; don't merge yourself. Afterwards `git switch main && git pull` and delete the local branch. Repo: github.com/bartvs98/Tidemark (private). Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- **Feature branches + pull requests, never commit to `main`.** Images come from release tags, never from main. Branch off an up-to-date `main` (`step-8-review-state`, `fix-…`, `docs-…`), commit, push, `gh pr create` (title like the commit subject; body: only what changed; ends with the PR attribution line). How it was verified and anything the owner should look at go in the chat summary. CI tests and builds the image on the PR without publishing it (`gh pr checks`; docs-only PRs have no checks). **The owner reviews and merges (squash)**; don't merge yourself. Afterwards `git switch main && git pull` and delete the local branch. Repo: github.com/bartvs98/Tidemark. Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - **UI is built only from design-system pieces**: generic ones in `web/src/app/ui/` (exported from `ui/index.ts`), domain composites next to their page (`dashboard/container-update/`, `detail/history/`, …). One folder per component: `name.ts` + `name.html`, `.css` only with styles, `.spec.ts` only with tests. Every piece and state is on `/styleguide` and in DESIGN-SYSTEM.md. Colour means risk only; status always icon + word; versions/tags/digests in mono.
 
 ## Visual verification
@@ -51,8 +51,8 @@ cd web; npm start                                                              #
 Use the **`verify` skill** (`node scripts/dev/verify.mjs`): builds, runs the binary against the snapshot, screenshots into `.verify/`, reports page errors and failed requests. First time: `npm install --prefix scripts/dev`. Look at the screenshots before reporting.
 
 - **Shoot only what changed.** Screenshots are the most expensive thing to read. Default: the changed pages at 1280 in both themes, plus 390 when layout changes. Crop to the element when one component changed. Firefox and the full matrix only for CSS or layout-wide changes.
-- **States that need data** (rules, reviews, image changes, opened menus, other tabs): write a scenario (`--scenario`, format in [scripts/dev/scenarios/README.md](scripts/dev/scenarios/README.md)): it patches a copy of the snapshot, seeds state through the API and takes named, optionally cropped shots. Commit scenarios worth keeping, on the demo host; for one-off checks against the owner's snapshot keep the file in the scratchpad.
-- **README images** (`docs/brand/`) come from `node scripts/dev/readme-images.mjs` against `--serve --snapshot scripts/dev/demo-snapshot.json` (a made-up host, never the owner's snapshot). Re-render them in the same PR when the dashboard looks noticeably different, and look at them before committing.
+- **States that need data** (rules, reviews, image changes, opened menus, other tabs): write a scenario (`--scenario`, format in [scripts/dev/scenarios/README.md](scripts/dev/scenarios/README.md)): it patches a copy of the snapshot, seeds state through the API and takes named, optionally cropped shots. Commit scenarios worth keeping, on the demo host; for one-off checks against the real snapshot keep the file in the scratchpad.
+- **README images** (`docs/brand/`) come from `node scripts/dev/readme-images.mjs` against `--serve --snapshot scripts/dev/demo-snapshot.json` (a made-up host, never the real snapshot). Re-render them in the same PR when the dashboard looks noticeably different, and look at them before committing.
 
 ## Gotchas
 
@@ -65,5 +65,5 @@ Use the **`verify` skill** (`node scripts/dev/verify.mjs`): builds, runs the bin
 - **Angular:** `httpResource.value()` throws in the error state, so go through `hasValue()`. Effects only re-run when a read signal _changes_: depend on objects that change per response, not on a boolean that stays `true` (there's a regression test).
 - **Privacy rules (don't break):** never call Docker's `GET /containers/{id}/json` (it exposes env vars; a test enforces this). From image env only `*_VERSION` variables are read. `snapshots/` is git-ignored and must never be committed; don't print non-essential labels from it.
 - **Versions:** image labels can be inherited from base images (`mongo:8.3` says `24.04`), so a label only counts if the registry has that exact tag. Official images are rebuilt under the same tags, so old digests stop matching (hence the `*_VERSION` fallback).
-- **Images:** GitHub Actions builds the image and pushes it to `ghcr.io/bartvs98/tidemark` only for releases.
-- **Snapshot:** may be stale. The owner re-runs the repo's current `scripts/snapshot.sh` on the server and copies it to `snapshots/home.json`. `/api/containers` on the live instance shows what the server decided.
+- **Images:** GitHub Actions builds the image and pushes it to `ghcr.io/bartvs98/tidemark` only for releases. Release only when the owner asks, with hand-written notes ([ARCHITECTURE → Deployment and CI](docs/ARCHITECTURE.md#deployment-and-ci)); check runs with `gh run list`.
+- **Snapshot:** may be stale. The owner re-runs the repo's current `scripts/snapshot.sh` on the host and copies it to `snapshots/home.json`. `/api/containers` on the live instance shows what the server decided.

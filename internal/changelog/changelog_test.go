@@ -160,13 +160,13 @@ func TestReleasesInRange(t *testing.T) {
 }
 
 func TestSyncIsCachedAndConditional(t *testing.T) {
-	f := &fakeHosts{releases: map[string][]string{"filebrowser/filebrowser": {"v11.3.2", "v11.3.1"}}}
+	f := &fakeHosts{releases: map[string][]string{"filebrowser/filebrowser": {"v2.32.1", "v2.32.0"}}}
 	s := setup(t, f)
 	ctx := context.Background()
 	repo := gh("filebrowser/filebrowser")
 
-	_ = s.Sync(ctx, repo, v(t, "11.3.1"))
-	_ = s.Sync(ctx, repo, v(t, "11.3.1")) // fresh: no request
+	_ = s.Sync(ctx, repo, v(t, "2.32.0"))
+	_ = s.Sync(ctx, repo, v(t, "2.32.0")) // fresh: no request
 	if f.apiCalls.Load() != 1 {
 		t.Fatalf("api calls = %d, want 1", f.apiCalls.Load())
 	}
@@ -175,13 +175,13 @@ func TestSyncIsCachedAndConditional(t *testing.T) {
 	st, _, _ := s.store.RepoState(ctx, repo.Key())
 	st.FetchedAt = st.FetchedAt.Add(-7 * time.Hour)
 	_ = s.store.SaveRepoState(ctx, st)
-	if err := s.Sync(ctx, repo, v(t, "11.3.1")); err != nil {
+	if err := s.Sync(ctx, repo, v(t, "2.32.0")); err != nil {
 		t.Fatal(err)
 	}
 	if f.notMod.Load() != 1 {
 		t.Errorf("expected a 304, got %d", f.notMod.Load())
 	}
-	if cs, _ := s.Changes(ctx, repo, v(t, "11.3.1"), v(t, "11.3.2")); !slices.Equal(tags(cs), []string{"v11.3.2"}) || cs.FromTag != "v11.3.1" {
+	if cs, _ := s.Changes(ctx, repo, v(t, "2.32.0"), v(t, "2.32.1")); !slices.Equal(tags(cs), []string{"v2.32.1"}) || cs.FromTag != "v2.32.0" {
 		t.Errorf("after 304: %+v", cs)
 	}
 }

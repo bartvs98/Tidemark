@@ -45,6 +45,6 @@ describe('TmAppIcon', () => {
 
   it('shows a letter avatar without an icon', async () => {
     const { fixture } = await render(undefined, true);
-    expect((fixture.nativeElement as HTMLElement).textContent?.trim()).toBe('A');
+    expect((fixture.nativeElement as HTMLElement).textContent?.trim()).toBe('M');
   });
 });

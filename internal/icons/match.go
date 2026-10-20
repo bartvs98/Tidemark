@@ -28,7 +28,7 @@ var aliases = map[string]string{
 // Resolve picks an icon for a container. Order:
 //  1. the tidemark.icon label ("none" turns icons off for that container)
 //  2. a built-in icon for the image's last path segment (Tidemark's own image)
-//  3. the image's last path segment: exact, alias, trimmed (woodpecker-agent → uptime-kuma), unique prefix
+//  3. the image's last path segment: exact, alias, trimmed (woodpecker-agent → woodpecker), unique prefix
 //  4. the image's namespaces (vaultwarden/server → vaultwarden), exact only
 //  5. the Compose service and container name, which users choose freely, so they come last
 func (s *Service) Resolve(ref imageref.Ref, name, service string, labels map[string]string) (Icon, bool) {
@@ -86,7 +86,7 @@ func (s *Service) match(candidate string, loose bool) (Icon, bool) {
 		return Icon{}, false
 	}
 
-	// Drop trailing parts: plex-meta-manager → plex, woodpecker-agent → uptime-kuma.
+	// Drop trailing parts: plex-meta-manager → plex, woodpecker-agent → woodpecker.
 	parts := strings.FieldsFunc(c, func(r rune) bool { return r == '-' || r == '_' })
 	for n := len(parts) - 1; n >= 1; n-- {
 		trimmed := strings.Join(parts[:n], "-")

@@ -82,9 +82,9 @@ func TestResolve(t *testing.T) {
 		},
 		{
 			name:    "pinned linuxserver tag, label knows the build: packaging update",
-			c:       container("lscr.io/linuxserver/thelounge:1.20.0", "lscr.io/linuxserver/thelounge@sha256:a", map[string]string{"org.opencontainers.image.version": "1.20.0-ls166"}),
-			reg:     &fakeRegistry{tags: []string{"1.20.0", "1.20.0-ls165", "1.20.0-ls166", "1.20.0-ls168", "latest"}},
-			want:    Result{Running: "1.20.0-ls166", Source: SourceLabel, Latest: "1.20.0-ls168", Class: version.Digest},
+			c:       container("lscr.io/linuxserver/thelounge:4.4.3", "lscr.io/linuxserver/thelounge@sha256:a", map[string]string{"org.opencontainers.image.version": "4.4.3-ls166"}),
+			reg:     &fakeRegistry{tags: []string{"4.4.3", "4.4.3-ls165", "4.4.3-ls166", "4.4.3-ls168", "latest"}},
+			want:    Result{Running: "4.4.3-ls166", Source: SourceLabel, Latest: "4.4.3-ls168", Class: version.Digest},
 			noHeads: true,
 		},
 		{
@@ -116,39 +116,39 @@ func TestResolve(t *testing.T) {
 		},
 		{
 			name: "variant word tag with label",
-			c:    container("woodpeckerci/woodpecker-agent:alpine", "woodpeckerci/woodpecker-agent@sha256:a", map[string]string{"org.opencontainers.image.version": "0.21.0-alpine"}),
+			c:    container("woodpeckerci/woodpecker-agent:alpine", "woodpeckerci/woodpecker-agent@sha256:a", map[string]string{"org.opencontainers.image.version": "3.8.0-alpine"}),
 			reg: &fakeRegistry{
-				tags:    []string{"0.20.0", "0.20.0-alpine", "0.21.0", "0.21.0-alpine", "alpine", "latest"},
+				tags:    []string{"3.7.0", "3.7.0-alpine", "3.8.0", "3.8.0-alpine", "alpine", "latest"},
 				digests: map[string]string{"alpine": "sha256:a"},
 			},
-			want: Result{Running: "0.21.0-alpine", Source: SourceLabel, Latest: "0.21.0-alpine", Class: version.None, Floating: true, TagDigest: "sha256:a"},
+			want: Result{Running: "3.8.0-alpine", Source: SourceLabel, Latest: "3.8.0-alpine", Class: version.None, Floating: true, TagDigest: "sha256:a"},
 		},
 		{
 			name: "label matches a v-prefixed tag; latest keeps the v",
-			c:    container("filebrowser/filebrowser:latest", "filebrowser/filebrowser@sha256:a", map[string]string{"org.opencontainers.image.version": "v11.3.1"}),
+			c:    container("filebrowser/filebrowser:latest", "filebrowser/filebrowser@sha256:a", map[string]string{"org.opencontainers.image.version": "v2.32.0"}),
 			reg: &fakeRegistry{
-				tags:    []string{"v11.3.1", "v11.3.2", "11.3.2", "v11.3.2-alpine", "latest"},
+				tags:    []string{"v2.32.0", "v2.32.1", "2.32.1", "v2.32.1-alpine", "latest"},
 				digests: map[string]string{"latest": "sha256:b"},
 			},
-			want: Result{Running: "v11.3.1", Source: SourceLabel, Latest: "v11.3.2", Class: version.Patch, Floating: true, NewImage: true, TagDigest: "sha256:b"},
+			want: Result{Running: "v2.32.0", Source: SourceLabel, Latest: "v2.32.1", Class: version.Patch, Floating: true, NewImage: true, TagDigest: "sha256:b"},
 		},
 		{
 			name: "nightly: unknown version, no digest probing, new image detected",
 			c:    container("ghcr.io/mealie-recipes/mealie:nightly", "ghcr.io/mealie-recipes/mealie@sha256:old", nil),
 			reg: &fakeRegistry{
-				tags:    []string{"nightly", "v2.35.9", "v2.36.0", "latest"},
+				tags:    []string{"nightly", "v3.0.2", "v3.1.0", "latest"},
 				digests: map[string]string{"nightly": "sha256:new"},
 			},
-			want: Result{Source: SourceUnknown, Latest: "v2.36.0", Class: version.Digest, Floating: true, NewImage: true, TagDigest: "sha256:new"},
+			want: Result{Source: SourceUnknown, Latest: "v3.1.0", Class: version.Digest, Floating: true, NewImage: true, TagDigest: "sha256:new"},
 		},
 		{
 			name: "unknown and unchanged",
 			c:    container("jlesage/mkvtoolnix:latest", "jlesage/mkvtoolnix@sha256:a", nil),
 			reg: &fakeRegistry{
-				tags:    []string{"4.22.8", "4.23.8", "latest"},
+				tags:    []string{"v25.06.1", "v25.07.1", "latest"},
 				digests: map[string]string{"latest": "sha256:a"},
 			},
-			want: Result{Source: SourceUnknown, Latest: "4.23.8", Class: version.None, Floating: true, TagDigest: "sha256:a"},
+			want: Result{Source: SourceUnknown, Latest: "v25.07.1", Class: version.None, Floating: true, TagDigest: "sha256:a"},
 		},
 		{
 			name: "latest: an old more precise tag doesn't keep the current one from being probed",

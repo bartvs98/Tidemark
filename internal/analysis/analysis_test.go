@@ -8,7 +8,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/version"
 )
 
-// Lines taken from real release notes of containers.
+// Lines taken from real release notes.
 func TestLineLevel(t *testing.T) {
 	cases := []struct {
 		line string

@@ -21,9 +21,9 @@ const testIndex = `[
   {"Name":"Home Assistant","Reference":"home-assistant","SVG":"Yes","PNG":"Yes"},
   {"Name":"AdGuard Home","Reference":"adguard-home","SVG":"Yes","PNG":"Yes"},
   {"Name":"Vaultwarden","Reference":"vaultwarden","SVG":"Yes","PNG":"Yes"},
-  {"Name":"Uptime Kuma","Reference":"uptime-kuma","SVG":"Yes","PNG":"Yes"},
+  {"Name":"Woodpecker","Reference":"woodpecker","SVG":"Yes","PNG":"Yes"},
   {"Name":"Plex","Reference":"plex","SVG":"Yes","PNG":"Yes"},
-  {"Name":"Plex","Reference":"plex","SVG":"Yes","PNG":"Yes"},
+  {"Name":"Restic","Reference":"restic","SVG":"Yes","PNG":"Yes"},
   {"Name":"Stirling PDF","Reference":"stirling-pdf","SVG":"Yes","PNG":"Yes"},
   {"Name":"Cup (Updates)","Reference":"cup-updates","SVG":"Yes","PNG":"Yes"},
   {"Name":"Cupdate","Reference":"cupdate","SVG":"No","PNG":"Yes"},
@@ -56,17 +56,17 @@ func TestResolve(t *testing.T) {
 		want                 string
 	}{
 		{"homeassistant/home-assistant:latest", "homeassistant", "", nil, "home-assistant"},
-		{"adguard/adguardhome:v0.107.79", "adguard", "", nil, "adguard-home"}, // normalized match
-		{"vaultwarden/server:1.37.2", "vaultwarden", "", nil, "vaultwarden"},  // generic "server" skipped
-		{"woodpeckerci/woodpecker-agent:alpine", "woodpecker-agent", "", nil, "uptime-kuma"},    // trimmed
-		{"meisnate12/plex-meta-manager:v4", "cwa", "", nil, "plex"},
-		{"lobaro/restic-backup-docker:2.1.6", "backup", "", nil, "vaultwarden"},
-		{"frooodle/s-pdf:2.6.13", "stirling", "stirling", nil, "stirling-pdf"}, // service + unique prefix
-		{"ghcr.io/sergi0g/cup:v3.5.1", "cupdate", "cupdate", nil, "cup-updates"},    // image beats container name
-		{"postgres:16-alpine", "app_db", "", nil, "postgresql"},                 // alias
-		{"redis:latest", "app_redis", "", nil, "redis"},                     // exact beats prefix
-		{"lscr.io/linuxserver/thelounge:1.20.0", "chat", "", nil, "the-lounge"},
-		{"ghcr.io/goauthentik/server:15", "authentik", "authentik", nil, "authentik"},
+		{"adguard/adguardhome:v0.107.79", "adguard", "", nil, "adguard-home"},               // normalized match
+		{"vaultwarden/server:1.37.2", "vaultwarden", "", nil, "vaultwarden"},                // generic "server" skipped
+		{"woodpeckerci/woodpecker-agent:alpine", "woodpecker-agent", "", nil, "woodpecker"}, // trimmed
+		{"meisnate12/plex-meta-manager:v1.21.0", "pmm", "", nil, "plex"},                    // trailing parts dropped
+		{"lobaro/restic-backup-docker:2.1.6", "backup", "", nil, "restic"},
+		{"frooodle/s-pdf:0.46.2", "stirling", "stirling", nil, "stirling-pdf"},            // service + unique prefix
+		{"ghcr.io/sergi0g/cup:v3.5.1", "cupdate", "cupdate", nil, "cup-updates"},          // image beats container name
+		{"postgres:16-alpine", "app_db", "", nil, "postgresql"},                           // alias
+		{"redis:latest", "app_redis", "", nil, "redis"},                                   // exact beats prefix
+		{"lscr.io/linuxserver/thelounge:4.4.3", "irc", "", nil, "the-lounge"},             // normalized match
+		{"ghcr.io/goauthentik/server:2025.6", "authentik", "authentik", nil, "authentik"}, // service name
 		{"jlesage/mkvtoolnix:latest", "mkvtoolnix", "mkvtoolnix", nil, ""},
 		{"redis:7", "x", "", map[string]string{LabelIcon: "cups"}, "cups"},
 		{"redis:7", "x", "", map[string]string{LabelIcon: "none"}, ""},
@@ -188,7 +188,7 @@ func TestServeRejectsUnknownAndMissing(t *testing.T) {
 	cdn := httptest.NewServer(http.NotFoundHandler())
 	defer cdn.Close()
 	s := newTestService(t, cdn.URL)
-	for _, ref := range []string{"not-in-index", "../etc/passwd", "uptime-kuma"} { // uptime-kuma: in index, 404 on CDN
+	for _, ref := range []string{"not-in-index", "../etc/passwd", "woodpecker"} { // woodpecker: in index, 404 on CDN
 		rec := httptest.NewRecorder()
 		s.Serve(rec, httptest.NewRequest("GET", "/api/icons/x", nil), ref, VariantDefault)
 		if rec.Code != http.StatusNotFound {
@@ -248,7 +248,7 @@ func TestServeFetchesDifferentIconsInParallel(t *testing.T) {
 	s := newTestService(t, cdn.URL)
 
 	var wg sync.WaitGroup
-	for _, ref := range []string{"redis", "uptime-kuma", "vaultwarden", "redis"} {
+	for _, ref := range []string{"redis", "woodpecker", "vaultwarden", "redis"} {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

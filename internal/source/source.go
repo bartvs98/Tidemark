@@ -6,7 +6,7 @@
 //     user, always trusted)
 //  2. the image label org.opencontainers.image.source (or org.label-schema.vcs-url),
 //     if it plausibly belongs to this image: labels are inherited from base images
-//     (plex-meta-manager says linuxserver/docker-baseimage-ubuntu)
+//     (an image built on a linuxserver base says linuxserver/docker-baseimage-ubuntu)
 //  3. ghcr.io/owner/name → github.com/owner/name
 //  4. a short list of official Docker Hub images (redis → redis/redis)
 //  5. docker.io/namespace/name → github.com/namespace/name (a guess; may not exist)

@@ -58,10 +58,10 @@ func TestContainers(t *testing.T) {
 		t.Errorf("pulled = %+v", p.Image)
 	}
 
-	uptime-kuma := body.Containers[4]
-	if uptime-kuma.Stack != "monitoring" || uptime-kuma.Image.Display != "louislam/uptime-kuma:latest" ||
-		uptime-kuma.Image.Registry != "docker.io" || uptime-kuma.Image.Tag != "latest" || uptime-kuma.Image.Platform != "linux/arm64/v8" {
-		t.Errorf("uptime-kuma = %+v", uptime-kuma)
+	kuma := body.Containers[4]
+	if kuma.Stack != "monitoring" || kuma.Image.Display != "louislam/uptime-kuma:latest" ||
+		kuma.Image.Registry != "docker.io" || kuma.Image.Tag != "latest" || kuma.Image.Platform != "linux/arm64/v8" {
+		t.Errorf("uptime-kuma = %+v", kuma)
 	}
 	if orphan := body.Containers[0]; !orphan.Image.Missing || orphan.Image.Created != nil {
 		t.Errorf("orphan image = %+v", orphan.Image)
