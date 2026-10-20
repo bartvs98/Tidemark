@@ -1,5 +1,5 @@
 import { formatDate } from '@angular/common';
-import { ContainerSummary, ErrorKind, UpdateInfo } from './containers';
+import { ContainerSummary, ErrorKind, ReviewState, UpdateInfo } from './containers';
 
 /**
  * The quiet line under the versions when a rule keeps a newer version back:
@@ -24,6 +24,35 @@ export function heldText(u: UpdateInfo, c: ContainerSummary): { text: string; va
 export function shortTime(iso: string, locale: string): string {
   const today = new Date(iso).toDateString() === new Date().toDateString();
   return formatDate(iso, today ? 'HH:mm' : 'd MMM, HH:mm', locale);
+}
+
+/** A date as "20 Oct", or just the time ("14:00") when it is today. */
+function shortDate(iso: string, locale: string): string {
+  const today = new Date(iso).toDateString() === new Date().toDateString();
+  return formatDate(iso, today ? 'HH:mm' : 'd MMM', locale);
+}
+
+/** Tooltip of the "Reviewed" marker: "Reviewed up to 1.6.0 on 20 Oct." */
+export function reviewedTitle(r: ReviewState, locale: string): string {
+  const upTo = r.version ? ` up to ${r.version}` : '';
+  return `Reviewed${upTo} on ${formatDate(r.at, 'd MMM', locale)}. It shows as new again when a newer version comes out.`;
+}
+
+/**
+ * The quiet line on a snoozed row: "until 3 Nov" (`value` empty) or "until newer than" + `value`
+ * "1.6.0" (in mono). `title` says when it was snoozed.
+ */
+export function snoozedText(r: ReviewState, locale: string): { text: string; value?: string; title: string } {
+  const on = `Snoozed on ${formatDate(r.at, 'd MMM', locale)}`;
+  if (r.until) {
+    const until = shortDate(r.until, locale);
+    return { text: `until ${until}`, title: `${on}. It shows again from ${formatDate(r.until, 'd MMM, HH:mm', locale)}.` };
+  }
+  return {
+    text: 'until newer than',
+    value: r.version,
+    title: `${on}. It shows again when a version newer than ${r.version ?? 'the current latest'} comes out.`,
+  };
 }
 
 const ERROR_KIND_LABELS: Record<ErrorKind, string> = {

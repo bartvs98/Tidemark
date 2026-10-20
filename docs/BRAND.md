@@ -69,6 +69,8 @@ Light-mode accent hover is `#0B5F58`, a darker step outside the palette.
 | Breaking | `#F2665E` | `#C9372C` | Coral badge "Breaking" + highlighted lines |
 | Unknown / error | deep-400 | deep-500 | Muted text, dashed border: "check failed" (never checked successfully), "rule skipped", "image missing" |
 | Kept result | — | — | Small muted text + history icon "refresh failed", no badge or colour: it must not hide the result shown |
+| Reviewed | — | — | Check icon + "Reviewed" in small muted text, class and level badges faded; no colour of its own (it isn't a risk) |
+| Snoozed | — | — | Clock icon on the "Snoozed" section, "until 3 Nov" / "until newer than 1.6.0" under the version, badges faded; no colour |
 
 Status is never shown with colour alone: every status also has an icon and a word.
 
@@ -98,5 +100,6 @@ Calm, factual, short, like a tide report rather than an alarm. Say what changed,
 | "Couldn't fetch the changelog, GitHub rate limit. Set `TIDEMARK_GITHUB_TOKEN` to raise it." | "Error 403" |
 | "Up to date" | "Congrats! You're all caught up 🎉" |
 | "Reviewed up to 1.6.0" | "Dismissed" |
+| "No open updates" (only reviewed or snoozed ones left) | "All up to date" (it isn't) |
 
 Running → latest is always written with an arrow: `1.4.2 → 1.6.0`.

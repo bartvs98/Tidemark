@@ -12,6 +12,8 @@ import { ContainerRuleProblems } from '../dashboard/rule-problems/rule-problems'
 import { errorKindHint, heldText } from '../dashboard/format';
 import { ContainerDetailData } from './detail-types';
 import { describeRules } from './rules';
+import { History } from './history/history';
+import { ReviewActions } from './review-actions/review-actions';
 
 const HOW: Record<string, string> = {
   label: 'from the tidemark.repo label',
@@ -47,6 +49,8 @@ const SOURCE: Record<string, string> = {
     ContainerRuleProblems,
     ContainerUpdate,
     ContainerVersion,
+    History,
+    ReviewActions,
     TmAppIcon,
     TmBadge,
     TmButton,
@@ -118,6 +122,15 @@ export class ContainerDetail {
     const level = this.ignored() ? undefined : this.result()?.level;
     return level === 'breaking' || level === 'attention' ? level : null;
   });
+  /** Review actions only make sense for an update that was found. */
+  protected readonly canReview = computed(() => {
+    const c = this.data()?.container;
+    return !!c && hasUpdate(c);
+  });
+  /** Reviewed or snoozed: the frame keeps its colour but stops circling (it's an alert signal). */
+  protected readonly frameStill = computed(() => this.canReview() && !!this.data()?.container.review);
+  /** Image changes, newest first. */
+  protected readonly history = computed(() => this.data()?.history ?? []);
   protected readonly githubRepo = computed(() => {
     const url = this.changelog()?.repo.url;
     return url?.startsWith('https://github.com/') ? url : undefined;

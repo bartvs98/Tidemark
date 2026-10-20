@@ -1,0 +1,51 @@
+<ol class="flex flex-col" data-testid="history">
+  @for (row of rows(); track row.at + row.imageId; let last = $last) {
+    <li class="relative flex gap-4 pb-6 last:pb-0" data-testid="history-row">
+      <!-- The line down to the next (older) entry, and a dot per entry. -->
+      @if (!last) {
+        <span class="absolute top-4 bottom-0 left-[4.5px] w-px bg-line" aria-hidden="true"></span>
+      }
+      <span class="relative mt-1.5 size-2.5 shrink-0 rounded-full border-2 border-line-strong bg-surface" aria-hidden="true"></span>
+      <div class="flex min-w-0 flex-1 flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+        <div class="min-w-0">
+          @switch (row.kind) {
+            @case ('version') {
+              <p class="font-mono font-medium" data-testid="history-title">{{ row.prevRunning }} → {{ row.running }}</p>
+            }
+            @case ('image') {
+              <p data-testid="history-title">
+                <span class="font-medium">New image</span>
+                @if (row.running) {
+                  <span class="text-fg-muted"> · <span class="font-mono">{{ row.running }}</span></span>
+                }
+              </p>
+              <p class="font-mono text-xs break-all text-fg-subtle" data-testid="history-ids">{{ row.prevImageId }} → {{ row.imageId }}</p>
+            }
+            @case ('start') {
+              <p data-testid="history-title">
+                <span class="font-medium">Tracking started</span>
+                @if (row.running) {
+                  <span class="text-fg-muted"> · running <span class="font-mono">{{ row.running }}</span></span>
+                } @else {
+                  <span class="text-fg-muted"> · image <span class="font-mono text-xs">{{ row.imageId }}</span></span>
+                }
+              </p>
+            }
+          }
+          @if (row.ran; as ran) {
+            <p class="text-sm text-fg-muted" data-testid="history-ran">
+              ran
+              @if (ran.version) {
+                <span class="font-mono">{{ ran.version }}</span>
+              } @else {
+                the previous image
+              }
+              for {{ ran.duration }}
+            </p>
+          }
+        </div>
+        <time class="shrink-0 text-sm text-fg-subtle" [attr.datetime]="row.at">{{ row.date }}</time>
+      </div>
+    </li>
+  }
+</ol>

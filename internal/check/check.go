@@ -76,7 +76,8 @@ type Service struct {
 	rulesPath string // config file; "" means labels only
 
 	mu       sync.RWMutex
-	results  map[string]Entry // by container name
+	results  map[string]Entry              // by container name
+	last     map[string]store.HistoryEntry // newest history row by container name
 	status   Status
 	cron     *cron.Cron
 	cronID   cron.EntryID
@@ -85,7 +86,7 @@ type Service struct {
 }
 
 func New(source docker.Source, reg resolve.Registry, st *store.Store, log *slog.Logger) *Service {
-	return &Service{source: source, reg: reg, store: st, log: log, results: map[string]Entry{}}
+	return &Service{source: source, reg: reg, store: st, log: log, results: map[string]Entry{}, last: map[string]store.HistoryEntry{}}
 }
 
 // SetAfterCheck installs a hook that runs after each successfully checked image.
@@ -129,11 +130,16 @@ func (s *Service) RulesError() string {
 	return s.rulesErr
 }
 
-// Load restores results and the last run's status from the store.
+// Load restores results, the last run's status and each container's newest history
+// row from the store.
 func (s *Service) Load(ctx context.Context) error {
 	rows, err := s.store.Results(ctx)
 	if err != nil {
 		return fmt.Errorf("load results: %w", err)
+	}
+	last, err := s.store.LastHistory(ctx)
+	if err != nil {
+		return fmt.Errorf("load history: %w", err)
 	}
 	run, ok, err := s.store.LastFinishedRun(ctx)
 	if err != nil {
@@ -144,6 +150,9 @@ func (s *Service) Load(ctx context.Context) error {
 	defer s.mu.Unlock()
 	for _, r := range rows {
 		s.results[r.ContainerName] = fromRow(r)
+	}
+	for name, h := range last {
+		s.last[name] = h
 	}
 	if ok {
 		started := run.StartedAt
@@ -364,10 +373,36 @@ func (s *Service) save(ctx context.Context, name string, e Entry, runID int64) {
 		e = prev
 	}
 	s.results[name] = e
+	h, changed := s.historyFor(name, e)
 	s.mu.Unlock()
 	if err := s.store.SaveResult(ctx, toRow(name, e, runID)); err != nil {
 		s.log.Warn("check: can't save result", "container", name, "err", err)
 	}
+	if changed {
+		if err := s.store.AddHistory(ctx, h); err != nil {
+			s.log.Warn("check: can't record history", "container", name, "err", err)
+		}
+	}
+}
+
+// historyFor returns the history row a successful check of a container adds, if any: a
+// first row when there's none yet, a change row when the image differs from the newest
+// row's. Comparing with the last history row, not the last result, means a failed check
+// in between doesn't lose the from-version. Call with s.mu held; it updates s.last.
+func (s *Service) historyFor(name string, e Entry) (store.HistoryEntry, bool) {
+	if e.Err != "" {
+		return store.HistoryEntry{}, false
+	}
+	prev, seen := s.last[name]
+	if seen && prev.ImageID == e.ImageID {
+		return store.HistoryEntry{}, false
+	}
+	h := store.HistoryEntry{ContainerName: name, ImageID: e.ImageID, Running: e.Result.Running, DetectedAt: e.CheckedAt, Via: "check"}
+	if seen {
+		h.PrevImageID, h.PrevRunning = prev.ImageID, prev.Running
+	}
+	s.last[name] = h
+	return h, true
 }
 
 func (s *Service) finish(ctx context.Context, runID int64, images int, errMsg string) {

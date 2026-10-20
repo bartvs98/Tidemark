@@ -1,13 +1,16 @@
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, inject, input, LOCALE_ID } from '@angular/core';
 import { TmBadge, TmIcon, TmLevel, TmSkeleton, TmTooltip, TmUpdateClass, UpdateClass } from '../../ui';
-import { ContainerSummary, hasResult, isIgnored, ruleOrigin } from '../containers';
-import { errorKindLabel } from '../format';
+import { ContainerSummary, hasResult, isIgnored, isReviewed, isSnoozed, REVIEW_ICONS, ruleOrigin } from '../containers';
+import { errorKindLabel, reviewedTitle } from '../format';
 import { ContainerRefreshFailed } from '../refresh-failed/refresh-failed';
 
 const TOOLTIP_LINE = 140;
 const clip = (s: string) => (s.length > TOOLTIP_LINE ? s.slice(0, TOOLTIP_LINE - 1).trimEnd() + '…' : s);
 
-/** The update class and risk level badges, "check failed", or a placeholder while checking. */
+/**
+ * The update class and risk level badges, "check failed", or a placeholder while checking.
+ * Reviewed: badges faded plus a quiet "Reviewed" marker. Snoozed: badges faded (the row says until when).
+ */
 @Component({
   selector: 'tm-container-update',
   imports: [ContainerRefreshFailed, TmBadge, TmIcon, TmLevel, TmSkeleton, TmTooltip, TmUpdateClass],
@@ -17,6 +20,10 @@ const clip = (s: string) => (s.length > TOOLTIP_LINE ? s.slice(0, TOOLTIP_LINE -
 export class ContainerUpdate {
   readonly container = input.required<ContainerSummary>();
   readonly checking = input(false);
+  /** Show the "Reviewed" marker; off where the review is shown elsewhere (detail header). */
+  readonly showReview = input(true);
+  private readonly locale = inject(LOCALE_ID);
+  protected readonly icons = REVIEW_ICONS;
 
   protected readonly ignored = computed(() => isIgnored(this.container()));
   protected readonly ignoredTitle = computed(() => {
@@ -30,6 +37,12 @@ export class ContainerUpdate {
     const u = this.container().update;
     return hasResult(u) ? u : undefined;
   });
+  /** Tooltip of the "Reviewed" marker, or null when the update isn't reviewed. */
+  protected readonly reviewed = computed(() => {
+    const c = this.container();
+    return this.showReview() && isReviewed(c) ? reviewedTitle(c.review!, this.locale) : null;
+  });
+  protected readonly faded = computed(() => isReviewed(this.container()) || isSnoozed(this.container()));
   protected readonly error = computed(() => this.container().update?.error);
   protected readonly reason = computed(() => errorKindLabel(this.container().update?.errorKind));
   protected readonly kind = computed(() => (this.result()?.class ?? 'none') as UpdateClass);

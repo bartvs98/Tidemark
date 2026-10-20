@@ -1,7 +1,7 @@
 import { booleanAttribute, Component, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TmAppIcon, TmBadge, TmCard } from '../../ui';
-import { ContainerSummary, hasUpdate, imageName, isCurrent } from '../containers';
+import { ContainerSummary, imageName, isCurrent, isOpenUpdate, isSnoozed } from '../containers';
 import { ContainerRuleProblems } from '../rule-problems/rule-problems';
 import { ContainerUpdate } from '../container-update/container-update';
 import { ContainerVersion } from '../container-version/container-version';
@@ -42,13 +42,14 @@ export class ContainerTable {
   protected readonly imageName = imageName;
   protected readonly isCurrent = isCurrent;
 
-  /** Ignored or up to date: toned down, so rows with an update stand out. */
+  /** Ignored, snoozed or up to date: toned down, so rows with an update stand out. */
   protected quiet(c: ContainerSummary): boolean {
-    return this.ignored() || isCurrent(c);
+    return this.ignored() || isCurrent(c) || isSnoozed(c);
   }
 
+  /** Bold only for an open update; a reviewed one has been looked at. */
   protected nameClass(c: ContainerSummary): string {
     if (this.quiet(c)) return 'font-medium text-fg-muted';
-    return hasUpdate(c) ? 'font-semibold text-fg' : 'font-medium text-fg';
+    return isOpenUpdate(c) ? 'font-semibold text-fg' : 'font-medium text-fg';
   }
 }

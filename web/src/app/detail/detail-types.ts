@@ -10,6 +10,19 @@ export interface ContainerDetailData {
   };
   /** Absent when no source repository could be found. */
   changelog?: Changelog;
+  /** Image changes detected per check, newest first; the last entry (no `prevImageId`) is when tracking started. */
+  history: HistoryEntry[];
+}
+
+/** One detected change of the container's image (internal/store history). */
+export interface HistoryEntry {
+  at: string;
+  /** Version after the change; absent when unknown. */
+  running?: string;
+  imageId: string;
+  prevRunning?: string;
+  /** Absent on the first entry: tracking started then. */
+  prevImageId?: string;
 }
 
 export interface Changelog {

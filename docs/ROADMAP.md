@@ -33,11 +33,7 @@ From the owner's notes after the MVP. One PR each; the release comes last so v1.
 
 ## After MVP
 
-- [ ] **8. Reviewed / snooze state + update history**
-  - **Mark as reviewed**: "I've read the changes up to 1.6.0". The badge fades until a version *newer* than 1.6.0 appears.
-  - **Snooze**: hide an update until a date, or until a version newer than X.
-  - **Update history**: record detected version changes per container (you ran 1.4.2 until Oct 3, then 1.6.0).
-  - Planned schema and API: `reviews` and `history` tables, `PUT /api/containers/{id}/review` ([ARCHITECTURE](ARCHITECTURE.md#data-model-sqlite)).
+- [x] **8. Reviewed / snooze state + update history**: on the detail page an update can be marked as reviewed (up to the latest version; it looks new again when a newer one appears) or snoozed (1 day, 1 week, 1 month, or until a newer version), via `PUT`/`DELETE /api/containers/{name}/review`. On the dashboard reviewed updates fade and leave the hero figures, snoozed ones move to a collapsed "Snoozed" section. A History tab shows image changes detected per check ("1.4.2 → 1.6.0", "New image", "Tracking started"). Keyed by container name like the results ([FEATURES §9](FEATURES.md#9-reviewed-snoozed-and-history)). New design-system piece: `tm-menu`.
 - [ ] **9. Telegram notifications**
   - Telegram bot (`TIDEMARK_TELEGRAM_BOT_TOKEN` + `TIDEMARK_TELEGRAM_CHAT_ID`). One message per check run with **new** updates only (compared with the previous run, respecting reviewed/snooze state), grouped by stack, breaking ones first, with a link to the dashboard.
   - The notifier is an interface, so ntfy, Discord and webhooks can be added later without touching the rest.

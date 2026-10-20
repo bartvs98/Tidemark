@@ -151,17 +151,7 @@
       </tm-card>
     } @else if (nothingShown()) {
       <tm-card>
-        <tm-empty-state
-          icon="circle-check"
-          [heading]="filter() === 'breaking' ? 'Nothing breaking' : 'No updates'"
-          [description]="
-            filter() === 'breaking'
-              ? 'None of the available updates look breaking.'
-              : checking()
-                ? 'Still checking. Updates show up here as they are found.'
-                : 'Every container runs the latest version.'
-          "
-        >
+        <tm-empty-state icon="circle-check" [heading]="emptyFilter().heading" [description]="emptyFilter().description">
           <button tmButton size="sm" (click)="filter.set('all')">Show all containers</button>
         </tm-empty-state>
       </tm-card>
@@ -212,6 +202,23 @@
           }
         }
 
+        @if (shownSnoozed().length) {
+          <!-- Snoozed updates are put off: collapsed and toned down, above "Ignored". Each row says until when. -->
+          <tm-section
+            heading="Snoozed"
+            [icon]="reviewIcons.snoozed"
+            [meta]="plural(shownSnoozed().length, 'container')"
+            collapsible
+            muted
+            [(open)]="snoozedOpen"
+            data-testid="snoozed-section"
+          >
+            @if (snoozedOpen()) {
+              <ng-container *ngTemplateOutlet="containerGroup; context: { $implicit: shownSnoozed(), ignored: false, showStack: true }" />
+            }
+          </tm-section>
+        }
+
         @if (shownIgnored().length) {
           <!-- Ignored containers aren't checked: collapsed and toned down, after everything else. -->
           <tm-section
@@ -252,7 +259,7 @@
   </tm-card>
 }
 
-<!-- One group of containers as a table (list view) or a grid of tiles. Used for each stack or severity section, and for "Ignored". -->
+<!-- One group of containers as a table (list view) or a grid of tiles. Used for each stack or severity section, and for "Snoozed" and "Ignored". -->
 <ng-template #containerGroup let-containers let-ignored="ignored" let-showStack="showStack">
   @if (view() === 'list') {
     <tm-container-table [containers]="containers" [checking]="checking()" [ignored]="ignored" [showStack]="showStack" />

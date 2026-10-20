@@ -4,10 +4,17 @@
     <tm-icon name="eye-off" [size]="14" />Ignored
   </span>
 } @else if (result(); as u) {
-  <tm-update-class [kind]="kind()" />
+  <!-- Reviewed or snoozed: the badges fade, the risk has been looked at or put off. -->
+  <tm-update-class [kind]="kind()" [class.opacity-50]="faded()" />
   @if (kind() !== 'none') {
     <!-- relative z-10: hoverable above a stretched link, so the reasons tooltip shows -->
-    <tm-level [level]="u.level" [tmTooltip]="reasons()" class="relative z-10" data-testid="level" />
+    <tm-level [level]="u.level" [tmTooltip]="reasons()" class="relative z-10" [class.opacity-50]="faded()" data-testid="level" />
+  }
+  @if (reviewed(); as title) {
+    <!-- relative z-10 + tabindex: hoverable and focusable above the stretched link, so the tooltip shows -->
+    <span class="relative z-10 inline-flex items-center gap-1 text-xs text-fg-muted" tabindex="0" [tmTooltip]="title" data-testid="reviewed">
+      <tm-icon [name]="icons.reviewed" [size]="12" class="shrink-0" /><span class="whitespace-nowrap">Reviewed</span>
+    </span>
   }
   <!-- The result above is kept from an earlier check; this says the latest refresh failed. -->
   <tm-refresh-failed [container]="container()" />

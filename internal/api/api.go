@@ -12,6 +12,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/icons"
+	"github.com/bartvs98/tidemark/internal/store"
 )
 
 type Deps struct {
@@ -22,6 +23,9 @@ type Deps struct {
 	Checks  *check.Service // nil in tests that don't need update checks
 	// Changelogs serves release notes on the detail endpoint; nil disables them.
 	Changelogs *changelog.Service
+	// Store keeps review states and update history; nil disables reviews (the endpoints
+	// answer 501) and history (always empty).
+	Store *store.Store
 	// Schedule (cron spec, "" when off) and ConfigFile (rules file path) are only shown in settings.
 	Schedule   string
 	ConfigFile string
@@ -37,6 +41,7 @@ type Server struct {
 	icons      *icons.Service
 	checks     *check.Service
 	changelogs *changelog.Service
+	store      *store.Store
 	schedule   string
 	configFile string
 	background context.Context
@@ -47,7 +52,7 @@ func New(d Deps) *Server {
 	if bg == nil {
 		bg = context.Background()
 	}
-	return &Server{version: d.Version, log: d.Log, source: d.Source, icons: d.Icons, checks: d.Checks, changelogs: d.Changelogs, schedule: d.Schedule, configFile: d.ConfigFile, background: bg}
+	return &Server{version: d.Version, log: d.Log, source: d.Source, icons: d.Icons, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, schedule: d.Schedule, configFile: d.ConfigFile, background: bg}
 }
 
 // Handler returns the full HTTP handler: API routes plus the SPA served from spa.
@@ -56,6 +61,8 @@ func (s *Server) Handler(spa fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/health", s.health)
 	mux.HandleFunc("GET /api/containers", s.containers)
 	mux.HandleFunc("GET /api/containers/{name}", s.containerDetail)
+	mux.HandleFunc("PUT /api/containers/{name}/review", s.putReview)
+	mux.HandleFunc("DELETE /api/containers/{name}/review", s.deleteReview)
 	mux.HandleFunc("GET /api/icons/{ref}", s.icon)
 	mux.HandleFunc("POST /api/checks", s.startCheck)
 	mux.HandleFunc("GET /api/settings", s.settings)

@@ -4,7 +4,8 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { ContainerDetail } from './detail';
-import { ContainerDetailData } from './detail-types';
+import { Toasts } from '../ui';
+import { ContainerDetailData, HistoryEntry } from './detail-types';
 
 function detail(overrides: Partial<ContainerDetailData> = {}): ContainerDetailData {
   return {
@@ -41,6 +42,7 @@ function detail(overrides: Partial<ContainerDetailData> = {}): ContainerDetailDa
       },
       partial: false,
     },
+    history: [],
     ...overrides,
   };
 }
@@ -374,5 +376,220 @@ describe('ContainerDetail', () => {
   it('shows a not-found state for unknown containers', async () => {
     const el = await render('ghost', (req) => req.flush({ error: 'no container named ghost' }, { status: 404, statusText: 'Not Found' }));
     expect(el.textContent).toContain('No container named ghost');
+  });
+
+  describe('Review actions', () => {
+    const URL = '/api/containers/homeassistant';
+    const text = (e: Element | null | undefined) => e?.textContent?.replace(/\s+/g, ' ').trim();
+    const header = (el: HTMLElement) => el.querySelector('[data-testid="detail-header"]')!;
+    const toasts = () => TestBed.inject(Toasts).items();
+    const settle = () => TestBed.inject(ApplicationRef).whenStable();
+    /** Lets a resolved request's promise chain run (whenStable would wait for the reload it starts). */
+    const tick = async () => {
+      await new Promise((r) => setTimeout(r));
+      TestBed.inject(ApplicationRef).tick();
+    };
+
+    /** Answers the PUT/DELETE and expects the page to reload the detail afterwards. */
+    async function answer(method: 'PUT' | 'DELETE', reload: ContainerDetailData, url = URL) {
+      const req = http.expectOne(`${url}/review`);
+      expect(req.request.method).toBe(method);
+      const body = req.request.body;
+      if (method === 'PUT') req.flush({ ...body, at: '2026-10-20T08:00:00Z' });
+      else req.flush(null, { status: 204, statusText: 'No Content' });
+      await tick();
+      http.expectOne(url).flush(reload);
+      await settle();
+      return body;
+    }
+
+    async function pickSnooze(el: HTMLElement, label: string) {
+      el.querySelector<HTMLButtonElement>('[data-testid="snooze"] button')!.click();
+      await settle();
+      const item = [...el.querySelectorAll<HTMLElement>('[data-testid="snooze"] [role="menuitem"]')].find((i) => text(i) === label)!;
+      item.click();
+      await settle();
+    }
+
+    it('marks the update as reviewed up to the latest version, toasts and reloads', async () => {
+      const el = await render('homeassistant', (req) => req.flush(detail()));
+      expect(el.querySelector('[data-testid="review-actions"] [data-testid="review-status"]')).toBeNull();
+      // They sit on the tab row, not in the header card (keeps the header short).
+      expect(el.querySelector('header [data-testid="review-actions"]')).toBeNull();
+      el.querySelector<HTMLButtonElement>('[data-testid="review-actions"] [data-testid="mark-reviewed"]')!.click();
+      await settle();
+
+      const reviewed = detail();
+      reviewed.container.review = { kind: 'reviewed', version: '2026.10.1', at: '2026-10-20T08:00:00Z' };
+      expect(await answer('PUT', reviewed)).toEqual({ kind: 'reviewed', version: '2026.10.1' });
+      expect(toasts().at(-1)).toEqual(expect.objectContaining({ tone: 'ok', message: 'Marked as reviewed up to 2026.10.1' }));
+      expect(text(el.querySelector('[data-testid="review-actions"] [data-testid="review-status"]'))).toBe('Reviewed up to 2026.10.1 · 20 Oct');
+      expect(el.querySelector('[data-testid="review-actions"] [data-testid="mark-reviewed"]')).toBeNull();
+      // The status line says it once: no dashboard "Reviewed" marker in the header.
+      expect(el.querySelector('header [data-testid="reviewed"]')).toBeNull();
+    });
+
+    it('shows a snooze once, in the status line, not as the dashboard "until" line', async () => {
+      const snoozed = detail();
+      snoozed.container.review = { kind: 'snoozed', until: '2026-10-27T08:00:00Z', at: '2026-10-20T08:00:00Z' };
+      const el = await render('homeassistant', (req) => req.flush(snoozed));
+      expect(el.querySelector('[data-testid="review-actions"] [data-testid="review-status"]')).not.toBeNull();
+      expect(el.querySelector('header [data-testid="snoozed"]')).toBeNull();
+    });
+
+    it('disables the controls while the request runs', async () => {
+      const el = await render('homeassistant', (req) => req.flush(detail()));
+      el.querySelector<HTMLButtonElement>('[data-testid="review-actions"] [data-testid="mark-reviewed"]')!.click();
+      await settle();
+      expect(el.querySelector<HTMLButtonElement>('[data-testid="mark-reviewed"]')!.disabled).toBe(true);
+      expect(el.querySelector<HTMLButtonElement>('[data-testid="snooze"] button')!.disabled).toBe(true);
+      await answer('PUT', detail());
+      expect(el.querySelector<HTMLButtonElement>('[data-testid="mark-reviewed"]')!.disabled).toBe(false);
+    });
+
+    it.each([
+      ['1 day', 1],
+      ['1 week', 7],
+      ['1 month', 30],
+    ])('snoozes for %s with an until computed from now', async (label, days) => {
+      const el = await render('homeassistant', (req) => req.flush(detail()));
+      const before = Date.now();
+      await pickSnooze(el, label);
+      const body = await answer('PUT', detail());
+      expect(body.kind).toBe('snoozed');
+      expect(body.version).toBeUndefined();
+      const offset = Date.parse(body.until) - before;
+      expect(Math.abs(offset - days * 24 * 3600 * 1000)).toBeLessThan(60_000);
+      expect(toasts().at(-1)?.message).toBe(`Snoozed for ${label}`);
+    });
+
+    it('snoozes until a newer version than the latest', async () => {
+      const el = await render('homeassistant', (req) => req.flush(detail()));
+      await pickSnooze(el, 'Until a newer version');
+      expect(await answer('PUT', detail())).toEqual({ kind: 'snoozed', version: '2026.10.1' });
+    });
+
+    it("can't mark or snooze by version without a latest version, and says why", async () => {
+      const d = detail();
+      d.container.update = { ...d.container.update!, latest: undefined };
+      const el = await render('homeassistant', (req) => req.flush(d));
+      const mark = el.querySelector<HTMLButtonElement>('[data-testid="review-actions"] [data-testid="mark-reviewed"]')!;
+      expect(mark.disabled).toBe(true);
+      expect(mark.parentElement?.getAttribute('data-tooltip')).toContain('latest version is unknown');
+      const newer = [...el.querySelectorAll<HTMLElement>('[data-testid="snooze"] [role="menuitem"]')].find((i) => text(i) === 'Until a newer version')!;
+      expect(newer.getAttribute('aria-disabled')).toBe('true');
+      expect(newer.getAttribute('data-tooltip')).toContain('latest version is unknown');
+      await pickSnooze(el, 'Until a newer version');
+      http.expectNone(`${URL}/review`);
+    });
+
+    it('undoes a review with DELETE and stills the severity frame while reviewed', async () => {
+      const d = detail();
+      d.container.review = { kind: 'reviewed', version: '2026.10.1', at: '2026-10-20T08:00:00Z' };
+      const el = await render('homeassistant', (req) => req.flush(d));
+      // The frame keeps its colour but stops circling; the level and reasons stay.
+      expect(header(el).classList).toContain('tm-severity-frame');
+      expect(header(el).classList).toContain('before:hidden');
+      expect(text(header(el).querySelector('[data-testid="level"]'))).toBe('Breaking');
+      expect(el.querySelector('[data-testid="reasons"]')).not.toBeNull();
+
+      const undo = el.querySelector<HTMLButtonElement>('[data-testid="review-actions"] [data-testid="review-undo"]')!;
+      expect(text(undo)).toBe('Undo');
+      undo.click();
+      await settle();
+      await answer('DELETE', detail());
+      expect(toasts().at(-1)).toEqual(expect.objectContaining({ tone: 'ok' }));
+      expect(el.querySelector('[data-testid="review-actions"] [data-testid="mark-reviewed"]')).not.toBeNull();
+      expect(header(el).classList).not.toContain('before:hidden');
+    });
+
+    it('shows a snooze by time or by version, with Unsnooze', async () => {
+      const byTime = detail();
+      byTime.container.review = { kind: 'snoozed', until: '2026-11-03T08:00:00Z', at: '2026-10-20T08:00:00Z' };
+      let el = await render('homeassistant', (req) => req.flush(byTime));
+      expect(text(el.querySelector('[data-testid="review-actions"] [data-testid="review-status"]'))).toBe('Snoozed until 3 Nov');
+      expect(text(el.querySelector('[data-testid="review-actions"] [data-testid="review-undo"]'))).toBe('Unsnooze');
+
+      const byVersion = detail();
+      byVersion.container.name = 'other';
+      byVersion.container.review = { kind: 'snoozed', version: '2026.10.1', at: '2026-10-20T08:00:00Z' };
+      el = await render('other', (req) => req.flush(byVersion));
+      expect(text(el.querySelector('[data-testid="review-actions"] [data-testid="review-status"]'))).toBe('Snoozed until a version newer than 2026.10.1');
+      el.querySelector<HTMLButtonElement>('[data-testid="review-actions"] [data-testid="review-undo"]')!.click();
+      await settle();
+      await answer('DELETE', detail(), '/api/containers/other');
+      expect(toasts().at(-1)?.message).toBe('Unsnoozed');
+    });
+
+    it("toasts a failure and doesn't reload", async () => {
+      const el = await render('homeassistant', (req) => req.flush(detail()));
+      el.querySelector<HTMLButtonElement>('[data-testid="review-actions"] [data-testid="mark-reviewed"]')!.click();
+      await settle();
+      http.expectOne(`${URL}/review`).flush({ error: 'version is required' }, { status: 400, statusText: 'Bad Request' });
+      await tick();
+      await settle();
+      expect(toasts().at(-1)).toEqual(expect.objectContaining({ tone: 'attention', message: "Couldn't save that: version is required" }));
+      http.expectNone(URL);
+      expect(el.querySelector<HTMLButtonElement>('[data-testid="mark-reviewed"]')!.disabled).toBe(false);
+    });
+
+    it('is hidden without an update, and for ignored containers', async () => {
+      const upToDate = detail();
+      upToDate.container.update = { ...upToDate.container.update!, class: 'none', level: 'none', reasons: [] };
+      let el = await render('a', (req) => req.flush(upToDate));
+      expect(el.querySelector('[data-testid="review-actions"]')).toBeNull();
+
+      const ignored = detail();
+      ignored.container.rules = { ignore: true, from: { ignore: 'label' } };
+      el = await render('b', (req) => req.flush(ignored));
+      expect(el.querySelector('[data-testid="review-actions"]')).toBeNull();
+    });
+  });
+
+  describe('History tab', () => {
+    const text = (e: Element | null | undefined) => e?.textContent?.replace(/\s+/g, ' ').trim();
+    async function historyTab(history: HistoryEntry[]) {
+      const el = await render('homeassistant', (req) => req.flush(detail({ history })));
+      (el.querySelector('[ngTab][value="history"]') as HTMLElement).click();
+      await TestBed.inject(ApplicationRef).whenStable();
+      return el;
+    }
+
+    it('lists image changes newest first, with how long the previous version ran', async () => {
+      const el = await historyTab([
+        { at: '2026-10-18T07:00:00Z', running: '2026.10.1', imageId: 'sha256:cccccccccccc1111', prevRunning: '2026.10.1', prevImageId: 'sha256:bbbbbbbbbbbb2222' },
+        { at: '2026-10-14T07:00:00Z', running: '2026.10.1', imageId: 'sha256:bbbbbbbbbbbb2222', prevRunning: '2026.9.0', prevImageId: 'sha256:aaaaaaaaaaaa3333' },
+        { at: '2026-10-02T07:00:00Z', running: '2026.9.0', imageId: 'sha256:aaaaaaaaaaaa3333' },
+      ]);
+      expect(text(el.querySelector('[ngTab][value="history"]'))).toBe('History 3');
+      const rows = [...el.querySelectorAll('[data-testid="history-row"]')];
+      expect(rows.map((r) => text(r.querySelector('[data-testid="history-title"]')))).toEqual([
+        'New image · 2026.10.1',
+        '2026.9.0 → 2026.10.1',
+        'Tracking started · running 2026.9.0',
+      ]);
+      expect(text(rows[0].querySelector('[data-testid="history-ids"]'))).toBe('bbbbbbbbbbbb → cccccccccccc');
+      expect(rows.map((r) => text(r.querySelector('[data-testid="history-ran"]')))).toEqual([
+        'ran 2026.10.1 for 4 days',
+        'ran 2026.9.0 for 12 days',
+        undefined,
+      ]);
+      expect(rows.map((r) => text(r.querySelector('time')))).toEqual(['18 Oct', '14 Oct', '2 Oct']);
+    });
+
+    it('says "New image" with short IDs when the version is unknown', async () => {
+      const el = await historyTab([{ at: '2026-10-18T07:00:00Z', imageId: 'sha256:0123456789abcdef', prevImageId: 'sha256:fedcba9876543210' }]);
+      const row = el.querySelector('[data-testid="history-row"]')!;
+      expect(text(row.querySelector('[data-testid="history-title"]'))).toBe('New image');
+      expect(text(row.querySelector('[data-testid="history-ids"]'))).toBe('fedcba987654 → 0123456789ab');
+      expect(row.querySelector('[data-testid="history-ran"]')).toBeNull(); // the older row isn't there
+    });
+
+    it('shows an empty state before the first successful check', async () => {
+      const el = await historyTab([]);
+      expect(text(el.querySelector('[ngTab][value="history"]'))).toBe('History');
+      expect(el.querySelector('[data-testid="history"]')).toBeNull();
+      expect(text(el.querySelector('[data-testid="history-empty"]'))).toBe('No history yetIt starts at the first successful check.');
+    });
   });
 });

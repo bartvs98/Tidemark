@@ -1,0 +1,38 @@
+<button
+  tmButton
+  type="button"
+  ngMenuTrigger
+  [menu]="menu"
+  [softDisabled]="false"
+  [disabled]="disabled()"
+  [variant]="variant()"
+  [size]="size()"
+  [icon]="icon()"
+>
+  {{ label() }}<tm-icon name="chevron-down" [size]="14" class="-mr-0.5 opacity-70" />
+</button>
+<div
+  ngMenu
+  #menu="ngMenu"
+  class="absolute top-full z-30 mt-1 flex w-max min-w-full flex-col rounded-lg border border-line-strong bg-surface p-1 shadow-overlay data-[visible=false]:hidden"
+  [class.left-0]="align() === 'start'"
+  [class.right-0]="align() === 'end'"
+  [attr.aria-label]="label()"
+  (itemSelected)="select($event)"
+>
+  @for (item of items(); track item.value) {
+    <div
+      ngMenuItem
+      [value]="item.value"
+      [disabled]="!!item.disabled"
+      [searchTerm]="item.label"
+      [tmTooltip]="item.hint"
+      class="flex h-8 cursor-pointer items-center gap-2 rounded-sm px-2.5 text-sm whitespace-nowrap text-fg outline-none select-none hover:bg-hover data-[active=true]:bg-hover aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:hover:bg-transparent"
+    >
+      @if (item.icon) {
+        <tm-icon [name]="item.icon" [size]="14" class="text-fg-muted" />
+      }
+      {{ item.label }}
+    </div>
+  }
+</div>

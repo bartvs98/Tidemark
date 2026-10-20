@@ -347,3 +347,120 @@ func tsOrEmpty(t time.Time) string {
 	}
 	return ts(t)
 }
+
+// ── Reviews ──────────────────────────────────────────────
+
+// Review is a container's review state, by name: reviewed (read the changes up to
+// Version) or snoozed (until Until, or until a version newer than Version).
+type Review struct {
+	ContainerName string
+	Kind          string    // reviewed | snoozed
+	Version       string    // reviewed: up to; snoozed: until newer than ("" when by time)
+	Until         time.Time // snoozed by time; zero otherwise
+	CreatedAt     time.Time
+}
+
+// Reviews returns all stored reviews by container name.
+func (s *Store) Reviews(ctx context.Context) (map[string]Review, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT container_name, kind, version, until, created_at FROM reviews`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]Review{}
+	for rows.Next() {
+		var r Review
+		var until, created string
+		if err := rows.Scan(&r.ContainerName, &r.Kind, &r.Version, &until, &created); err != nil {
+			return nil, err
+		}
+		r.Until, r.CreatedAt = parseTS(until), parseTS(created)
+		out[r.ContainerName] = r
+	}
+	return out, rows.Err()
+}
+
+// SaveReview stores a container's review, replacing any earlier one (reviewed and
+// snoozed exclude each other).
+func (s *Store) SaveReview(ctx context.Context, r Review) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO reviews (container_name, kind, version, until, created_at) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (container_name) DO UPDATE SET kind = excluded.kind, version = excluded.version,
+			until = excluded.until, created_at = excluded.created_at`,
+		r.ContainerName, r.Kind, r.Version, tsOrEmpty(r.Until), ts(r.CreatedAt))
+	return err
+}
+
+// DeleteReview removes a container's review; nothing stored is fine.
+func (s *Store) DeleteReview(ctx context.Context, name string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM reviews WHERE container_name = ?`, name)
+	return err
+}
+
+// ── History ──────────────────────────────────────────────
+
+// HistoryEntry is an image change of a container seen between successful checks. The
+// first entry of a container has no Prev*: that's when tracking started.
+type HistoryEntry struct {
+	ID            int64
+	ContainerName string
+	ImageID       string
+	Running       string
+	PrevImageID   string // "" on the first row
+	PrevRunning   string
+	DetectedAt    time.Time
+	Via           string // check
+}
+
+func (s *Store) AddHistory(ctx context.Context, h HistoryEntry) error {
+	via := h.Via
+	if via == "" {
+		via = "check"
+	}
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO history (container_name, image_id, running, prev_image_id, prev_running, detected_at, via)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		h.ContainerName, h.ImageID, h.Running, h.PrevImageID, h.PrevRunning, ts(h.DetectedAt), via)
+	return err
+}
+
+// History returns a container's entries, newest first.
+func (s *Store) History(ctx context.Context, name string) ([]HistoryEntry, error) {
+	return s.queryHistory(ctx, `
+		SELECT id, container_name, image_id, running, prev_image_id, prev_running, detected_at, via
+		FROM history WHERE container_name = ? ORDER BY id DESC`, name)
+}
+
+// LastHistory returns the newest entry of every container, by name.
+func (s *Store) LastHistory(ctx context.Context) (map[string]HistoryEntry, error) {
+	list, err := s.queryHistory(ctx, `
+		SELECT id, container_name, image_id, running, prev_image_id, prev_running, detected_at, via
+		FROM history WHERE id IN (SELECT MAX(id) FROM history GROUP BY container_name)`)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]HistoryEntry, len(list))
+	for _, h := range list {
+		out[h.ContainerName] = h
+	}
+	return out, nil
+}
+
+func (s *Store) queryHistory(ctx context.Context, query string, args ...any) ([]HistoryEntry, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []HistoryEntry
+	for rows.Next() {
+		var h HistoryEntry
+		var detected string
+		if err := rows.Scan(&h.ID, &h.ContainerName, &h.ImageID, &h.Running, &h.PrevImageID, &h.PrevRunning, &detected, &h.Via); err != nil {
+			return nil, err
+		}
+		h.DetectedAt = parseTS(detected)
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}

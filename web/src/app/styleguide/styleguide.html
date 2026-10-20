@@ -188,6 +188,68 @@
     </div>
   </section>
 
+  <!-- ── Review states ──────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Reviewed &amp; snoozed</h2>
+    <p class="mb-4 text-fg-muted">
+      An update the user has dealt with (<span class="font-mono text-sm">review</span> on the container). <strong>Reviewed</strong>:
+      the badges fade and a quiet "Reviewed" marker (check icon + word) joins them; the row stays in place.
+      <strong>Snoozed</strong>: the badges fade, the version cell says "until 3 Nov" or "until newer than v2.0.1", and the row or tile is
+      toned down like an up-to-date one. Snoozed containers move to a collapsed "Snoozed" section above "Ignored". Neither state has a
+      colour of its own: it is not a risk.
+    </p>
+    <h3 class="mb-2 text-sm font-medium text-fg-muted">List</h3>
+    <tm-container-table [containers]="reviewSamples" [link]="sampleLink" showStack />
+    <h3 class="mt-6 mb-2 text-sm font-medium text-fg-muted">Tiles</h3>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      @for (c of reviewSamples; track c.id) {
+        <tm-container-tile [container]="c" [link]="sampleLink" showStack />
+      }
+    </div>
+    <h3 class="mt-6 mb-2 text-sm font-medium text-fg-muted">The "Snoozed" section</h3>
+    <tm-section heading="Snoozed" icon="clock" meta="2 containers" collapsible muted [(open)]="snoozedOpen">
+      @if (snoozedOpen()) {
+        <tm-container-table [containers]="[snoozedUntil, snoozedNewer]" [link]="sampleLink" showStack />
+      }
+    </tm-section>
+
+    <h3 class="mt-8 mb-1 text-sm font-medium text-fg-muted">Detail tab row: <span class="font-mono">tm-review-actions</span></h3>
+    <p class="mb-3 text-sm text-fg-muted">
+      Without a review: "Mark reviewed" and a "Snooze" menu. With one: a quiet status plus Undo / Unsnooze. Without a latest version both
+      actions are disabled, with the reason on hover. They call the API on click, so on this page a click only shows a failure toast. In a plain box, not a card: a card would clip the open menu.
+    </p>
+    <div class="rounded-lg border border-line bg-surface pb-28 shadow-raised">
+      <table class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]" data-testid="review-action-states">
+        <thead>
+          <tr>
+            <th scope="col" class="w-[35%]">Case</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (s of reviewActionStates; track s.label) {
+            <tr>
+              <td data-stack="full" class="text-sm text-fg-muted">{{ s.label }}</td>
+              <td><tm-review-actions [container]="s.container" class="sm:justify-start" /></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="mt-8 mb-1 text-sm font-medium text-fg-muted">Detail page: <span class="font-mono">tm-history</span></h3>
+    <p class="mb-3 text-sm text-fg-muted">
+      Image changes, newest first: a version change, a new image whose version is unknown (image ids in mono, "ran for" when known), and where
+      tracking started. Empty state below.
+    </p>
+    <div class="grid gap-4 md:grid-cols-2">
+      <tm-card heading="History"><tm-history [entries]="historyEntries" /></tm-card>
+      <tm-card heading="History">
+        <tm-empty-state icon="history" heading="No history yet" description="It starts at the first successful check." />
+      </tm-card>
+    </div>
+  </section>
+
   <!-- ── Tooltips ───────────────────────────────────────── -->
   <section>
     <h2 class="mb-1 text-xl font-semibold">Tooltips</h2>
@@ -259,6 +321,13 @@
           <p class="mt-2 text-sm text-fg-muted">data-level="{{ level }}"</p>
         </div>
       }
+      <div class="tm-severity-frame rounded-xl border bg-surface p-5 before:hidden" data-level="breaking">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="text-lg font-semibold">immich-server</span>
+          <tm-level level="breaking" />
+        </div>
+        <p class="mt-2 text-sm text-fg-muted">Reviewed or snoozed: <span class="font-mono">before:hidden</span> stills the arcs, the border stays</p>
+      </div>
     </div>
   </section>
 
@@ -334,6 +403,28 @@
         Its rules aren't applied until it loads; rules from labels still are.
         <span class="mt-1 block font-mono text-xs break-all">/config/tidemark.yml: yaml: line 4: did not find expected key</span>
       </tm-callout>
+    </div>
+  </section>
+
+  <!-- ── Menu ───────────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Menu</h2>
+    <p class="mb-4 text-fg-muted">
+      <span class="font-mono text-sm">tm-menu</span>: a button that opens a short list of actions (Angular Aria: arrow keys, Home/End,
+      typeahead, Escape). Open one to see an item with an icon and a disabled item with a hint (hover or focus it). It sits in a plain box here
+      because a <span class="font-mono text-sm">tm-card</span> clips overflow, and with it the open menu.
+    </p>
+    <div class="rounded-lg border border-line bg-surface p-5 pb-36 shadow-raised">
+        <div class="flex flex-wrap items-center gap-3">
+          <tm-menu label="Snooze" icon="clock" size="sm" [items]="menuItems" (selected)="menuChoice.set($event)" />
+          <tm-menu label="Snooze" icon="clock" [items]="menuItems" (selected)="menuChoice.set($event)" />
+          <tm-menu label="Actions" variant="ghost" size="sm" align="end" [items]="menuItems" (selected)="menuChoice.set($event)" />
+          <tm-menu label="Snooze" icon="clock" size="sm" [items]="menuItems" disabled />
+          <span class="text-sm text-fg-muted">
+            sm, md, ghost with <span class="font-mono">align="end"</span>, disabled; chosen:
+            <span class="font-mono">{{ menuChoice() || 'none' }}</span>.
+          </span>
+        </div>
     </div>
   </section>
 

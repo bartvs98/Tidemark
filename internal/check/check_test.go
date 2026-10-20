@@ -466,3 +466,93 @@ func TestStaleTagsAreRecorded(t *testing.T) {
 		t.Errorf("after restart = %+v ok=%v", e, ok)
 	}
 }
+
+// History records each image change between successful checks, starting with a
+// "tracking started" row, and continues across failed checks and restarts.
+func TestHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.db")
+	st := openStore(t, path)
+	reg := &countingRegistry{calls: map[string]int{}}
+	history := func(st *store.Store) []store.HistoryEntry {
+		t.Helper()
+		h, err := st.History(context.Background(), "app")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h
+	}
+
+	// First check: tracking started.
+	s := New(listSource{list: []docker.Container{ctr("app", "team/app:1.0.0", "sha256:1")}}, reg, st, quiet)
+	runOnce(t, s)
+	h := history(st)
+	if len(h) != 1 || h[0].ImageID != "sha256:1" || h[0].Running != "1.0.0" || h[0].PrevImageID != "" || h[0].PrevRunning != "" ||
+		h[0].Via != "check" || h[0].DetectedAt.IsZero() {
+		t.Fatalf("first check = %+v", h)
+	}
+
+	// Same image again: nothing new.
+	runOnce(t, s)
+	if h := history(st); len(h) != 1 {
+		t.Fatalf("same image added rows: %+v", h)
+	}
+
+	// New image ID: a change row from the previous one.
+	s.source = listSource{list: []docker.Container{ctr("app", "team/app:1.1.0", "sha256:2")}}
+	runOnce(t, s)
+	h = history(st)
+	if len(h) != 2 || h[0].ImageID != "sha256:2" || h[0].Running != "1.1.0" || h[0].PrevImageID != "sha256:1" || h[0].PrevRunning != "1.0.0" {
+		t.Fatalf("change = %+v", h)
+	}
+
+	// A failed check in between (image gone from the host) records nothing, and the next
+	// successful one still changes from sha256:2.
+	s.source = listSource{list: []docker.Container{{ID: "id-app", Name: "app", ImageRef: "team/app:1.2.0", Image: docker.Image{ID: "sha256:3", Missing: true}}}}
+	runOnce(t, s)
+	if h := history(st); len(h) != 2 {
+		t.Fatalf("failed check added rows: %+v", h)
+	}
+	// So does a resolve error.
+	s.source = listSource{list: []docker.Container{ctr("app", "team/broken:1.0.0", "sha256:4")}}
+	runOnce(t, s)
+	if h := history(st); len(h) != 2 {
+		t.Fatalf("resolve error added rows: %+v", h)
+	}
+	s.source = listSource{list: []docker.Container{ctr("app", "team/app:1.1.0", "sha256:5")}}
+	runOnce(t, s)
+	h = history(st)
+	if len(h) != 3 || h[0].ImageID != "sha256:5" || h[0].PrevImageID != "sha256:2" || h[0].PrevRunning != "1.1.0" {
+		t.Fatalf("after failures = %+v", h)
+	}
+
+	// A restart continues from the stored last row.
+	st2 := openStore(t, path)
+	again := New(listSource{list: []docker.Container{ctr("app", "team/app:1.1.0", "sha256:5")}}, reg, st2, quiet)
+	if err := again.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	runOnce(t, again)
+	if h := history(st2); len(h) != 3 {
+		t.Fatalf("restart with the same image added rows: %+v", h)
+	}
+	again.source = listSource{list: []docker.Container{ctr("app", "team/app:1.0.0", "sha256:6")}}
+	runOnce(t, again)
+	h = history(st2)
+	if len(h) != 4 || h[0].ImageID != "sha256:6" || h[0].PrevImageID != "sha256:5" || h[0].Running != "1.0.0" || h[0].PrevRunning != "1.1.0" {
+		t.Fatalf("after restart = %+v", h)
+	}
+}
+
+// Ignored containers aren't checked, so they get no history; containers sharing a check
+// each get their own rows.
+func TestHistoryIgnoredAndShared(t *testing.T) {
+	st := openStore(t, filepath.Join(t.TempDir(), "t.db"))
+	a, b := ctr("a", "team/app:1.0.0", "sha256:1"), ctr("b", "team/app:1.0.0", "sha256:1")
+	ign := withLabels(ctr("ign", "team/app:1.0.0", "sha256:1"), "tidemark.ignore", "true")
+	s := New(listSource{list: []docker.Container{a, b, ign}}, &countingRegistry{calls: map[string]int{}}, st, quiet)
+	runOnce(t, s)
+	last, err := st.LastHistory(context.Background())
+	if err != nil || len(last) != 2 || last["a"].ImageID != "sha256:1" || last["b"].ImageID != "sha256:1" {
+		t.Errorf("last = %+v, %v", last, err)
+	}
+}

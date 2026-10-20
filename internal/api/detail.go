@@ -10,6 +10,7 @@ import (
 
 	"github.com/bartvs98/tidemark/internal/analysis"
 	"github.com/bartvs98/tidemark/internal/changelog"
+	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
 	"github.com/bartvs98/tidemark/internal/source"
 	"github.com/bartvs98/tidemark/internal/version"
@@ -22,6 +23,7 @@ type detailJSON struct {
 	Container containerJSON  `json:"container"`
 	Image     imageDetail    `json:"image"`
 	Changelog *changelogJSON `json:"changelog,omitempty"` // nil: no source repository found
+	History   []historyJSON  `json:"history"`             // image changes, newest first; always an array
 }
 
 type imageDetail struct {
@@ -70,28 +72,15 @@ type linksJSON struct {
 const githubReleasesPerPage = 10
 
 func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	list, err := s.source.Containers(r.Context())
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+	c, ok := s.findContainer(w, r)
+	if !ok {
 		return
 	}
-	idx := -1
-	for i, c := range list {
-		if c.Name == name {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		writeError(w, http.StatusNotFound, "no container named "+name)
-		return
-	}
-	c := list[idx]
 
 	out := detailJSON{
-		Container: s.toContainerJSON(r.Context(), c),
+		Container: s.toContainerJSON(r.Context(), c, s.reviews(r.Context())),
 		Image:     imageDetail{Digests: orEmptySlice(c.Image.RepoDigests), Labels: ociLabels(c.Image.Labels)},
+		History:   s.history(r.Context(), c.Name),
 	}
 
 	// Ignore means no outside calls for this container, release notes included.
@@ -138,6 +127,24 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// findContainer looks up the container named in the path. If there's none, or Docker
+// fails, it answers the request itself and returns false.
+func (s *Server) findContainer(w http.ResponseWriter, r *http.Request) (docker.Container, bool) {
+	name := r.PathValue("name")
+	list, err := s.source.Containers(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return docker.Container{}, false
+	}
+	for _, c := range list {
+		if c.Name == name {
+			return c, true
+		}
+	}
+	writeError(w, http.StatusNotFound, "no container named "+name)
+	return docker.Container{}, false
 }
 
 func toChangelogJSON(repo source.Repo, how source.How, ch changelog.Changes) *changelogJSON {

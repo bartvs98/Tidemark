@@ -12,6 +12,7 @@ import {
   TmEmptyState,
   TmIcon,
   TmLevel,
+  TmMenu,
   TmSection,
   TmSearch,
   TmSegmented,
@@ -20,6 +21,7 @@ import {
   TmTideGauge,
   TmTooltip,
   SegmentOption,
+  MenuOption,
   TmUpdateClass,
   TmVersionDiff,
   Toasts,
@@ -31,6 +33,9 @@ import { ContainerTile } from '../dashboard/container-tile/container-tile';
 import { ContainerSummary, groupByStack, UpdateInfo } from '../dashboard/containers';
 import { ContainerUpdate } from '../dashboard/container-update/container-update';
 import { ContainerVersion } from '../dashboard/container-version/container-version';
+import { ReviewActions } from '../detail/review-actions/review-actions';
+import { History } from '../detail/history/history';
+import { HistoryEntry } from '../detail/detail-types';
 import { ContainerRuleProblems } from '../dashboard/rule-problems/rule-problems';
 
 /** A sample container from an image ref ("jellyfin/jellyfin:10.9.11", "ghcr.io/owner/app:v1"). */
@@ -91,6 +96,9 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
     TmEmptyState,
     TmIcon,
     TmLevel,
+    TmMenu,
+    ReviewActions,
+    History,
     TmSection,
     TmSearch,
     TmSegmented,
@@ -187,6 +195,14 @@ export class Styleguide {
   ];
 
   protected readonly ignoredOpen = signal(false);
+  protected readonly snoozedOpen = signal(true);
+
+  protected readonly menuItems: MenuOption[] = [
+    { value: 'day', label: '1 day' },
+    { value: 'week', label: '1 week', icon: 'clock' },
+    { value: 'newer', label: 'Until a newer version', disabled: true, hint: 'The latest version is unknown, so there is nothing to mark it against.' },
+  ];
+  protected readonly menuChoice = signal('');
   protected readonly dialogOpen = signal(false);
 
   /** Per-container rules as the dashboard shows them (real components, sample data). */
@@ -219,6 +235,41 @@ export class Styleguide {
   ];
 
   protected readonly radii = ['rounded-sm', 'rounded-md', 'rounded-lg', 'rounded-xl'];
+
+
+  /** Updates the user has dealt with: reviewed (faded, "Reviewed" marker) and snoozed (until a date / a newer version). */
+  protected readonly reviewed = sample('sonarr-4k', 'lscr.io/linuxserver/sonarr:latest', {
+    stack: 'media',
+    update: { ...UPDATE, source: 'label', running: '4.0.12', latest: '4.0.14', class: 'patch', level: 'attention', reasons: [{ text: 'config path moved', tag: '4.0.13' }] },
+    review: { kind: 'reviewed', version: '4.0.14', at: '2026-10-18T09:00:00Z' },
+  });
+  protected readonly snoozedUntil = sample('jellyfin', 'jellyfin/jellyfin:10.9.11', {
+    stack: 'media',
+    update: { ...UPDATE, source: 'label', running: '10.9.11', latest: '10.10.7', class: 'minor', level: 'attention', reasons: [{ text: 'clients older than 10.9 can no longer connect', tag: '10.10.0' }] },
+    review: { kind: 'snoozed', until: '2026-11-03T09:00:00Z', at: '2026-10-18T09:00:00Z' },
+  });
+  protected readonly snoozedNewer = sample('immich-server', 'ghcr.io/immich-app/immich-server:v1.135.3', {
+    stack: 'photos',
+    update: { ...UPDATE, running: 'v1.135.3', latest: 'v2.0.1', class: 'major', level: 'breaking', reasons: [{ text: 'Major version: v1.135.3 → v2.0.1' }] },
+    review: { kind: 'snoozed', version: 'v2.0.1', at: '2026-10-18T09:00:00Z' },
+  });
+  protected readonly reviewSamples = [this.reviewed, this.snoozedUntil, this.snoozedNewer];
+  /** What the detail header's review actions show, per state. */
+  protected readonly reviewActionStates: { label: string; container: ContainerSummary }[] = [
+    { label: 'No review yet', container: { ...this.snoozedUntil, review: undefined } },
+    { label: 'Reviewed', container: this.reviewed },
+    { label: 'Snoozed until a date', container: this.snoozedUntil },
+    { label: 'Snoozed until a newer version', container: this.snoozedNewer },
+    {
+      label: 'No latest version known: both disabled',
+      container: { ...this.snoozedUntil, review: undefined, update: { ...UPDATE, running: 'dev', class: 'digest', newImage: true } },
+    },
+  ];
+  protected readonly historyEntries: HistoryEntry[] = [
+    { at: '2026-10-12T07:00:00Z', running: '1.6.0', imageId: 'sha256:3f9a1c0d2b7e8a41', prevRunning: '1.4.2', prevImageId: 'sha256:9b21c4e07a55d013' },
+    { at: '2026-10-01T07:00:00Z', imageId: 'sha256:9b21c4e07a55d013', prevImageId: 'sha256:51d0aa7c92e3b6f8' },
+    { at: '2026-09-20T07:00:00Z', running: '1.4.2', imageId: 'sha256:51d0aa7c92e3b6f8' },
+  ];
 
   /** Every state tm-container-version + tm-container-update can be in. */
   protected readonly updateStates: { label: string; container: ContainerSummary; checking?: boolean }[] = [

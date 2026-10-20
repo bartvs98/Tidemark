@@ -13,9 +13,13 @@ import {
   hasUpdate,
   imageName,
   isCurrent,
+  isOpenUpdate,
+  matchesFilter,
   orderStacks,
   refreshFailed,
+  ReviewState,
   splitIgnored,
+  splitSnoozed,
   UpdateInfo,
 } from './containers';
 
@@ -155,6 +159,39 @@ describe('orderStacks', () => {
     expect(isCurrent(container('a', undefined, { update: neverChecked }))).toBe(false);
     expect(isCurrent(container('a'))).toBe(false);
     expect(isCurrent(container('a', undefined, { update: checked('none'), rules: { ignore: true, from: {} } }))).toBe(false);
+  });
+});
+
+const reviewed = (version = '2.0.0'): ReviewState => ({ kind: 'reviewed', version, at: '2026-10-20T09:00:00Z' });
+const snoozedUntil = (until = '2026-11-03T09:00:00Z'): ReviewState => ({ kind: 'snoozed', until, at: '2026-10-20T09:00:00Z' });
+const snoozedVersion = (version = '2.0.0'): ReviewState => ({ kind: 'snoozed', version, at: '2026-10-20T09:00:00Z' });
+
+describe('review helpers', () => {
+  it('keeps reviewed updates in the filters and stack order as settled, and splits snoozed ones off', () => {
+    const rev = container('rev', 'a', { update: checked('major', 'breaking'), review: reviewed() });
+    const snz = container('snz', 'b', { update: checked('major', 'breaking'), review: snoozedUntil() });
+    const open = container('open', 'c', { update: checked('patch') });
+    expect([rev, snz, open].map(isOpenUpdate)).toEqual([false, false, true]);
+    expect(matchesFilter(rev, 'breaking')).toBe(true);
+    expect(matchesFilter(snz, 'breaking')).toBe(false);
+    expect(matchesFilter(snz, 'updates')).toBe(false);
+    expect(matchesFilter(snz, 'all')).toBe(true);
+
+    const { active, snoozed } = splitSnoozed([snz, rev, open]);
+    expect(active.map((c) => c.name)).toEqual(['rev', 'open']);
+    expect(snoozed.map((c) => c.name)).toEqual(['snz']);
+
+    // A stack whose only update is reviewed counts as nothing to look at.
+    const stacks = orderStacks([rev, container('cur', 'a', { update: checked('none') }), open]);
+    expect(stacks.map((s) => [s.name, s.current])).toEqual([
+      ['c', false],
+      ['a', true],
+    ]);
+    // Reviewed stays in its level's section; snoozed is left out.
+    expect(groupBySeverity([rev, snz, open]).map((g) => [g.key, g.containers.map((c) => c.name)])).toEqual([
+      ['breaking', ['rev']],
+      ['updates', ['open']],
+    ]);
   });
 });
 
@@ -809,6 +846,138 @@ describe('Dashboard', () => {
       const tiles = [...el.querySelectorAll('tm-container-tile')];
       expect(tiles.filter((t) => t.hasAttribute('data-current')).map((t) => text(t.querySelector('h3 a')))).toEqual(['sonarr', 'adguard']);
       expect(el.querySelector('[data-testid="tile-stack"]')).toBeNull();
+    });
+  });
+
+  describe('reviewed and snoozed', () => {
+    const text = (e: Element | null | undefined) => e?.textContent?.replace(/\s+/g, ' ').trim();
+    const settle = () => TestBed.inject(ApplicationRef).whenStable();
+    function body(): ContainerList {
+      return {
+        source: { kind: 'docker', location: 'x' },
+        check: { running: false, done: 6, total: 6, finishedAt: '2026-10-16T13:00:00Z' },
+        containers: [
+          container('jellyfin', 'media', { update: checked('major', 'breaking'), review: reviewed() }),
+          container('sonarr', 'media', { update: checked('none') }),
+          container('vault', 'secrets', { update: checked('minor', 'attention') }),
+          container('stirling', 'recipes', { update: checked('patch'), review: snoozedUntil() }),
+          container('immich', 'photos', { update: checked('major', 'breaking'), review: snoozedVersion() }),
+          container('adguard', 'networking', { update: checked('none') }),
+        ],
+      };
+    }
+    const sectionNames = (el: HTMLElement) => [...el.querySelectorAll('tm-section')].map((s) => text(s.querySelector('h2')));
+
+    it('keeps a reviewed update in place, faded, with a marker, and leaves it out of the hero', async () => {
+      const el = await render((req) => req.flush(body()));
+      expect(text(el.querySelector('[data-testid="headline"]'))).toBe('1 update');
+      expect(text(el.querySelector('[data-testid="stat-breaking"]'))).toBe('Breaking 0');
+      expect(text(el.querySelector('[data-testid="stat-attention"]'))).toBe('Attention 1');
+      expect(text(el.querySelector('[data-testid="stat-updates"]'))).toBe('Updates 1');
+      expect(text(el.querySelector('[data-testid="summary"]'))).toContain('6 containers · 5 stacks · 1 reviewed · 2 snoozed ·');
+      // The gauge still measures truly up to date: 2 of the 6 checked.
+      expect(el.querySelector('[data-testid="gauge"]')!.getAttribute('aria-label')).toBe('2 of 6 checked containers up to date');
+
+      // media has only a reviewed update (and an up-to-date one): it drops down with the up-to-date stacks.
+      expect(sectionNames(el)).toEqual(['secrets', 'media', 'networking', 'Snoozed']);
+      const row = [...el.querySelectorAll('tbody tr')].find((r) => text(r.querySelector('a')) === 'jellyfin')!;
+      expect(row.querySelector('tm-update-class')!.classList).toContain('opacity-50');
+      expect(row.querySelector('[data-testid="level"]')!.classList).toContain('opacity-50');
+      const marker = row.querySelector('[data-testid="reviewed"]')!;
+      expect(text(marker)).toBe('Reviewed');
+      expect(marker.querySelector('tm-icon')).not.toBeNull();
+      expect(marker.getAttribute('data-tooltip')).toContain('Reviewed up to 2.0.0 on 20 Oct.');
+      expect(marker.hasAttribute('title')).toBe(false);
+      // Not bold: it has been looked at.
+      expect(row.querySelector('a')!.className).not.toContain('font-semibold');
+
+      // An open update is neither faded nor marked.
+      const vault = [...el.querySelectorAll('tbody tr')].find((r) => text(r.querySelector('a')) === 'vault')!;
+      expect(vault.querySelector('[data-testid="level"]')!.classList).not.toContain('opacity-50');
+      expect(vault.querySelector('[data-testid="reviewed"]')).toBeNull();
+    });
+
+    it('keeps reviewed updates in the Updates and Breaking filters, but not snoozed ones', async () => {
+      const el = await render((req) => req.flush(body()));
+      const filter = el.querySelector('[data-testid="filter"]')!;
+      expect(text(filter)).toContain('Updates 2');
+      expect(text(filter)).toContain('Breaking 1');
+      [...filter.querySelectorAll('button')].find((b) => b.textContent?.includes('Breaking'))!.click();
+      await settle();
+      expect([...el.querySelectorAll('tbody tr a')].map(text)).toEqual(['jellyfin']);
+      expect(el.querySelector('[data-testid="snoozed-section"]')).toBeNull();
+    });
+
+    it('moves snoozed updates to a collapsed Snoozed section above Ignored, with until when', async () => {
+      const list = body();
+      list.containers.push(container('filebrowser', 'tools', { rules: { ignore: true, from: { ignore: 'label' } } }));
+      const el = await render((req) => req.flush(list));
+      expect(sectionNames(el).slice(-2)).toEqual(['Snoozed', 'Ignored']);
+      const snoozed = el.querySelector('[data-testid="snoozed-section"]')!;
+      expect(snoozed.textContent).toContain('2 containers');
+      const toggle = snoozed.querySelector<HTMLButtonElement>('h2 button')!;
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      toggle.click();
+      await settle();
+      const rows = [...snoozed.querySelectorAll('tbody tr')];
+      expect(rows.map((r) => text(r.querySelector('a')))).toEqual(['immich', 'stirling']);
+      expect(text(rows[0])).toContain('photos · Up 2 days'); // its stack, since it left that section
+      expect(rows.every((r) => r.querySelector('a')!.className.includes('text-fg-muted'))).toBe(true);
+      const lines = rows.map((r) => r.querySelector('[data-testid="snoozed"]')!);
+      expect(text(lines[0])).toBe('until newer than 2.0.0');
+      expect(lines[0].querySelector('.font-mono')!.textContent).toBe('2.0.0');
+      expect(text(lines[1])).toBe('until 3 Nov');
+      expect(lines[1].getAttribute('data-tooltip')).toContain('Snoozed on 20 Oct');
+      expect(rows[0].querySelector('[data-testid="level"]')!.classList).toContain('opacity-50');
+      // Not in their old stacks.
+      expect(sectionNames(el)).not.toContain('recipes');
+      expect(sectionNames(el)).not.toContain('photos');
+    });
+
+    it('shows snoozed tiles too, and leaves them out of the severity groups', async () => {
+      localStorage.setItem('tidemark.view', 'tiles');
+      localStorage.setItem('tidemark.group', 'severity');
+      const el = await render((req) => req.flush(body()));
+      expect(sectionNames(el)).toEqual(['Breaking', 'Attention', 'Up to date', 'Snoozed']);
+      const snoozed = el.querySelector('[data-testid="snoozed-section"]')!;
+      snoozed.querySelector<HTMLButtonElement>('h2 button')!.click();
+      await settle();
+      const tiles = [...snoozed.querySelectorAll('tm-container-tile')];
+      expect(tiles.length).toBe(2);
+      expect(tiles[1].className).toContain('bg-transparent'); // toned down
+      expect(text(tiles[1].querySelector('[data-testid="snoozed"]'))).toBe('until 3 Nov');
+      // The reviewed tile keeps its place under Breaking, with the marker.
+      expect(el.querySelector('[data-testid="severity-breaking"] [data-testid="reviewed"]')).not.toBeNull();
+    });
+
+    it('searches inside the Snoozed section', async () => {
+      const el = await render((req) => req.flush(body()));
+      const input = el.querySelector<HTMLInputElement>('[data-testid="search"] input')!;
+      input.value = 'tand';
+      input.dispatchEvent(new Event('input'));
+      await settle();
+      const snoozed = el.querySelector('[data-testid="snoozed-section"]')!;
+      expect(snoozed.textContent).toContain('1 container');
+      input.value = 'vault';
+      input.dispatchEvent(new Event('input'));
+      await settle();
+      expect(el.querySelector('[data-testid="snoozed-section"]')).toBeNull();
+    });
+
+    it('says "No open updates" when only reviewed or snoozed updates are left', async () => {
+      const list = body();
+      list.containers = list.containers.filter((c) => c.name !== 'vault');
+      const el = await render((req) => req.flush(list));
+      expect(text(el.querySelector('[data-testid="headline"]'))).toBe('No open updates');
+      expect(text(el.querySelector('[data-testid="stat-updates"]'))).toBe('Updates 0');
+    });
+
+    it('says snoozed updates show under All when the Updates filter is empty', async () => {
+      localStorage.setItem('tidemark.filter', 'updates');
+      const list = body();
+      list.containers = list.containers.filter((c) => c.review?.kind !== 'reviewed' && c.name !== 'vault');
+      const el = await render((req) => req.flush(list));
+      expect(el.textContent).toContain('Snoozed updates show under All.');
     });
   });
 

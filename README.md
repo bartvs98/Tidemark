@@ -9,6 +9,7 @@
 - **Same family only.** `1.4-alpine` is compared with other `-alpine` releases, never with `-debian`. Updates are classed as patch / minor / major / new image.
 - **Release notes in between,** from GitHub or GitLab releases (or `CHANGELOG.md`), with compare links.
 - **Breaking-change flags.** Release notes are scanned for things like "BREAKING", "action required" and removed options. Each update gets a risk level (none / attention / breaking) with the reasons, and the lines that triggered it are highlighted.
+- **Reviewed, snoozed, history.** Mark an update as read up to its latest version, or snooze it for a while or until a newer version; a History tab lists the image changes Tidemark has seen per container.
 - **Per-container rules** via labels or a config file: ignore, pin to `1.4.x`, no majors, include pre-releases, custom tag pattern, source repo override.
 - **Read-only and private.** Tidemark never changes your containers. It talks to Docker through a read-only socket proxy and never reads container environment variables.
 
@@ -60,7 +61,7 @@ Everything is set by environment variables (the Settings dialog only shows them)
 | Env var | Default | |
 |---|---|---|
 | `TIDEMARK_ADDR` | `:8080` | Listen address |
-| `TIDEMARK_DATA_DIR` | `./data` (`/data` in Docker) | SQLite database, icon cache, default location of `config.yaml` |
+| `TIDEMARK_DATA_DIR` | `./data` (`/data` in Docker) | SQLite database (check results, release notes, reviews, history), icon cache, default location of `config.yaml` |
 | `TIDEMARK_CONFIG` | `<data dir>/config.yaml` | Optional rules file, re-read on every check; a missing file means no file rules |
 | `TIDEMARK_SCHEDULE` | `0 */6 * * *` | When to check for updates: cron, `@daily` or `@every 3h`, in the server's time zone unless prefixed with `CRON_TZ=Europe/Amsterdam `. `off` to only check on demand |
 | `TIDEMARK_GITHUB_TOKEN` | — | Optional, recommended: a fine-grained token with public repositories read-only; raises GitHub's limit from 60 to 5000 requests/hour. Only sent to api.github.com |

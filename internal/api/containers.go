@@ -15,6 +15,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/resolve"
 	"github.com/bartvs98/tidemark/internal/rules"
 	"github.com/bartvs98/tidemark/internal/source"
+	"github.com/bartvs98/tidemark/internal/store"
 	"github.com/bartvs98/tidemark/internal/version"
 )
 
@@ -83,6 +84,7 @@ type containerJSON struct {
 	Icon    *iconJSON   `json:"icon,omitempty"`   // app icon, if one matched
 	Rules   *rulesJSON  `json:"rules,omitempty"`  // only when a rule is set or one is invalid
 	Update  *updateJSON `json:"update,omitempty"` // result of the last check, if any; never when ignored
+	Review  *reviewJSON `json:"review,omitempty"` // only while a stored review applies to the update
 }
 
 // rulesJSON shows only rules that differ from the defaults, plus where explicitly set
@@ -159,8 +161,9 @@ func (s *Server) containers(w http.ResponseWriter, r *http.Request) {
 	if s.checks != nil {
 		out.Check = s.checkJSON()
 	}
+	reviews := s.reviews(r.Context())
 	for _, c := range list {
-		out.Containers = append(out.Containers, s.toContainerJSON(r.Context(), c))
+		out.Containers = append(out.Containers, s.toContainerJSON(r.Context(), c, reviews))
 	}
 	slices.SortFunc(out.Containers, func(a, b containerJSON) int {
 		return cmp.Or(cmp.Compare(a.Stack, b.Stack), cmp.Compare(a.Name, b.Name))
@@ -168,7 +171,8 @@ func (s *Server) containers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) toContainerJSON(ctx context.Context, c docker.Container) containerJSON {
+// toContainerJSON describes a container; reviews are the stored reviews by name (nil for none).
+func (s *Server) toContainerJSON(ctx context.Context, c docker.Container, reviews map[string]store.Review) containerJSON {
 	img := imageJSON{
 		Ref:      c.ImageRef,
 		Display:  c.ImageRef,
@@ -199,6 +203,7 @@ func (s *Server) toContainerJSON(ctx context.Context, c docker.Container) contai
 		img.Created = &c.Image.Created
 	}
 	rs := s.rulesFor(c)
+	update := s.updateFor(ctx, c, ref, rs)
 	return containerJSON{
 		ID:      c.ID,
 		Name:    c.Name,
@@ -210,7 +215,8 @@ func (s *Server) toContainerJSON(ctx context.Context, c docker.Container) contai
 		Service: c.Service,
 		Icon:    icon,
 		Rules:   toRulesJSON(rs),
-		Update:  s.updateFor(ctx, c, ref, rs),
+		Update:  update,
+		Review:  reviewFor(reviews, c.Name, update, time.Now()),
 	}
 }
 

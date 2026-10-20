@@ -228,3 +228,78 @@ func TestReleasesAndRepoState(t *testing.T) {
 		t.Errorf("state = %+v ok=%v err=%v", got, ok, err)
 	}
 }
+
+func TestReviews(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	at := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	if got, err := s.Reviews(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("empty: %v %v", got, err)
+	}
+	reviewed := Review{ContainerName: "jellyfin", Kind: "reviewed", Version: "10.10.7", CreatedAt: at}
+	byTime := Review{ContainerName: "redis", Kind: "snoozed", Until: at.Add(7 * 24 * time.Hour), CreatedAt: at}
+	for _, r := range []Review{reviewed, byTime} {
+		if err := s.SaveReview(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.Reviews(ctx)
+	if err != nil || len(got) != 2 || got["jellyfin"] != reviewed || got["redis"] != byTime {
+		t.Fatalf("round trip = %+v, %v", got, err)
+	}
+
+	// Snoozing replaces the review: one record per container.
+	byVersion := Review{ContainerName: "jellyfin", Kind: "snoozed", Version: "10.10.7", CreatedAt: at.Add(time.Hour)}
+	if err := s.SaveReview(ctx, byVersion); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Reviews(ctx); len(got) != 2 || got["jellyfin"] != byVersion {
+		t.Errorf("after replace = %+v", got)
+	}
+
+	// Deleting twice is fine.
+	for range 2 {
+		if err := s.DeleteReview(ctx, "jellyfin"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _ := s.Reviews(ctx); len(got) != 1 || got["redis"] != byTime {
+		t.Errorf("after delete = %+v", got)
+	}
+}
+
+func TestHistory(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	at := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	if last, err := s.LastHistory(ctx); err != nil || len(last) != 0 {
+		t.Fatalf("empty: %v %v", last, err)
+	}
+	rows := []HistoryEntry{
+		{ContainerName: "app", ImageID: "sha256:1", Running: "1.0.0", DetectedAt: at},
+		{ContainerName: "db", ImageID: "sha256:d", DetectedAt: at},
+		{ContainerName: "app", ImageID: "sha256:2", Running: "1.1.0", PrevImageID: "sha256:1", PrevRunning: "1.0.0", DetectedAt: at.Add(time.Hour)},
+	}
+	for _, h := range rows {
+		if err := s.AddHistory(ctx, h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.History(ctx, "app")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("history = %+v, %v", got, err)
+	}
+	want := rows[2]
+	want.ID, want.Via = got[0].ID, "check" // Via defaults to check
+	if got[0] != want || got[1].ImageID != "sha256:1" || got[1].PrevImageID != "" || got[0].ID <= got[1].ID {
+		t.Errorf("history (newest first) = %+v", got)
+	}
+	if none, err := s.History(ctx, "nope"); err != nil || len(none) != 0 {
+		t.Errorf("unknown container: %v %v", none, err)
+	}
+
+	last, err := s.LastHistory(ctx)
+	if err != nil || len(last) != 2 || last["app"].ImageID != "sha256:2" || last["db"].ImageID != "sha256:d" {
+		t.Errorf("last = %+v, %v", last, err)
+	}
+}

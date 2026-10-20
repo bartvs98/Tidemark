@@ -25,7 +25,7 @@ import {
   checkFailed,
   ContainerList,
   ContainerSummary,
-  countUpdates,
+  countOpenUpdates,
   Filter,
   Grouping,
   groupBySeverity,
@@ -33,9 +33,13 @@ import {
   hasResult,
   hasUpdate,
   isCurrent,
+  isOpenUpdate,
+  isReviewed,
   matchesFilter,
   orderStacks,
+  REVIEW_ICONS,
   splitIgnored,
+  splitSnoozed,
 } from './containers';
 
 export type ViewMode = 'list' | 'tiles';
@@ -101,14 +105,20 @@ export class Dashboard {
 
   private readonly containers = computed(() => this.data()?.containers ?? []);
   protected readonly containerCount = computed(() => this.containers().length);
-  /** Ignored containers leave their stack for the collapsed "Ignored" section at the bottom. */
-  private readonly split = computed(() => splitIgnored(this.containers()));
+  /**
+   * Ignored and snoozed containers leave their stack for the collapsed "Ignored" and "Snoozed"
+   * sections at the bottom; `active` is the rest.
+   */
+  private readonly split = computed(() => {
+    const { active, ignored } = splitIgnored(this.containers());
+    return { ...splitSnoozed(active), ignored };
+  });
   /** All stacks (for the summary). */
   protected readonly stacks = computed(() => groupByStack(this.containers()));
   /** The search text, trimmed and lower-cased; empty means no search. */
   private readonly needle = computed(() => this.query().trim().toLowerCase());
   protected readonly searchText = computed(() => this.query().trim());
-  /** Non-ignored containers under the current filter and search. */
+  /** Containers outside Ignored and Snoozed, under the current filter and search. */
   private readonly shown = computed(() => {
     const filter = this.filter();
     const query = this.needle();
@@ -123,12 +133,22 @@ export class Dashboard {
     const query = this.needle();
     return this.filter() === 'all' ? this.split().ignored.filter((c) => matchesQuery(c, query)) : [];
   });
-  protected readonly nothingShown = computed(() => this.shown().length === 0 && this.shownIgnored().length === 0);
+  /** Snoozed updates are put off, so like ignored ones they only show under "All". */
+  protected readonly shownSnoozed = computed(() => {
+    const query = this.needle();
+    return this.filter() === 'all' ? this.split().snoozed.filter((c) => matchesQuery(c, query)) : [];
+  });
+  protected readonly nothingShown = computed(
+    () => this.shown().length === 0 && this.shownSnoozed().length === 0 && this.shownIgnored().length === 0,
+  );
   /** Severity mode's "Up to date" section: collapsed by default, like "Ignored". */
   protected readonly currentOpen = signal(false);
+  protected readonly snoozedOpen = signal(false);
   protected readonly ignoredOpen = signal(false);
+  protected readonly reviewIcons = REVIEW_ICONS;
+  /** Counts include reviewed updates (they stay in place), not snoozed or ignored ones. */
   protected readonly filters = computed<SegmentOption<Filter>[]>(() => {
-    const updates = this.containers().filter(hasUpdate);
+    const updates = this.split().active.filter(hasUpdate);
     return [
       { value: 'all', label: 'All' },
       { value: 'updates', label: 'Updates', count: updates.length },
@@ -148,31 +168,47 @@ export class Dashboard {
     const stacks = this.stacks().filter((s) => s.name !== null).length;
     const parts = [plural(containers.length, 'container'), plural(stacks, 'stack')];
     if (running !== containers.length) parts.push(`${containers.length - running} not running`);
+    const reviewed = this.split().active.filter(isReviewed).length;
+    if (reviewed) parts.push(`${reviewed} reviewed`);
+    const snoozed = this.split().snoozed.length;
+    if (snoozed) parts.push(`${snoozed} snoozed`);
     const ignored = this.split().ignored.length;
     if (ignored) parts.push(`${ignored} ignored`);
     return parts.join(' · ');
   });
 
-  /** Hero figures. Ignored containers aren't checked, so they count nowhere. */
+  /**
+   * Hero figures. Ignored containers aren't checked, so they count nowhere. Breaking, Attention
+   * and Updates count open updates only (not reviewed or snoozed); the gauge's current/checked
+   * cover every checked container, snoozed ones included.
+   */
   protected readonly stats = computed(() => {
-    const active = this.split().active;
-    const updates = active.filter(hasUpdate);
+    const { active, snoozed } = this.split();
+    const checkedOnes = [...active, ...snoozed];
+    const open = active.filter(isOpenUpdate);
     return {
-      breaking: updates.filter((c) => c.update!.level === 'breaking').length,
-      attention: updates.filter((c) => c.update!.level === 'attention').length,
-      updates: updates.length,
-      current: active.filter(isCurrent).length,
+      breaking: open.filter((c) => c.update!.level === 'breaking').length,
+      attention: open.filter((c) => c.update!.level === 'attention').length,
+      updates: open.length,
+      /** Updates that are reviewed or snoozed: not open, but not up to date either. */
+      settled: active.filter(isReviewed).length + snoozed.length,
+      current: checkedOnes.filter(isCurrent).length,
       /** Containers with a result from a successful check. */
-      checked: active.filter((c) => hasResult(c.update)).length,
+      checked: checkedOnes.filter((c) => hasResult(c.update)).length,
     };
   });
 
-  /** The hero's big line: progress while checking, otherwise the number of updates. */
+  /**
+   * The hero's big line: progress while checking, otherwise the number of open updates.
+   * "No open updates" when the only ones left are reviewed or snoozed, so it never claims
+   * everything is up to date when it isn't.
+   */
   protected readonly headline = computed(() => {
     const check = this.check();
     if (check?.running) return `Checking ${check.done}/${check.total}`;
-    const { updates, checked } = this.stats();
+    const { updates, settled, checked } = this.stats();
     if (updates) return plural(updates, 'update');
+    if (settled) return 'No open updates';
     if (checked) return 'All up to date';
     return plural(this.containers().length, 'container');
   });
@@ -186,6 +222,18 @@ export class Dashboard {
       /** Why the total can be lower than the container count. */
       note: 'Counts checked containers only: ignored ones and ones not checked yet are left out.',
     };
+  });
+
+  /** The empty state when the filter leaves nothing; snoozed updates only show under "All". */
+  protected readonly emptyFilter = computed(() => {
+    const breaking = this.filter() === 'breaking';
+    const snoozed = this.split().snoozed.length > 0;
+    let description: string;
+    if (breaking) description = `None of the available updates look breaking.${snoozed ? ' Snoozed ones show under All.' : ''}`;
+    else if (this.checking()) description = 'Still checking. Updates show up here as they are found.';
+    else if (snoozed) description = 'Nothing open. Snoozed updates show under All.';
+    else description = 'Every container runs the latest version.';
+    return { heading: breaking ? 'Nothing breaking' : 'No updates', description };
   });
 
   protected readonly errorMessage = computed(() => {
@@ -222,9 +270,12 @@ export class Dashboard {
       const check = this.check();
       if (!check) return;
       if (wasChecking && !check.running) {
-        const updates = countUpdates(this.data()?.containers ?? []);
+        const containers = this.data()?.containers ?? [];
+        const updates = countOpenUpdates(containers);
+        // Only reviewed or snoozed updates left: don't claim everything is up to date.
+        const rest = updates ? plural(updates, 'update') : containers.some(hasUpdate) ? 'no open updates' : 'all up to date';
         if (check.error) this.toasts.show(`Check failed: ${check.error}`, 'breaking');
-        else this.toasts.show(updates ? `Check finished · ${plural(updates, 'update')}` : 'Check finished · all up to date', 'ok');
+        else this.toasts.show(`Check finished · ${rest}`, 'ok');
       }
       wasChecking = check.running;
     });

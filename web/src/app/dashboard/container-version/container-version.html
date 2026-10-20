@@ -32,6 +32,14 @@
       }
     </div>
   }
+  @if (snoozed(); as z) {
+    <div class="truncate text-xs text-fg-subtle" [tmTooltip]="z.title" data-testid="snoozed">
+      {{ z.text }}
+      @if (z.value) {
+        <span class="font-mono">{{ z.value }}</span>
+      }
+    </div>
+  }
 } @else if (checking() && !failed()) {
   <tm-skeleton width="7rem" height="0.875rem" />
 } @else {

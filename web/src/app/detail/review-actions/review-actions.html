@@ -1,0 +1,57 @@
+@if (review(); as r) {
+  <!-- Quiet status: not a risk, so no colour; icon + word. -->
+  <span class="inline-flex items-center gap-1.5 text-sm text-fg-muted" data-testid="review-status">
+    @if (r.kind === 'reviewed') {
+      <tm-icon name="check" [size]="14" />
+      <span>
+        Reviewed up to <span class="font-mono text-fg">{{ r.version }}</span> · {{ date(r.at) }}
+      </span>
+    } @else if (r.until) {
+      <tm-icon name="clock" [size]="14" />
+      <span>Snoozed until {{ date(r.until) }}</span>
+    } @else {
+      <tm-icon name="clock" [size]="14" />
+      <span>
+        Snoozed until a version newer than <span class="font-mono text-fg">{{ r.version }}</span>
+      </span>
+    }
+  </span>
+  <button
+    tmButton
+    type="button"
+    variant="ghost"
+    size="sm"
+    [loading]="pending() === 'delete'"
+    [disabled]="!!pending()"
+    (click)="undo()"
+    data-testid="review-undo"
+  >
+    {{ r.kind === 'snoozed' ? 'Unsnooze' : 'Undo' }}
+  </button>
+} @else {
+  <!-- A disabled button gets no pointer events, so the tooltip sits on a wrapper. -->
+  <span class="inline-flex" [tmTooltip]="reviewHint()">
+    <button
+      tmButton
+      type="button"
+      size="sm"
+      icon="check"
+      [loading]="pending() === 'reviewed'"
+      [disabled]="!latest() || !!pending()"
+      (click)="markReviewed()"
+      data-testid="mark-reviewed"
+    >
+      Mark reviewed
+    </button>
+  </span>
+  <tm-menu
+    label="Snooze"
+    icon="clock"
+    size="sm"
+    align="end"
+    [items]="snoozeOptions()"
+    [disabled]="!!pending()"
+    (selected)="snooze($event)"
+    data-testid="snooze"
+  />
+}

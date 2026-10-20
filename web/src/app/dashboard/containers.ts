@@ -122,7 +122,29 @@ export interface ContainerSummary {
   update?: UpdateInfo;
   /** Per-container rules; omitted when no rule is set and there are no problems. */
   rules?: ContainerRules;
+  /** Reviewed or snoozed; only present while it applies to the update shown. */
+  review?: ReviewState;
 }
+
+/**
+ * The update was marked as reviewed ("read up to `version`") or snoozed (until a time, or
+ * until a version newer than `version`). The backend only sends it while it still applies.
+ */
+export interface ReviewState {
+  kind: 'reviewed' | 'snoozed';
+  /** Reviewed: read up to this version. Snoozed: until a version newer than this. */
+  version?: string;
+  /** Snoozed until this time. */
+  until?: string;
+  /** When it was set. */
+  at: string;
+}
+
+/** Body of PUT /api/containers/{name}/review. */
+export type ReviewRequest =
+  | { kind: 'reviewed'; version: string }
+  | { kind: 'snoozed'; until: string }
+  | { kind: 'snoozed'; version: string };
 
 export interface Stack {
   /** Compose project name, or null for containers not started by Compose. */
@@ -147,13 +169,22 @@ export function isIgnored(c: ContainerSummary): boolean {
   return !!c.rules?.ignore;
 }
 
-/** Splits off the ignored containers (sorted by name); the rest go to groupByStack. */
+/** Splits off the ignored containers (sorted by name); the rest go to splitSnoozed / groupByStack. */
 export function splitIgnored(containers: ContainerSummary[]): { active: ContainerSummary[]; ignored: ContainerSummary[] } {
   const active: ContainerSummary[] = [];
   const ignored: ContainerSummary[] = [];
   for (const c of containers) (isIgnored(c) ? ignored : active).push(c);
   ignored.sort((a, b) => a.name.localeCompare(b.name));
   return { active, ignored };
+}
+
+/** Splits off the snoozed containers (sorted by name) for the "Snoozed" section; pass non-ignored containers. */
+export function splitSnoozed(containers: ContainerSummary[]): { active: ContainerSummary[]; snoozed: ContainerSummary[] } {
+  const active: ContainerSummary[] = [];
+  const snoozed: ContainerSummary[] = [];
+  for (const c of containers) (isSnoozed(c) ? snoozed : active).push(c);
+  snoozed.sort((a, b) => a.name.localeCompare(b.name));
+  return { active, snoozed };
 }
 
 /** Where a rule came from, in words: "label tidemark.pin" or "config file". */
@@ -185,6 +216,24 @@ export function hasUpdate(c: ContainerSummary): boolean {
   return !isIgnored(c) && hasResult(c.update) && c.update.class !== 'none';
 }
 
+/** The update is marked as reviewed: still shown, but faded and left out of the hero figures. */
+export function isReviewed(c: ContainerSummary): boolean {
+  return hasUpdate(c) && c.review?.kind === 'reviewed';
+}
+
+/** The update is snoozed: it moves to the collapsed "Snoozed" section. */
+export function isSnoozed(c: ContainerSummary): boolean {
+  return hasUpdate(c) && c.review?.kind === 'snoozed';
+}
+
+/** An update nobody has looked at yet: not reviewed and not snoozed. Only these count in the hero. */
+export function isOpenUpdate(c: ContainerSummary): boolean {
+  return hasUpdate(c) && !c.review;
+}
+
+/** Icons for the review states: the "Reviewed" marker and the "Snoozed" section. */
+export const REVIEW_ICONS = { reviewed: 'check', snoozed: 'clock' } satisfies Record<ReviewState['kind'], IconName>;
+
 /** The most recent attempt failed, whether or not an earlier result is still shown. */
 export function checkFailed(c: ContainerSummary): boolean {
   return !isIgnored(c) && !!c.update?.error;
@@ -195,12 +244,18 @@ export function countUpdates(containers: ContainerSummary[]): number {
   return containers.filter(hasUpdate).length;
 }
 
+/** Containers with an open update (not reviewed, not snoozed). */
+export function countOpenUpdates(containers: ContainerSummary[]): number {
+  return containers.filter(isOpenUpdate).length;
+}
+
 /** Dashboard filter: everything, only containers with an update, or only breaking updates. */
 export type Filter = 'all' | 'updates' | 'breaking';
 
+/** Updates and Breaking include reviewed updates, but not snoozed ones (those only show under All). */
 export function matchesFilter(c: ContainerSummary, filter: Filter): boolean {
-  if (filter === 'updates') return hasUpdate(c);
-  if (filter === 'breaking') return hasUpdate(c) && c.update!.level === 'breaking';
+  if (filter === 'updates') return hasUpdate(c) && !isSnoozed(c);
+  if (filter === 'breaking') return hasUpdate(c) && !isSnoozed(c) && c.update!.level === 'breaking';
   return true;
 }
 
@@ -213,16 +268,18 @@ export function isCurrent(c: ContainerSummary): boolean {
 }
 
 export interface StackGroup extends Stack {
-  /** Every container in it is up to date: the stack drops below the ones that need a look. */
+  /** Nothing to look at (every container up to date or reviewed): the stack drops below the ones that need a look. */
   current: boolean;
 }
 
 /**
- * Stack mode: stacks with something to look at (an update, a failed or pending check) first,
- * then fully up-to-date stacks; A→Z within each, ungrouped last. Pass non-ignored containers.
+ * Stack mode: stacks with something to look at (an open update, a failed or pending check) first,
+ * then stacks that are up to date or only have reviewed updates; A→Z within each, ungrouped last.
+ * Pass non-ignored, non-snoozed containers.
  */
 export function orderStacks(containers: ContainerSummary[]): StackGroup[] {
-  const stacks = groupByStack(containers).map((s) => ({ ...s, current: s.containers.every(isCurrent) }));
+  const settled = (c: ContainerSummary) => isCurrent(c) || isReviewed(c);
+  const stacks = groupByStack(containers).map((s) => ({ ...s, current: s.containers.every(settled) }));
   return [...stacks.filter((s) => !s.current), ...stacks.filter((s) => s.current)];
 }
 
@@ -254,11 +311,11 @@ export function severityOf(c: ContainerSummary): SeverityKey {
 
 /**
  * Severity mode: Breaking, Attention, Updates, Check failed (never checked successfully),
- * Not checked yet, Up to date; empty sections left out, containers A→Z. Ignored containers
- * are skipped (they have their own section).
+ * Not checked yet, Up to date; empty sections left out, containers A→Z. Reviewed updates stay
+ * in their level's section. Ignored and snoozed containers are skipped (they have their own sections).
  */
 export function groupBySeverity(containers: ContainerSummary[]): SeverityGroup[] {
-  const sorted = containers.filter((c) => !isIgnored(c)).sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = containers.filter((c) => !isIgnored(c) && !isSnoozed(c)).sort((a, b) => a.name.localeCompare(b.name));
   return SEVERITY_GROUPS.map((g) => ({ ...g, containers: sorted.filter((c) => severityOf(c) === g.key) })).filter(
     (g) => g.containers.length > 0,
   );

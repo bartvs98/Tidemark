@@ -143,6 +143,7 @@ func run(cfg config.Config, log *slog.Logger) error {
 			Icons:      iconSvc,
 			Checks:     checks,
 			Changelogs: changelogs,
+			Store:      db,
 			Schedule:   schedule,
 			ConfigFile: cfg.ConfigFile,
 			Background: ctx,
