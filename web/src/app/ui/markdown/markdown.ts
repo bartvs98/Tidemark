@@ -5,18 +5,52 @@ import { Marked, Renderer, Tokens } from 'marked';
 
 // Release notes come from other people's repositories, so they're untrusted: render
 // with marked, then sanitise with DOMPurify. Links open in a new tab without a referrer,
-// images load lazily without a referrer, and inline styles/forms are dropped.
+// inline styles/forms are dropped, and no remote image ever loads: images become links.
+const LINK_REL = 'noopener noreferrer nofollow';
+
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'A' && node.getAttribute('href')) {
     node.setAttribute('target', '_blank');
-    node.setAttribute('rel', 'noopener noreferrer nofollow');
-  }
-  if (node.tagName === 'IMG') {
-    node.setAttribute('loading', 'lazy');
-    node.setAttribute('decoding', 'async');
-    node.setAttribute('referrerpolicy', 'no-referrer');
+    node.setAttribute('rel', LINK_REL);
   }
 });
+
+/**
+ * Replaces every image (markdown or raw `<img>`, also in `<picture>`) with a link "Image: alt"
+ * to its URL, so nothing loads from a remote host just by opening the notes. Inside an existing
+ * link only the text remains (no nested anchors); a non-http(s) source leaves plain text.
+ * Runs on already sanitised HTML and only creates text and validated http(s) links.
+ */
+function imagesToLinks(html: string): string {
+  if (!/<(img|picture|source)\b/i.test(html)) return html;
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  for (const img of Array.from(tpl.content.querySelectorAll('img'))) {
+    const alt = (img.getAttribute('alt') ?? '').trim();
+    const text = alt ? `Image: ${alt}` : 'Image';
+    let href: string | undefined;
+    try {
+      const u = new URL((img.getAttribute('src') ?? '').trim());
+      if (u.protocol === 'http:' || u.protocol === 'https:') href = u.href;
+    } catch {
+      // not an absolute URL: no link
+    }
+    if (!href || img.closest('a')) {
+      img.replaceWith(document.createTextNode(text));
+      continue;
+    }
+    const a = document.createElement('a');
+    a.href = href;
+    a.target = '_blank';
+    a.rel = LINK_REL;
+    a.className = 'tm-prose-image';
+    a.textContent = text;
+    img.replaceWith(a);
+  }
+  tpl.content.querySelectorAll('source').forEach((el) => el.remove());
+  for (const pic of Array.from(tpl.content.querySelectorAll('picture'))) pic.replaceWith(...Array.from(pic.childNodes));
+  return tpl.innerHTML;
+}
 
 const PURIFY = {
   FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe'],
@@ -112,7 +146,7 @@ export function renderMarkdown(markdown: string, githubRepo?: string, flags: Mar
       ],
     });
   }
-  return DOMPurify.sanitize(md.parse(markdown, { async: false }) as string, PURIFY);
+  return imagesToLinks(DOMPurify.sanitize(md.parse(markdown, { async: false }) as string, PURIFY));
 }
 
 /** Sanitised markdown, styled by `.tm-prose`. */

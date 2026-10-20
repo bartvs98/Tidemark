@@ -286,3 +286,55 @@ func TestServeRemembersFailures(t *testing.T) {
 		t.Errorf("CDN asked %d times, want 1 (failures are remembered)", hits.Load())
 	}
 }
+
+func TestServeDoesNotRememberTransientFailures(t *testing.T) {
+	var hits atomic.Int32
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer cdn.Close()
+	s := newTestService(t, cdn.URL)
+	for range 3 {
+		rec := httptest.NewRecorder()
+		s.Serve(rec, httptest.NewRequest("GET", "/api/icons/redis", nil), "redis", VariantDefault)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("got %d, want 404", rec.Code)
+		}
+	}
+	if hits.Load() != 3 {
+		t.Errorf("CDN asked %d times, want 3 (a 5xx isn't remembered)", hits.Load())
+	}
+}
+
+func TestStartRetriesFailedIndex(t *testing.T) {
+	old := indexRetry
+	indexRetry = []time.Duration{10 * time.Millisecond, 10 * time.Millisecond, 10 * time.Millisecond}
+	defer func() { indexRetry = old }()
+
+	var hits atomic.Int32
+	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) < 3 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write([]byte(testIndex))
+	}))
+	defer cdn.Close()
+
+	s := New(cdn.URL, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, ok := s.Lookup("redis"); ok {
+			if hits.Load() != 3 {
+				t.Errorf("index fetched %d times, want 3", hits.Load())
+			}
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("index never loaded after retries")
+}

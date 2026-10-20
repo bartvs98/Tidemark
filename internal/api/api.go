@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/check"
@@ -70,7 +71,30 @@ func (s *Server) Handler(spa fs.FS) http.Handler {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})
 	mux.Handle("/", spaHandler(spa))
-	return mux
+	return hardened(mux)
+}
+
+// hardened adds what every response needs and guards writes. A plain cross-site form post
+// needs no CORS preflight, so mutating API calls must carry a custom header that only our
+// own SPA (or a script) can set. The framing headers keep other sites from embedding the UI.
+func hardened(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", "frame-ancestors 'none'")
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+			default:
+				if r.Header.Get("X-Tidemark") == "" {
+					writeError(w, http.StatusForbidden, "missing X-Tidemark header (cross-site requests are refused)")
+					return
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {

@@ -317,6 +317,8 @@ func TestLoadErrors(t *testing.T) {
 		"image with tag":  "images:\n  postgres:16:\n    pin: 16\n",
 		"image digest":    "images:\n  postgres@sha256:abc:\n    pin: 16\n",
 		"uppercase image": "images:\n  Postgres:\n    pin: 16\n",
+		"duplicate name":  "containers:\n  app:\n    pin: 1\n  /app:\n    ignore: true\n",
+		"duplicate glob":  "containers:\n  \"web-*\":\n    pin: 1\n  \" /web-*\":\n    ignore: true\n",
 	}
 	for name, yml := range tests {
 		if _, err := parseFile([]byte(yml)); err == nil {

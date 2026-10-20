@@ -556,3 +556,26 @@ func TestHistoryIgnoredAndShared(t *testing.T) {
 		t.Errorf("last = %+v, %v", last, err)
 	}
 }
+
+func TestWait(t *testing.T) {
+	reg := &countingRegistry{calls: map[string]int{}, block: make(chan struct{})}
+	s := New(listSource{list: []docker.Container{ctr("a", "team/app:1.0.0", "sha256:1")}}, reg, openStore(t, filepath.Join(t.TempDir(), "t.db")), quiet)
+	if err := s.Wait(context.Background()); err != nil {
+		t.Errorf("Wait with no run = %v", err)
+	}
+	s.Start(context.Background(), TriggerManual)
+
+	short, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := s.Wait(short); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("Wait while running = %v, want deadline exceeded", err)
+	}
+
+	close(reg.block)
+	if err := s.Wait(context.Background()); err != nil {
+		t.Errorf("Wait after run = %v", err)
+	}
+	if s.Status().Running {
+		t.Error("run still marked running after Wait")
+	}
+}

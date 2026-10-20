@@ -171,6 +171,7 @@ export class Styleguide {
     '',
     '1. Faster startup',
     '2. See [the docs](https://example.com) for details.',
+    '3. Images become links: ![new settings page](https://example.com/settings.png)',
     '',
     '> Upgrade notes: back up first.',
     '',

@@ -105,8 +105,7 @@ func TestChecksAndUpdates(t *testing.T) {
 	checks := check.New(src, tagsRegistry{}, db, log)
 	h := New(Deps{Version: "1.2.3", Log: log, Source: src, Checks: checks}).Handler(fstest.MapFS{})
 
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/checks", nil))
+	rec := send(t, h, http.MethodPost, "/api/checks", "")
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("POST /api/checks = %d", rec.Code)
 	}

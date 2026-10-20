@@ -102,11 +102,21 @@ func parseFile(data []byte) (*File, error) {
 	}
 
 	f := &File{}
+	spelled := map[string]string{} // trimmed name -> the key as written
 	for key, re := range raw.Containers {
 		name := strings.TrimPrefix(strings.TrimSpace(key), "/")
 		if name == "" {
 			return nil, fmt.Errorf("containers: empty container name")
 		}
+		// Map order is random, so two spellings of one container would merge in random order.
+		if other, dup := spelled[name]; dup {
+			a, b := key, other
+			if a > b {
+				a, b = b, a
+			}
+			return nil, fmt.Errorf("containers: %q and %q are the same container", a, b)
+		}
+		spelled[name] = key
 		e := entry{key: name, glob: isGlob(name)}
 		if e.glob {
 			e.match = globRegexp(name)

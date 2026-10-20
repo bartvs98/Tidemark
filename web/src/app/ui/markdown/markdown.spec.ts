@@ -21,18 +21,62 @@ describe('renderMarkdown', () => {
       ),
     );
     expect(el.querySelector('script, form, input')).toBeNull();
-    expect(el.querySelector('img')?.getAttribute('onerror')).toBeNull();
+    expect(el.querySelector('img, [onerror]')).toBeNull();
     expect(el.querySelector('p')?.getAttribute('style')).toBeNull();
     expect(el.querySelector('a')?.getAttribute('href') ?? '').not.toContain('javascript');
   });
 
-  it('opens links in a new tab without a referrer, and images load lazily', () => {
-    const el = dom(renderMarkdown('[docs](https://example.com) ![logo](https://example.com/a.png)'));
+  it('opens links in a new tab without a referrer', () => {
+    const el = dom(renderMarkdown('[docs](https://example.com)'));
     const a = el.querySelector('a')!;
     expect(a.getAttribute('target')).toBe('_blank');
     expect(a.getAttribute('rel')).toContain('noreferrer');
-    expect(el.querySelector('img')?.getAttribute('loading')).toBe('lazy');
-    expect(el.querySelector('img')?.getAttribute('referrerpolicy')).toBe('no-referrer');
+  });
+
+  describe('images', () => {
+    const links = (el: HTMLElement) => [...el.querySelectorAll('a')];
+
+    it('turns a markdown image into a link', () => {
+      const el = dom(renderMarkdown('![the logo](https://example.com/a.png)'));
+      expect(el.querySelector('img')).toBeNull();
+      const [a] = links(el);
+      expect(a.textContent).toBe('Image: the logo');
+      expect(a.getAttribute('href')).toBe('https://example.com/a.png');
+      expect(a.getAttribute('target')).toBe('_blank');
+      expect(a.getAttribute('rel')).toContain('noreferrer');
+    });
+
+    it('turns a raw img into a link, with or without alt', () => {
+      const el = dom(renderMarkdown('<img src="https://example.com/a.png" alt="shot"> <img src="http://example.com/b.png">'));
+      expect(el.querySelector('img')).toBeNull();
+      expect(links(el).map((a) => a.textContent)).toEqual(['Image: shot', 'Image']);
+    });
+
+    it('keeps an enclosing link and drops the nested anchor', () => {
+      const el = dom(renderMarkdown('[![badge](https://example.com/b.svg)](https://example.com/target)'));
+      expect(el.querySelector('img')).toBeNull();
+      expect(links(el).length).toBe(1);
+      expect(links(el)[0].getAttribute('href')).toBe('https://example.com/target');
+      expect(links(el)[0].textContent).toBe('Image: badge');
+    });
+
+    it('leaves plain text for data: and javascript: sources', () => {
+      const el = dom(renderMarkdown('<img src="data:image/png;base64,AAAA" alt="a"> <img src="javascript:alert(1)" alt="b">'));
+      expect(el.querySelector('img')).toBeNull();
+      expect(links(el).length).toBe(0);
+      expect(el.textContent).toContain('Image: a');
+      expect(el.textContent).toContain('Image: b');
+    });
+
+    it('drops picture and source wrappers and never keeps srcset', () => {
+      const el = dom(
+        renderMarkdown(
+          '<picture><source srcset="https://example.com/dark.png"><img src="https://example.com/l.png" srcset="https://example.com/2x.png 2x" alt="logo"></picture>',
+        ),
+      );
+      expect(el.querySelector('picture, source, img, [srcset]')).toBeNull();
+      expect(links(el).map((a) => a.getAttribute('href'))).toEqual(['https://example.com/l.png']);
+    });
   });
 
   it('links #123 and @user for GitHub repos, but not inside words, URLs or code', () => {

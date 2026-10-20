@@ -20,7 +20,9 @@ import (
 func send(t *testing.T, h http.Handler, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(method, target, strings.NewReader(body)))
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("X-Tidemark", "1")
+	h.ServeHTTP(rec, req)
 	return rec
 }
 

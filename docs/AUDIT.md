@@ -39,15 +39,15 @@ The fixes are roadmap step [H8](ROADMAP.md#between-mvp-and-step-8). Each part (A
 - [x] **should**: Scheduled and startup checks never showed up until a reload. The dashboard now refreshes every minute.
 - [x] **nice**: "Couldn't start a check" now shows the server's error when there is one.
 
-## F. Hardening
+## F. Hardening (PR #21) ✅
 
-- [ ] **should**: When the first icon index download fails (no network yet at boot), there are no icons for 24 h. Retry soon after (for example 1, 5 and 15 min).
-- [ ] **should**: `go.mod` pins Go 1.26.1, which has 24 reachable standard-library vulnerabilities according to govulncheck. The release image isn't affected because it builds with the newest 1.26; bump to 1.26.9 or later. The 17 vulnerabilities in third-party dependencies aren't reachable from Tidemark's code.
-- [ ] **nice**: Any icon download error, including a short network blip, blocks that icon for an hour. Cache only 404/403 answers that long.
-- [ ] **nice**: `POST /api/checks` can be triggered cross-site (a plain form post needs no CORS preflight); require a custom header. No page sets `X-Frame-Options` / `frame-ancestors` or `nosniff`, so the UI can be framed by another site.
-- [ ] **nice**: Shutdown doesn't wait for a running check before it closes the database, so the run row never gets its finish time. Nothing gets corrupted. Add a `Wait()` with a timeout.
-- [ ] **nice**: Duplicate rule keys after trimming (`app` and `/app`) merge in random order. Reject them like empty keys.
-- [ ] **optional**: Remote images in release notes load from third-party hosts, which reveals the viewer's IP to them. Forbid `img`, or turn images into links.
+- [x] **should**: When the first icon index download fails (no network yet at boot), there are no icons for 24 h. It now retries after 1, 5 and 15 min.
+- [x] **should**: `go.mod` pins Go 1.26.1, which has 24 reachable standard-library vulnerabilities according to govulncheck. The release image isn't affected because it builds with the newest 1.26; bumped to 1.26.10; govulncheck now finds nothing. The 17 vulnerabilities in third-party dependencies aren't reachable from Tidemark's code.
+- [x] **nice**: Any icon download error, including a short network blip, blocks that icon for an hour. Only 404/403 answers are cached now.
+- [x] **nice**: `POST /api/checks` can be triggered cross-site (a plain form post needs no CORS preflight); require a custom header. No page sets `X-Frame-Options` / `frame-ancestors` or `nosniff`, so the UI can be framed by another site. Writes now need `X-Tidemark: 1`, and every response sets both headers.
+- [x] **nice**: Shutdown doesn't wait for a running check before it closes the database, so the run row never gets its finish time. Nothing gets corrupted. Shutdown now waits up to 30 s for it.
+- [x] **nice**: Duplicate rule keys after trimming (`app` and `/app`) merge in random order. They are now rejected like empty keys.
+- [x] **optional**: Remote images in release notes load from third-party hosts, which reveals the viewer's IP to them. Images now become links (decided with the owner).
 
 ## Checked and found sound
 

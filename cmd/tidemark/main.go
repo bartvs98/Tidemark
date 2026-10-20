@@ -169,6 +169,12 @@ func run(cfg config.Config, log *slog.Logger) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	// The check run was cancelled with ctx; let it write its finish time before the DB closes.
+	waitCtx, cancelWait := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelWait()
+	if err := checks.Wait(waitCtx); err != nil {
+		log.Warn("a check run was still busy at shutdown", "err", err)
+	}
 	return nil
 }
 

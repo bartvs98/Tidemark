@@ -7,6 +7,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -78,6 +79,19 @@ type Service struct {
 	failed   map[string]time.Time   // icon files the CDN refused, not retried for failedRetry
 }
 
+// indexRetry are the waits before retrying a failed index download (for example no network
+// yet at boot), before falling back to the daily ticker. A variable so tests can shorten it.
+var indexRetry = []time.Duration{time.Minute, 5 * time.Minute, 15 * time.Minute}
+
+// statusError is a CDN answer other than 200, so callers can tell a missing icon from a blip.
+type statusError struct {
+	url    string
+	status string
+	code   int
+}
+
+func (e *statusError) Error() string { return fmt.Sprintf("GET %s: %s", e.url, e.status) }
+
 // failedRetry is how long a missing icon is answered with 404 without asking the CDN again.
 const failedRetry = time.Hour
 
@@ -104,7 +118,7 @@ func (s *Service) Start(ctx context.Context) {
 	}
 	go func() {
 		if !fresh {
-			s.refresh(ctx)
+			s.refreshWithRetry(ctx)
 		}
 		t := time.NewTicker(indexMaxAge)
 		defer t.Stop()
@@ -113,21 +127,39 @@ func (s *Service) Start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				s.refresh(ctx)
+				s.refreshWithRetry(ctx)
 			}
 		}
 	}()
 }
 
-func (s *Service) refresh(ctx context.Context) {
+// refreshWithRetry refreshes the index and, while that fails, retries after the indexRetry waits.
+func (s *Service) refreshWithRetry(ctx context.Context) {
+	if s.refresh(ctx) {
+		return
+	}
+	for _, d := range indexRetry {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(d):
+		}
+		if s.refresh(ctx) {
+			return
+		}
+	}
+}
+
+// refresh reports whether a fresh index was loaded.
+func (s *Service) refresh(ctx context.Context) bool {
 	data, err := s.download(ctx, s.base+"/"+indexFile, maxIndexSize)
 	if err != nil {
 		s.log.Warn("icons: index download failed, using cache if any", "err", err)
-		return
+		return false
 	}
 	if err := s.load(data); err != nil {
 		s.log.Warn("icons: bad index", "err", err)
-		return
+		return false
 	}
 	if err := writeFileAtomic(filepath.Join(s.dir, indexFile), data); err != nil {
 		s.log.Warn("icons: can't cache index", "err", err)
@@ -136,6 +168,7 @@ func (s *Service) refresh(ctx context.Context) {
 	n := len(s.byRef)
 	s.mu.RUnlock()
 	s.log.Info("icons: index loaded", "icons", n)
+	return true
 }
 
 func (s *Service) readCachedIndex() ([]byte, os.FileInfo, error) {
@@ -268,7 +301,10 @@ func (s *Service) fetchIcon(ctx context.Context, ext, name, path string) ([]byte
 	}
 	data, err := s.download(ctx, fmt.Sprintf("%s/%s/%s.%s", s.base, ext, name, ext), maxIconSize)
 	if err != nil {
-		if ctx.Err() == nil { // a cancelled request says nothing about the icon
+		// Only the CDN saying the icon isn't there is worth remembering; a blip, timeout,
+		// 5xx or cancelled request says nothing about the icon.
+		var se *statusError
+		if errors.As(err, &se) && (se.code == http.StatusNotFound || se.code == http.StatusForbidden) {
 			s.fetchMu.Lock()
 			if s.failed == nil {
 				s.failed = map[string]time.Time{}
@@ -295,7 +331,7 @@ func (s *Service) download(ctx context.Context, url string, limit int64) ([]byte
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
+		return nil, &statusError{url: url, status: resp.Status, code: resp.StatusCode}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {

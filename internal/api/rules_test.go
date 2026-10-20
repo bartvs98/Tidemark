@@ -62,8 +62,7 @@ func TestRulesHeldAndRulesErrorJSON(t *testing.T) {
 
 	runCheck := func() {
 		t.Helper()
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/checks", nil))
+		send(t, h, http.MethodPost, "/api/checks", "")
 		for deadline := time.Now().Add(5 * time.Second); checks.Status().Running && time.Now().Before(deadline); {
 			time.Sleep(5 * time.Millisecond)
 		}
@@ -199,7 +198,7 @@ func TestChannelUpdateJSON(t *testing.T) {
 	defer db.Close()
 	checks := check.New(src, channelRegistry{}, db, log)
 	h := New(Deps{Version: "t", Log: log, Source: src, Checks: checks}).Handler(fstest.MapFS{})
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/api/checks", nil))
+	send(t, h, http.MethodPost, "/api/checks", "")
 	for deadline := time.Now().Add(5 * time.Second); checks.Status().Running && time.Now().Before(deadline); {
 		time.Sleep(5 * time.Millisecond)
 	}

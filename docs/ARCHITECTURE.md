@@ -101,7 +101,7 @@ One check run (startup, scheduled or manual; when it runs: [FEATURES §7](FEATUR
 4. **Changelog prefetch**: an after-check hook (`cmd/tidemark/main.go`), only for images with an update, capped at 1 min per image: resolve the source repo and sync its notes into the store (refresh rules: [FEATURES §4](FEATURES.md#4-changelog-between-versions)). GitHub's first page is a conditional request (ETag). The run doesn't slice anything: the API selects running → latest from the stored notes on read. If nothing was prefetched, the detail endpoint syncs on demand.
 5. **Analysis**: not part of the run. The API computes flags and level from the stored notes on read (`changelog.Service.Changes` is cached per repo until a sync stores something), so list and detail always agree.
 6. **AI** (later, if enabled): summary + verdict, cached per (repo, from, to).
-7. **Persist**: upsert a result per container name (a failed check keeps the last good result for the same image ref, image ID and rules, and only sets `error`, `error_kind` + `failed_at`; a later success clears them), record the run (trigger, start/end, images checked, error), and prune results of containers that are gone or ignored now. A successful check whose image ID differs from the container's last `history` row (kept in memory, loaded at start) adds a row; the first one adds a "tracking started" row without a previous image.
+7. **Persist**: upsert a result per container name (a failed check keeps the last good result for the same image ref, image ID and rules, and only sets `error`, `error_kind` + `failed_at`; a later success clears them), record the run (trigger, start/end, images checked, error), and prune results of containers that are gone or ignored now. A successful check whose image ID differs from the container's last `history` row (kept in memory, loaded at start) adds a row; the first one adds a "tracking started" row without a previous image. On shutdown (SIGTERM) a running check is cancelled, and the database closes only after it has written its finish time (waiting up to 30 s).
 8. **Notify** (later): compare against the previous run + reviewed/snooze state → send only *new* findings.
 
 ## Data model (SQLite)
@@ -126,6 +126,8 @@ ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reas
 - **Tag lists** are cached in memory and in `tag_cache` for 1 h, so restarts don't re-download repositories with thousands of tags. Digests are only cached in memory: HEAD requests are cheap.
 
 ## HTTP API (v1)
+
+PUT, DELETE and POST need the header `X-Tidemark: 1` (403 without; see Security).
 
 ```
 GET  /api/health                    {status: "ok", version}; `tidemark healthcheck` calls it (Dockerfile HEALTHCHECK)
@@ -174,7 +176,8 @@ What the pages show is in [FEATURES §1](FEATURES.md#1-dashboard) and [§6](FEAT
 - Container inspect is never called and only image `*_VERSION` variables are read (see Check pipeline).
 - Secrets only come from env vars, are never returned by the API, and are never logged. `TIDEMARK_GITHUB_TOKEN` is only sent to api.github.com.
 - No auth in v1, so keep it LAN-only or behind your reverse proxy's auth: anyone who can reach it can start checks and mark updates reviewed or snoozed (it never touches containers).
-- Release notes are untrusted HTML/markdown, so they're sanitised with DOMPurify before rendering. For the AI summary (later), they're passed as data, not instructions.
+- **Cross-site requests:** API writes (anything but GET/HEAD/OPTIONS under `/api/`) need the header `X-Tidemark: 1`, otherwise 403. A cross-site form or `fetch` can't set it without a CORS preflight, which the server never grants. The SPA adds it in an HTTP interceptor (`csrf-header.interceptor.ts`); scripts calling the API must send it too. Every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`, so other sites can't frame the UI.
+- Release notes are untrusted HTML/markdown, so they're sanitised with DOMPurify before rendering. Images in them never load (that would reveal the viewer's IP to whoever hosts them): each one becomes an "Image: alt" link to its URL. For the AI summary (later), they're passed as data, not instructions.
 - **App icons** are fetched by the server only (browsers never contact the CDN), cached under `$TIDEMARK_DATA_DIR/icons`, and only for references listed in the selfh.st index (no arbitrary URLs or paths); built-in icons are embedded and need no request. Served icons get `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `X-Content-Type-Options: nosniff`, so a malicious icon can't run script on Tidemark's origin. Requests to the CDN do reveal which icons you use; `TIDEMARK_ICONS=off` avoids them.
 - Runs as non-root (uid 65532) in a distroless image.
 

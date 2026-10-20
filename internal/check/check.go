@@ -82,6 +82,7 @@ type Service struct {
 	results  map[string]Entry              // by container name
 	last     map[string]store.HistoryEntry // newest history row by container name
 	status   Status
+	runDone  chan struct{} // closed when the current (or last) run has fully ended, see Wait
 	cron     *cron.Cron
 	cronID   cron.EntryID
 	rules    *rules.File // last config file that loaded; nil if none did
@@ -202,10 +203,33 @@ func (s *Service) Start(ctx context.Context, trigger string) bool {
 	}
 	now := time.Now()
 	s.status = Status{Running: true, Trigger: trigger, StartedAt: &now}
+	done := make(chan struct{})
+	s.runDone = done
 	s.mu.Unlock()
 
-	go s.run(ctx, trigger, now)
+	go func() {
+		defer close(done)
+		s.run(ctx, trigger, now)
+	}()
 	return true
+}
+
+// Wait blocks until the running check run, if any, has ended (including writing its finish
+// time), or until ctx ends, in which case it returns ctx.Err(). Used at shutdown before the
+// database closes.
+func (s *Service) Wait(ctx context.Context) error {
+	s.mu.RLock()
+	done := s.runDone
+	s.mu.RUnlock()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (s *Service) Status() Status {

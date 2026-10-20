@@ -247,7 +247,7 @@ for (const step of scenario?.steps ?? []) {
     const [method, path] = step.api.split(' ');
     const r = await fetch(base + path, {
       method,
-      headers: step.body ? { 'Content-Type': 'application/json' } : {},
+      headers: { 'X-Tidemark': '1', ...(step.body ? { 'Content-Type': 'application/json' } : {}) },
       body: step.body ? JSON.stringify(await fill(step.body)) : undefined,
     });
     if (!r.ok) {
@@ -259,7 +259,7 @@ for (const step of scenario?.steps ?? []) {
     patchSnapshot(step.snapshot);
     console.log(`✓ snapshot patched (${step.snapshot.map((p) => p.container).join(', ')})`);
   } else if (step.check) {
-    await fetch(`${base}/api/checks`, { method: 'POST' });
+    await fetch(`${base}/api/checks`, { method: 'POST', headers: { 'X-Tidemark': '1' } });
     await new Promise((r) => setTimeout(r, 300));
     await checkDone('the scenario check');
   }

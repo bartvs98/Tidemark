@@ -1,6 +1,6 @@
 module github.com/bartvs98/tidemark
 
-go 1.26.1
+go 1.26.10
 
 require (
 	github.com/google/go-containerregistry v0.22.1
