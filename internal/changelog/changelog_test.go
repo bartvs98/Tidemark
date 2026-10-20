@@ -30,6 +30,7 @@ type fakeHosts struct {
 	apiCalls  atomic.Int32
 	notMod    atomic.Int32
 	rateLimit atomic.Bool
+	secondary atomic.Bool // secondary limit: Retry-After with quota left
 }
 
 func (f *fakeHosts) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +40,12 @@ func (f *fakeHosts) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.apiCalls.Add(1)
 		if f.rateLimit.Load() {
 			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		if f.secondary.Load() {
+			w.Header().Set("X-RateLimit-Remaining", "42")
+			w.Header().Set("Retry-After", "60")
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
@@ -202,6 +209,32 @@ func TestPaginationUntilCovered(t *testing.T) {
 	}
 }
 
+func TestPaginationLimitIsNotRetriedWhileFresh(t *testing.T) {
+	var many []string
+	for i := 600; i >= 1; i-- {
+		many = append(many, fmt.Sprintf("1.%d.0", i))
+	}
+	f := &fakeHosts{releases: map[string][]string{"huge/repo": many}}
+	s := setup(t, f)
+	ctx := context.Background()
+	repo := gh("huge/repo")
+
+	// Running 1.50.0 is beyond the 5 pages a sync fetches.
+	_ = s.Sync(ctx, repo, v(t, "1.50.0"))
+	if f.apiCalls.Load() != maxPages {
+		t.Fatalf("api calls = %d, want %d", f.apiCalls.Load(), maxPages)
+	}
+	// Going deeper is impossible, so while fresh the next syncs ask nothing.
+	_ = s.Sync(ctx, repo, v(t, "1.50.0"))
+	_ = s.Sync(ctx, repo, v(t, "1.50.0"))
+	if f.apiCalls.Load() != maxPages {
+		t.Errorf("api calls = %d after resyncs, want %d", f.apiCalls.Load(), maxPages)
+	}
+	if cs, _ := s.Changes(ctx, repo, v(t, "1.50.0"), v(t, "1.600.0")); !cs.Partial {
+		t.Errorf("want partial notes, got %d releases", len(cs.Releases))
+	}
+}
+
 func TestChangelogFallbackAndMissingRepo(t *testing.T) {
 	f := &fakeHosts{
 		releases: map[string][]string{"lobaro/restic-backup-docker": {}},
@@ -264,6 +297,22 @@ func TestRateLimitKeepsOldData(t *testing.T) {
 	}
 
 	// Until the reset, other repos fail fast without asking GitHub.
+	before := f.apiCalls.Load()
+	if err := s.Sync(ctx, gh("c/d"), nil); !errors.Is(err, ErrRateLimited) || f.apiCalls.Load() != before {
+		t.Errorf("err = %v, extra calls = %d", err, f.apiCalls.Load()-before)
+	}
+}
+
+func TestSecondaryRateLimitWaits(t *testing.T) {
+	f := &fakeHosts{releases: map[string][]string{"a/b": {"1.0.0"}}}
+	f.secondary.Store(true)
+	s := setup(t, f)
+	ctx := context.Background()
+
+	if err := s.Sync(ctx, gh("a/b"), nil); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("err = %v, want rate limited", err)
+	}
+	// Until Retry-After passes, no further requests.
 	before := f.apiCalls.Load()
 	if err := s.Sync(ctx, gh("c/d"), nil); !errors.Is(err, ErrRateLimited) || f.apiCalls.Load() != before {
 		t.Errorf("err = %v, extra calls = %d", err, f.apiCalls.Load()-before)

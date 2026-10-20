@@ -168,7 +168,9 @@ func (s *Service) syncReleases(ctx context.Context, repo source.Repo, st *store.
 	return nil
 }
 
-// covered: the stored notes reach back to the needed version, or there's nothing older.
+// covered: the stored notes reach back to the needed version, there's nothing older, or
+// as many are stored as a sync can fetch (it always starts at page 1, so going deeper
+// is impossible and retrying would only spend API quota).
 func (s *Service) covered(ctx context.Context, key string, st store.RepoState, need *version.Version) bool {
 	if need == nil || st.Kind != KindReleases || !st.HasMore {
 		return true
@@ -182,7 +184,7 @@ func (s *Service) covered(ctx context.Context, key string, st store.RepoState, n
 			return true
 		}
 	}
-	return false
+	return len(rels) >= maxPages*perPage
 }
 
 func (s *Service) syncChangelogFile(ctx context.Context, repo source.Repo, st *store.RepoState) error {
@@ -306,10 +308,14 @@ func (s *Service) get(ctx context.Context, u, etag string, githubAPI bool) (body
 	if githubAPI {
 		s.noteQuota(resp.Header)
 	}
+	// Primary limit: Remaining 0 until Reset. Secondary limit: Retry-After seconds.
+	retryAfter := resp.Header.Get("Retry-After")
 	if githubAPI && (resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests) &&
-		resp.Header.Get("X-RateLimit-Remaining") == "0" {
+		(resp.Header.Get("X-RateLimit-Remaining") == "0" || retryAfter != "") {
 		reset := time.Now().Add(15 * time.Minute)
-		if sec, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+		if sec, err := strconv.ParseInt(retryAfter, 10, 64); err == nil {
+			reset = time.Now().Add(time.Duration(sec) * time.Second)
+		} else if sec, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
 			reset = time.Unix(sec, 0)
 		}
 		s.mu.Lock()

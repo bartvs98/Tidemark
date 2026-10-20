@@ -23,6 +23,9 @@ import (
 const (
 	workers          = 6
 	containerTimeout = 2 * time.Minute
+	// afterCheckTimeout caps the AfterCheck hook (release-note prefetch), so a slow
+	// forge can't hold a worker for the rest of the run.
+	afterCheckTimeout = time.Minute
 )
 
 // Triggers say what started a run.
@@ -304,7 +307,9 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 				first := g.containers[0]
 				entry := s.checkOne(ctx, first, g.rules)
 				if entry.Err == "" && s.after != nil {
-					s.after(ctx, first, g.rules, entry.Result)
+					actx, cancel := context.WithTimeout(ctx, afterCheckTimeout)
+					s.after(actx, first, g.rules, entry.Result)
+					cancel()
 				}
 				for _, c := range g.containers {
 					s.save(ctx, c.Name, entry, runID)
