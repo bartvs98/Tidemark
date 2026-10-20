@@ -104,13 +104,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: GitHub Release with generated notes
+      - name: GitHub Release (fallback with generated notes)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          # Leave a release that already exists (e.g. drafted by hand) alone.
+          # Releases are normally created by hand with written notes, which also creates the tag
+          # that started this run; leave those alone. A bare tag push gets generated notes.
           if gh release view "$TAG" >/dev/null 2>&1; then echo "release $TAG exists"; exit 0; fi
           pre=""
           if [[ "$TAG" == *-* ]]; then pre="--prerelease"; fi
