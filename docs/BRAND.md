@@ -97,7 +97,7 @@ Calm, factual, short, like a tide report rather than an alarm. Say what changed,
 |---|---|
 | "3 updates · 1 needs attention" | "⚠️ WARNING: 3 OUTDATED CONTAINERS!" |
 | "Breaking: config key `DB_URL` renamed to `DATABASE_URL` in 2.0.0" | "This update may break things" |
-| "Couldn't fetch the changelog, GitHub rate limit. Set `TIDEMARK_GITHUB_TOKEN` to raise it." | "Error 403" |
+| "Couldn't fetch the changelog, GitHub rate limit. Add a GitHub token in Settings to raise it." | "Error 403" |
 | "Up to date" | "Congrats! You're all caught up 🎉" |
 | "Reviewed up to 1.6.0" | "Dismissed" |
 | "No open updates" (only reviewed or snoozed ones left) | "All up to date" (it isn't) |

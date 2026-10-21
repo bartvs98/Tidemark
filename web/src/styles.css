@@ -5,6 +5,12 @@
 @import './styles/components.css';
 
 @layer base {
+  /* Thin scrollbars in the line colour, for the page and every scrolling area (inherited). */
+  html {
+    scrollbar-color: var(--color-line-strong) transparent;
+    scrollbar-width: thin;
+  }
+
   body {
     @apply bg-canvas font-sans text-base text-fg antialiased;
   }
