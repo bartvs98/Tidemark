@@ -68,6 +68,33 @@ describe('SettingsDialog', () => {
     expect(el.querySelector('a[href="/styleguide"]')).not.toBeNull();
   });
 
+  it('splits the settings into pages behind tabs, starting on General and keeping the page on reopen', async () => {
+    const fixture = await render();
+    fixture.componentRef.setInput('open', true);
+    fixture.detectChanges();
+    http.expectOne('/api/settings').flush(SETTINGS);
+    await fixture.whenStable();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const tabs = [...el.querySelectorAll<HTMLElement>('[role="tab"]')];
+    expect(tabs.map((t) => t.textContent?.trim())).toEqual(['General', 'Checks', 'Notifications', 'GitHub']);
+    const visible = () => el.querySelector('[role="tabpanel"]:not([inert])') as HTMLElement;
+    expect(visible().querySelector('[data-testid="settings-version"]')).not.toBeNull();
+
+    tabs[2].click();
+    await fixture.whenStable();
+    expect(tabs[2].getAttribute('aria-selected')).toBe('true');
+    expect(visible().textContent).toContain('Telegram');
+    expect(visible().querySelector('[data-testid="settings-version"]')).toBeNull();
+
+    fixture.componentRef.setInput('open', false);
+    fixture.componentRef.setInput('open', true);
+    fixture.detectChanges();
+    http.expectOne('/api/settings').flush(SETTINGS);
+    await fixture.whenStable();
+    expect(visible().textContent).toContain('Telegram');
+  });
+
   it('closes from the close button and on the dialog closing itself (Escape)', async () => {
     const fixture = await render();
     fixture.componentRef.setInput('open', true);

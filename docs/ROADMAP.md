@@ -38,6 +38,14 @@ From the owner's notes after the MVP. One PR each; the release comes last so v1.
 
 - [x] **8. Reviewed / snooze state + update history**: mark an update reviewed or snooze it from the detail page; reviewed updates fade on the dashboard, snoozed ones move to a collapsed section. A History tab lists detected image changes ([FEATURES §9](FEATURES.md#9-reviewed-snoozed-and-history)). New design-system piece: `tm-menu`.
 - [x] **9. Telegram notifications**: one message per check run with new updates only (sent once per version, again when the level rises or a time snooze ends; the first message lists everything pending), grouped by stack, breaking first, linked with `TIDEMARK_PUBLIC_URL`. Quiet mode via a minimum level and a digest cron; test button in the settings dialog. The notifier is an interface for ntfy, Discord or webhooks later ([FEATURES §10](FEATURES.md#10-notifications)).
+- [x] **9a. Settings pages**: the settings dialog got pages behind side tabs (a tab row on phones): General, Checks, Notifications (one block per provider) and GitHub. New in the design system: `tm-dialog` `size="lg"` + `flush`, and `.tm-tabs-vertical`.
+- [ ] **9b. Form pieces** (before 9c): text and password input, select, and a field with label, hint and error, on `/styleguide` and in DESIGN-SYSTEM.md.
+- [ ] **9c. Settings editable in the UI**
+  - **Opt-in** (owner's decision): read-only unless `TIDEMARK_SETTINGS_EDITABLE=true`, because there's no login and an editable chat ID would let anyone on the network redirect the notifications.
+  - An env var wins and shows its field as locked ("set by `TIDEMARK_SCHEDULE`"); otherwise the stored value, then the default. Startup-only settings (listen address, data dir, Docker host, snapshot) stay env-only.
+  - Secrets (bot token, GitHub token) are stored in SQLite and write-only in the UI: "Set · Replace · Clear", never sent back.
+  - Changes apply without a restart: schedule, digest, notifier, GitHub token, icons. Validation is shared with the env vars.
+  - Still to brainstorm: which settings exactly, and whether the rules file belongs here.
 - [ ] **10. AI changelog summary** (opt-in)
   - Bring your own API key (`TIDEMARK_AI_PROVIDER` / `_API_KEY` / `_MODEL`; Anthropic by default, provider behind an interface). Nothing is sent unless enabled.
   - On demand (button) or automatically for updates with ≥ N releases in between: summarise all release notes between running and latest into a short "what changed / what you need to do" list.

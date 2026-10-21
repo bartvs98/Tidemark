@@ -149,7 +149,7 @@ The level is computed from the stored notes on every request, so the dashboard a
   - A failed check still counts as checked, so it doesn't force a check at startup.
   - Failures are per container and per stage: when GitHub is rate limited, the version info still shows and only the notes are stale.
 - **Rate-limited tag lists** fall back to the stored list, so the check still succeeds (the detail page says "Tag list from <time>"). That registry isn't asked again for the repo for 5 min, and a rate limit is never retried straight away.
-- **Settings dialog** (gear in the header): read-only, since everything is set by env vars. It shows whether a GitHub token is set (never the token), GitHub's remaining quota, the schedule and next run, the rules file and whether it loaded, the container source, whether icons are on, the notification settings with a test button ([§10](#10-notifications)), a link to the styleguide, and the version.
+- **Settings dialog** (gear in the header): read-only, since everything is set by env vars. Pages (General, Checks, Notifications, GitHub) behind side tabs, a tab row on phones. It shows whether a GitHub token is set (never the token), GitHub's remaining quota, the schedule and next run, the rules file and whether it loaded, the container source, whether icons are on, the notification settings with a test button ([§10](#10-notifications)), a link to the styleguide, and the version.
   - The quota is updated from every GitHub response, so it's current right after a check. Without a token it's per IP address, shared with other tools on the server, and the dialog says so.
 
 ## 8. Rules
