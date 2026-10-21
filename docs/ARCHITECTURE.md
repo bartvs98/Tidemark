@@ -20,19 +20,19 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 │   ┌──────────▼──────────────────────────────────────────────┐               │
 │   │                    Check service                         │◄── Scheduler  │
 │   │  inventory → resolve version → latest → prefetch notes   │    (cron)     │
-│   │  (updates only) → persist → (notify, later)              │               │
+│   │  (updates only) → persist → notify                       │               │
 │   └──┬──────────┬───────────┬────────────┬───────────┬──────┘               │
 │      │          │           │            │           │                       │
 │   docker     registry    changelog     ai         notify       updater       │
-│   (socket)   (OCI v2)    (GitHub/      (later,    (later,      (later,       │
-│      │          │         GitLab)      opt-in)    Telegram)    gated)        │
+│   (socket)   (OCI v2)    (GitHub/      (later,    (Telegram)   (later,       │
+│      │          │         GitLab)      opt-in)                 gated)        │
 │      │          │           │                                                │
 │   ┌──▼──────────▼───────────▼─────── SQLite (/data/tidemark.db) ──────────┐ │
 │   └────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────┘
         │                     │                    │
    /var/run/docker.sock   registries          api.github.com, gitlab.com,
-   (via socket-proxy)     (Hub, GHCR, …)      icon CDN; later Telegram, AI
+   (via socket-proxy)     (Hub, GHCR, …)      icon CDN, Telegram; later AI
 ```
 
 ## Tech stack
@@ -72,7 +72,8 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   analysis/                   breaking-change heuristics: per-line flags, section inheritance, verdict + reasons
   review/                     whether a stored review / snooze still applies (Active)
   ai/                         (later) summary provider interface + Anthropic impl
-  notify/                     (later) notifier interface + Telegram impl
+  notify/                     new-update selection (sent once, again when the level rises or a snooze ends),
+                              notifier interface + Telegram, digest schedule
   updater/                    (later) gated pull/recreate/rollback
   store/                      SQLite repository + migrations
   check/                      background check runs over all containers (skips ignored ones), results in memory + SQLite,
@@ -114,7 +115,7 @@ One check run covers every container (when runs happen: [FEATURES §7](FEATURES.
    - Record the run (trigger, start/end, images checked, error), and prune results of containers that are gone or now ignored.
    - A successful check whose image ID differs from the container's last `history` row adds a row. The first check adds a "tracking started" row without a previous image. The last row per container is kept in memory, loaded at start.
    - On shutdown (SIGTERM) a running check is cancelled, and the database closes only after the run has written its finish time (up to 30 s).
-8. **Notify** (later): compare with the previous run and the reviewed/snoozed state, and send only *new* findings.
+8. **Notify** (when configured): an after-run hook (`check.Service.SetAfterRun`, skipped when the run itself failed) calls `notify.Service.Run`, or a digest cron does instead ([FEATURES §10](FEATURES.md#10-notifications)). It reads the current updates through `api.Server.Updates`, the same `updateFor` as the list endpoint, so a message and the dashboard agree on level and review state. It compares them with `notified`, sends one `Batch` through the `Notifier`, logs the attempt in `notifications` and, only when the send worked, records what was sent.
 
 ## Data model (SQLite)
 
@@ -129,6 +130,8 @@ releases        repo, tag, name, body, url, published_at, prerelease   (PK repo+
 repos           repo (PK), kind (releases|changelog|none), etag, has_more, fetched_at, error
 reviews         container_name (PK), kind (reviewed|snoozed), version, until, created_at
 history         id, container_name, image_id, running, prev_image_id, prev_running, detected_at, via (check; oneclick later)
+notified        container_name + key (PK; the review key), level (as sent), notified_at
+notifications   id, sent_at, notifier (telegram), kind (updates|first|test), items (count), error
 ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reasons_json   (later)
 ```
 
@@ -139,7 +142,7 @@ ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reas
   - `error_kind`: classifies `error` as `rate-limit`, `not-found`, `timeout`, `network` or `registry` (`registry.KindOf`).
   - `tags_from`: set when the tag list came from `tag_cache` because the registry rate-limited the request.
   - `tag_digest`: the floating tag's current registry digest, when fetched.
-- **Reviews and history** are keyed by container name too, and neither is pruned when a container goes away.
+- **Reviews, history and `notified`** are keyed by container name too, and none of them is pruned when a container goes away.
   - `reviews.version` is "read up to" (reviewed) or "until newer than" (snoozed by version); it's '' when snoozed by time, and `until` is set instead. It holds the update's `reviewKey`: the latest version, or a `sha256:…` build digest for a channel tag or an unknown latest. `review.Active` decides on read whether a review still applies.
   - `history.prev_image_id` is '' on a container's first row.
 - **Tag lists** are cached in memory and in `tag_cache` for 1 h, so restarts don't re-download repos with thousands of tags. Digests are only cached in memory, since HEAD requests are cheap. Concurrent requests for the same tag list or digest share one request.
@@ -160,6 +163,7 @@ PUT  /api/containers/{name}/review  mark reviewed or snooze: {kind: "reviewed", 
 DELETE /api/containers/{name}/review   remove it; 204 (also when there was none), 404 unknown name
 POST /api/checks                    start a check run unless one is running; always 202 + the current run status
 GET  /api/settings                  read-only configuration for the settings dialog (secrets only as set / not set)
+POST /api/notifications/test        send a test message; 204, 502 {error} when sending failed, 501 when notifications are off
 GET  /api/icons/{ref}[?variant=light|dark]   app icon from the local cache (fetched from the CDN on first use); built-in ones (`tidemark`) from the binary
 
 later:
@@ -191,7 +195,7 @@ Response shapes (Go structs in `internal/api`, TypeScript types in `web/src/app/
     - `releases` in range, newest first, each with a `level` and its flagged lines as `hits`: `{line, level, match?, section?}`. `match` is the words that set the level; `section` the flagged heading it inherits from, when that's higher.
     - `partial` (older releases not fetched), `error` (last sync failure), `fetchedAt`.
     - `links`: `compare`, `releases`, `running` (source tree at your version), `inList` (GitHub release list at your version).
-- **`GET /api/settings`** → `{version, source, github: {token (bool), rateLimit: {limit, remaining, resetAt} | rateLimitError}, checks: {schedule (absent when off), nextRunAt}, rules: {path, missing, error}, icons}`. The quota comes from GitHub's free `/rate_limit` endpoint, cached a minute and updated from the `X-RateLimit-*` headers of every GitHub API response. `rateLimitError` is set when GitHub can't be reached or rejects the token.
+- **`GET /api/settings`** → `{version, source, github: {token (bool), rateLimit: {limit, remaining, resetAt} | rateLimitError}, checks: {schedule (absent when off), nextRunAt}, rules: {path, missing, error}, icons, notifications}`. The quota comes from GitHub's free `/rate_limit` endpoint, cached a minute and updated from the `X-RateLimit-*` headers of every GitHub API response. `rateLimitError` is set when GitHub can't be reached or rejects the token. `notifications` is absent when they're off, otherwise `{notifier: "telegram", level (`all` | `attention` | `breaking`), digest (absent = after each run), publicUrl, last: {at, kind (`updates` | `first` | `test`), items, error}}`; `last` is the newest send attempt, absent before the first. Never the bot token or the chat ID.
 - Unknown `/api/*` paths → 404 `{error}`. Icons → 404 when icons are off, the reference is neither built in nor in the selfh.st index, the variant doesn't exist, or the CDN fetch fails.
 - Everything else is the SPA: existing files are served directly (content-hashed assets with a one-year `immutable` cache), extensionless paths get `index.html` (client routes, `no-cache`), a missing file with an extension is a 404. A binary built without the frontend answers 503 with a page explaining how to build it.
 
@@ -214,15 +218,15 @@ What the pages show is in [FEATURES §1](FEATURES.md#1-dashboard) and [§6](FEAT
   - A quoted reason jumps to its line: switch to Changes, open `details[data-release]`, `TmClamp.reveal` the `[data-flag~=i]` line, scroll, and ring it with `tm-flag-jumped` for 2 s.
   - Review actions sit on the tab row (`detail/review-actions/`: PUT/DELETE, then `reload()`).
   - *Later:* AI summary panel, update button with gate status.
-- **Settings dialog** (`settings/settings-dialog.ts` + `.html`, a `tm-dialog`): fetches `/api/settings` each time it opens. *Later:* notification test button.
+- **Settings dialog** (`settings/settings-dialog.ts` + `.html`, a `tm-dialog`): fetches `/api/settings` each time it opens; the Notifications section's **Send test message** posts to `/api/notifications/test` and reloads it.
 - Dev: `ng serve` (bound to 127.0.0.1) with a proxy for `/api` → `localhost:8080`.
 
 ## Security
 
 - **Docker socket access is root-equivalent**, so Tidemark reaches Docker only through [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) with `CONTAINERS=1 IMAGES=1`, `POST=0` (setup: [README](../README.md#run-it-with-docker); mounting the socket `:ro` doesn't restrict the API). One-click updates (later) will need `POST=1` and the matching create/start/stop endpoints, as a conscious opt-in (`TIDEMARK_ENABLE_UPDATES`, default off).
 - Container inspect is never called and only image `*_VERSION` variables are read (see Check pipeline).
-- Secrets only come from env vars, are never returned by the API, and are never logged. `TIDEMARK_GITHUB_TOKEN` is only sent to api.github.com.
-- No auth in v1, so keep it LAN-only or behind your reverse proxy's auth: anyone who can reach it can start checks and mark updates reviewed or snoozed (it never touches containers).
+- Secrets only come from env vars, are never returned by the API, and are never logged. `TIDEMARK_GITHUB_TOKEN` is only sent to api.github.com, `TIDEMARK_TELEGRAM_BOT_TOKEN` only to api.telegram.org. The bot token is part of Telegram's URL, so send errors are stripped of the URL (and any echo of the token) before they're logged, stored in `notifications.error` or returned (tested).
+- No auth in v1, so keep it LAN-only or behind your reverse proxy's auth: anyone who can reach it can start checks, mark updates reviewed or snoozed and send test messages (it never touches containers).
 - **Cross-site requests:** API writes (anything but GET/HEAD/OPTIONS under `/api/`) need the header `X-Tidemark: 1`, otherwise 403. A cross-site form or `fetch` can't set it without a CORS preflight, which the server never grants. The SPA adds it in an HTTP interceptor (`csrf-header.interceptor.ts`); scripts calling the API must send it too. Every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`, so other sites can't frame the UI.
 - Release notes are untrusted HTML/markdown, so they're sanitised with DOMPurify before rendering. Images in them never load (that would reveal the viewer's IP to whoever hosts them): each one becomes an "Image: alt" link to its URL. For the AI summary (later), they're passed as data, not instructions.
 - **App icons** are fetched by the server only (browsers never contact the CDN), cached under `$TIDEMARK_DATA_DIR/icons`, and only for references listed in the selfh.st index (no arbitrary URLs or paths); built-in icons are embedded and need no request. Served icons get `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `X-Content-Type-Options: nosniff`, so a malicious icon can't run script on Tidemark's origin. Requests to the CDN do reveal which icons you use; `TIDEMARK_ICONS=off` avoids them.

@@ -1,8 +1,9 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { httpResource } from '@angular/common/http';
-import { Component, model } from '@angular/core';
+import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
+import { Component, inject, model, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { TmButton, TmCallout, TmDialog, TmIcon, TmSkeleton, TmTooltip } from '../ui';
+import { firstValueFrom } from 'rxjs';
+import { TmButton, TmCallout, TmDialog, TmIcon, TmSkeleton, TmTooltip, Toasts } from '../ui';
 
 /** Shape of GET /api/settings (internal/api/settings.go). Read-only: it all comes from env vars. */
 export interface Settings {
@@ -19,7 +20,23 @@ export interface Settings {
   /** path is absent without a rules file; missing when nothing is there; error when it didn't load. */
   rules: { path?: string; missing?: boolean; error?: string };
   icons: boolean;
+  /** Absent when notifications are off. */
+  notifications?: {
+    notifier: 'telegram';
+    level: 'all' | 'attention' | 'breaking';
+    /** Cron spec of the digest; absent = after each check. */
+    digest?: string;
+    publicUrl?: string;
+    /** The newest send attempt; error is set when it failed. */
+    last?: { at: string; kind: 'updates' | 'first' | 'test'; items: number; error?: string };
+  };
 }
+
+export const NOTIFY_LEVELS = {
+  all: 'All updates',
+  attention: 'Attention and breaking',
+  breaking: 'Breaking only',
+} as const;
 
 /**
  * The settings dialog behind the header's gear button. It shows how Tidemark is configured
@@ -38,4 +55,31 @@ export class SettingsDialog {
 
   /** Requested only while open; reopening asks again (the server keeps GitHub's quota current from its own requests and asks again after a minute). */
   protected readonly settings = httpResource<Settings>(() => (this.open() ? '/api/settings' : undefined));
+
+  private readonly http = inject(HttpClient);
+  private readonly toasts = inject(Toasts);
+
+  protected readonly levels = NOTIFY_LEVELS;
+  protected readonly testing = signal(false);
+
+  /** What the last attempt sent, e.g. "3 updates" or "test message". */
+  protected sentWhat(last: NonNullable<NonNullable<Settings['notifications']>['last']>): string {
+    if (last.kind === 'test') return 'test message';
+    return `${last.items} ${last.items === 1 ? 'update' : 'updates'}`;
+  }
+
+  protected async sendTest(): Promise<void> {
+    if (this.testing()) return;
+    this.testing.set(true);
+    try {
+      await firstValueFrom(this.http.post('/api/notifications/test', null));
+      this.toasts.show('Test message sent', 'ok');
+    } catch (err) {
+      const reason = err instanceof HttpErrorResponse ? ((err.error as { error?: string } | null)?.error ?? err.message) : String(err);
+      this.toasts.show(reason, 'attention');
+    } finally {
+      this.testing.set(false);
+      this.settings.reload(); // the attempt is logged either way, so "Last sent" changes
+    }
+  }
 }

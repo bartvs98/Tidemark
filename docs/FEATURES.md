@@ -149,7 +149,7 @@ The level is computed from the stored notes on every request, so the dashboard a
   - A failed check still counts as checked, so it doesn't force a check at startup.
   - Failures are per container and per stage: when GitHub is rate limited, the version info still shows and only the notes are stale.
 - **Rate-limited tag lists** fall back to the stored list, so the check still succeeds (the detail page says "Tag list from <time>"). That registry isn't asked again for the repo for 5 min, and a rate limit is never retried straight away.
-- **Settings dialog** (gear in the header): read-only, since everything is set by env vars. It shows whether a GitHub token is set (never the token), GitHub's remaining quota, the schedule and next run, the rules file and whether it loaded, the container source, whether icons are on, a link to the styleguide, and the version.
+- **Settings dialog** (gear in the header): read-only, since everything is set by env vars. It shows whether a GitHub token is set (never the token), GitHub's remaining quota, the schedule and next run, the rules file and whether it loaded, the container source, whether icons are on, the notification settings with a test button ([§10](#10-notifications)), a link to the styleguide, and the version.
   - The quota is updated from every GitHub response, so it's current right after a check. Without a token it's per IP address, shared with other tools on the server, and the dialog says so.
 
 ## 8. Rules
@@ -177,6 +177,22 @@ All three are kept per container name, so a recreated container keeps them. Code
 - **Builds instead of versions:** on a channel tag, or a floating tag whose latest version is unknown, there's no version to review against. Reviewed and "snoozed until newer" are then set against the build (the tag's current registry digest): "Reviewed this build", "Snoozed until a new build".
 - A container is either reviewed or snoozed; setting one replaces the other. Both only show while there's an update.
 - **History** records a change whenever a container's image ID differs from its previous successful check. So a `pull` + `up` is recorded even when the version stays the same or is unknown. The first successful check records "Tracking started", and a failed check in between doesn't lose the previous image. Ignored containers get no history. History is kept when a container is removed, and a new container with the same name continues it.
+
+## 10. Notifications
+
+A Telegram message when a check finds new updates. Off until a bot is configured ([README → Notifications](../README.md#notifications)). Code: `internal/notify`.
+
+- **Only new updates.** Each update (a container and its latest version, or its new build) is sent once. Tidemark remembers what it sent, so a restart doesn't send it again. It's sent again when:
+  - its level rises, say once its release notes arrive and show it's breaking ("level raised");
+  - a snooze by time ran out and the update is still there ("snooze ended", once).
+- **Never sent:** reviewed and snoozed updates (while that applies), ignored containers, and containers without a successful check.
+- **The first message** after notifications are turned on lists every pending update ("5 updates pending"), so nothing is missed. After that, only new ones.
+- **One message per check run,** grouped by stack. Stacks with breaking updates come first, and within a stack breaking before attention before the rest. Breaking and attention updates carry 🔴 Breaking or 🟡 Attention; each line shows running → latest and the class, or "new build of `latest`" for a new build under the same tag or a channel tag. Lines sent again end with "level raised" or "snooze ended". Containers without a stack are under "No stack". With `TIDEMARK_PUBLIC_URL` set, container names link to their detail page and the message ends with a link to the dashboard. A message that's too long for Telegram is split between stacks (a single huge stack between lines).
+- **Quiet mode:**
+  - `TIDEMARK_NOTIFY_LEVEL=attention` or `breaking` leaves out quieter updates. They aren't remembered as sent, so one that later becomes breaking is still new.
+  - `TIDEMARK_NOTIFY_DIGEST` (a cron spec) sends one message at that time instead of after each run, with everything new since the last message, judged on the latest check results.
+- **A failed send** is retried at the next run (or digest): nothing is marked as sent.
+- **Settings dialog:** whether notifications are on, the level, after each check or digest, the link base, the last message (or why it failed), and a **Send test message** button.
 
 ## Out of scope (for now)
 

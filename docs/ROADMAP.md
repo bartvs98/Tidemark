@@ -37,10 +37,7 @@ From the owner's notes after the MVP. One PR each; the release comes last so v1.
 ## After MVP
 
 - [x] **8. Reviewed / snooze state + update history**: mark an update reviewed or snooze it from the detail page; reviewed updates fade on the dashboard, snoozed ones move to a collapsed section. A History tab lists detected image changes ([FEATURES §9](FEATURES.md#9-reviewed-snoozed-and-history)). New design-system piece: `tm-menu`.
-- [ ] **9. Telegram notifications**
-  - Telegram bot (`TIDEMARK_TELEGRAM_BOT_TOKEN` + `TIDEMARK_TELEGRAM_CHAT_ID`). One message per check run with **new** updates only (compared with the previous run, respecting reviewed/snooze state), grouped by stack, breaking ones first, with a link to the dashboard.
-  - The notifier is an interface, so ntfy, Discord and webhooks can be added later without touching the rest.
-  - Quiet mode: only notify for breaking/attention, or a digest once a day. A test button in the settings dialog.
+- [x] **9. Telegram notifications**: one message per check run with new updates only (sent once per version, again when the level rises or a time snooze ends; the first message lists everything pending), grouped by stack, breaking first, linked with `TIDEMARK_PUBLIC_URL`. Quiet mode via a minimum level and a digest cron; test button in the settings dialog. The notifier is an interface for ntfy, Discord or webhooks later ([FEATURES §10](FEATURES.md#10-notifications)).
 - [ ] **10. AI changelog summary** (opt-in)
   - Bring your own API key (`TIDEMARK_AI_PROVIDER` / `_API_KEY` / `_MODEL`; Anthropic by default, provider behind an interface). Nothing is sent unless enabled.
   - On demand (button) or automatically for updates with ≥ N releases in between: summarise all release notes between running and latest into a short "what changed / what you need to do" list.

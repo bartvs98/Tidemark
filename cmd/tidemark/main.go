@@ -24,6 +24,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/icons"
 	"github.com/bartvs98/tidemark/internal/imageref"
+	"github.com/bartvs98/tidemark/internal/notify"
 	"github.com/bartvs98/tidemark/internal/registry"
 	"github.com/bartvs98/tidemark/internal/resolve"
 	"github.com/bartvs98/tidemark/internal/rules"
@@ -120,6 +121,39 @@ func run(cfg config.Config, log *slog.Logger) error {
 		}
 		log.Info("check schedule", "spec", cfg.Schedule, "next", checks.Status().NextRunAt)
 	}
+
+	// Notifications: one Telegram message per check run with the new updates, or a digest.
+	var notifier *notify.Service
+	if cfg.TelegramBotToken != "" {
+		notifier = notify.New(notify.NewTelegram(cfg.TelegramBotToken, cfg.TelegramChatID), db,
+			notify.Options{MinLevel: cfg.NotifyLevel, PublicURL: cfg.PublicURL, Log: log})
+		if cfg.NotifyDigest != "" {
+			if err := notifier.Schedule(ctx, cfg.NotifyDigest); err != nil {
+				return fmt.Errorf("TIDEMARK_NOTIFY_DIGEST: %w", err)
+			}
+		}
+		checks.SetAfterRun(func(ctx context.Context, _ string) { notifier.AfterRun(ctx) })
+		log.Info("notifications", "notifier", "telegram", "level", cfg.NotifyLevel.String(), "digest", cfg.NotifyDigest)
+	}
+
+	// The API server is built before the startup check so the first run's hook has its source.
+	apiSrv := api.New(api.Deps{
+		Version:    version,
+		Log:        log,
+		Source:     source,
+		Icons:      iconSvc,
+		Checks:     checks,
+		Changelogs: changelogs,
+		Store:      db,
+		Notify:     notifier,
+		Schedule:   schedule,
+		ConfigFile: cfg.ConfigFile,
+		Background: ctx,
+	})
+	if notifier != nil {
+		notifier.UseSource(apiSrv.Updates)
+	}
+
 	// Check at startup unless a recent run covered every container, so restarts don't hammer
 	// registries. Containers without a valid result (new, recreated, or with changed rules)
 	// would otherwise show nothing until the next scheduled run.
@@ -135,19 +169,8 @@ func run(cfg config.Config, log *slog.Logger) error {
 	}
 
 	srv := &http.Server{
-		Addr: cfg.Addr,
-		Handler: api.New(api.Deps{
-			Version:    version,
-			Log:        log,
-			Source:     source,
-			Icons:      iconSvc,
-			Checks:     checks,
-			Changelogs: changelogs,
-			Store:      db,
-			Schedule:   schedule,
-			ConfigFile: cfg.ConfigFile,
-			Background: ctx,
-		}).Handler(web.SPA()),
+		Addr:              cfg.Addr,
+		Handler:           apiSrv.Handler(web.SPA()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

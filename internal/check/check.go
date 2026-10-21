@@ -69,12 +69,17 @@ type Status struct {
 // and rules), e.g. to prefetch release notes. It runs inside the check run's worker.
 type AfterCheck func(ctx context.Context, c docker.Container, rs rules.Rules, r resolve.Result)
 
+// AfterRun runs once a run has finished and recorded its end, unless the run itself failed
+// (Docker unreachable). It runs inside the run's goroutine, so Wait also waits for it.
+type AfterRun func(ctx context.Context, trigger string)
+
 type Service struct {
 	source docker.Source
 	reg    resolve.Registry
 	store  *store.Store
 	log    *slog.Logger
 	after  AfterCheck
+	ran    AfterRun
 
 	rulesPath string // config file; "" means labels only
 
@@ -95,6 +100,9 @@ func New(source docker.Source, reg resolve.Registry, st *store.Store, log *slog.
 
 // SetAfterCheck installs a hook that runs after each successfully checked image.
 func (s *Service) SetAfterCheck(fn AfterCheck) { s.after = fn }
+
+// SetAfterRun installs a hook that runs after each run that finished without a run error.
+func (s *Service) SetAfterRun(fn AfterRun) { s.ran = fn }
 
 // UseRulesFile loads per-container rules from the config file at path now, and again at
 // the start of every check run, so edits apply without a restart. A file that fails to
@@ -369,6 +377,9 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 	s.finish(ctx, runID, len(order), "")
 	s.log.Info("check finished", "trigger", trigger, "images", len(order), "containers", len(list),
 		"ignored", len(list)-len(keep), "took", time.Since(started).Round(time.Millisecond))
+	if s.ran != nil {
+		s.ran(ctx, trigger)
+	}
 }
 
 func (s *Service) checkOne(ctx context.Context, c docker.Container, rs rules.Rules) Entry {
