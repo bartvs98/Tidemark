@@ -88,8 +88,10 @@ type Service struct {
 	last     map[string]store.HistoryEntry // newest history row by container name
 	status   Status
 	runDone  chan struct{} // closed when the current (or last) run has fully ended, see Wait
-	cron     *cron.Cron
+	cron     *cron.Cron    // nil when scheduled checks are off
 	cronID   cron.EntryID
+	cronStop func() bool // undoes the ctx hook that stops cron
+	spec     string
 	rules    *rules.File // last config file that loaded; nil if none did
 	rulesErr string      // why the config file last failed to load, "" if it loaded
 }
@@ -183,23 +185,40 @@ func (s *Service) LastFinished() time.Time {
 	return *s.status.FinishedAt
 }
 
-// Schedule runs checks on a cron spec ("0 */6 * * *", "@daily", "@every 3h").
-// Times are in the server's time zone; prefix with "CRON_TZ=Europe/Amsterdam" to override.
-func (s *Service) Schedule(ctx context.Context, spec string) error {
-	c := cron.New()
-	id, err := c.AddFunc(spec, func() { s.Start(ctx, TriggerSchedule) })
-	if err != nil {
-		return fmt.Errorf("schedule %q: %w", spec, err)
+// SetSchedule replaces the check schedule; "" turns scheduled checks off. Specs use the
+// standard cron syntax ("0 */6 * * *", "@daily", "@every 3h"), in the server's time zone
+// unless prefixed with "CRON_TZ=Europe/Amsterdam". The cron stops when ctx ends; runs it
+// starts use ctx too, so replacing the schedule never cancels a running check.
+func (s *Service) SetSchedule(ctx context.Context, spec string) error {
+	var c *cron.Cron
+	var id cron.EntryID
+	if spec != "" {
+		c = cron.New()
+		var err error
+		if id, err = c.AddFunc(spec, func() { s.Start(ctx, TriggerSchedule) }); err != nil {
+			return fmt.Errorf("schedule %q: %w", spec, err)
+		}
+		c.Start()
 	}
 	s.mu.Lock()
-	s.cron, s.cronID = c, id
+	old, oldStop := s.cron, s.cronStop
+	s.cron, s.cronID, s.spec, s.cronStop = c, id, spec, nil
+	if c != nil {
+		s.cronStop = context.AfterFunc(ctx, func() { c.Stop() })
+	}
 	s.mu.Unlock()
-	c.Start()
-	go func() {
-		<-ctx.Done()
-		c.Stop()
-	}()
+	if old != nil {
+		oldStop()
+		old.Stop() // only stops the timer; a run it started keeps going
+	}
 	return nil
+}
+
+// Schedule returns the current spec ("" = off).
+func (s *Service) Schedule() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.spec
 }
 
 // Start begins a check run in the background. It returns false if one is already running.

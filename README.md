@@ -64,27 +64,28 @@ Nothing else: no telemetry, no accounts.
 
 ## Configuration
 
-Everything is set by environment variables (the Settings dialog only shows them):
+Everything can be set by environment variables. The settings marked ✎ can also be changed in the Settings dialog (gear in the header) once you set `TIDEMARK_SETTINGS_EDITABLE=true`. Changes apply right away, without a restart. An env var always wins: its field shows as locked. Otherwise the value saved in the dialog counts, then the default.
 
 | Env var | Default | |
 |---|---|---|
 | `TIDEMARK_ADDR` | `:8080` | Listen address |
 | `TIDEMARK_DATA_DIR` | `./data` (`/data` in Docker) | SQLite database (check results, release notes, reviews, history), icon cache, default location of `config.yaml` |
 | `TIDEMARK_CONFIG` | `<data dir>/config.yaml` | Optional rules file, re-read on every check; a missing file means no file rules |
-| `TIDEMARK_SCHEDULE` | `0 */6 * * *` | When to check for updates: cron, `@daily` or `@every 3h`, in the server's time zone unless prefixed with `CRON_TZ=Europe/Amsterdam `. `off` to only check on demand |
-| `TIDEMARK_GITHUB_TOKEN` | — | Optional, recommended: a fine-grained token with public repositories read-only; raises GitHub's limit from 60 to 5000 requests/hour. Only sent to api.github.com |
+| `TIDEMARK_SCHEDULE` ✎ | `0 */6 * * *` | When to check for updates: cron, `@daily` or `@every 3h`, in the server's time zone unless prefixed with `CRON_TZ=Europe/Amsterdam `. `off` to only check on demand |
+| `TIDEMARK_GITHUB_TOKEN` ✎ | — | Optional, recommended: a fine-grained token with public repositories read-only; raises GitHub's limit from 60 to 5000 requests/hour. Only sent to api.github.com |
 | `TIDEMARK_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker Engine API, e.g. `tcp://socket-proxy:2375` |
-| `TIDEMARK_ICONS` | `on` | `off` disables app icons (no requests to the icon CDN) |
-| `TIDEMARK_ICONS_URL` | `https://cdn.jsdelivr.net/gh/selfhst/icons` | Icon base URL, e.g. a self-hosted mirror |
-| `TIDEMARK_TELEGRAM_BOT_TOKEN` | — | Turns on [notifications](#notifications), together with the chat ID. Only sent to api.telegram.org |
-| `TIDEMARK_TELEGRAM_CHAT_ID` | — | Chat to send to: your user ID, or a group's ID (negative) |
-| `TIDEMARK_NOTIFY_LEVEL` | `all` | Lowest level that's sent: `all`, `attention` or `breaking` |
-| `TIDEMARK_NOTIFY_DIGEST` | — | Cron spec for one digest message, e.g. `0 9 * * *` (`CRON_TZ=` works as for the schedule, `off` doesn't); without it a message goes out after each check run that finds something new |
-| `TIDEMARK_PUBLIC_URL` | — | Where you open Tidemark, e.g. `https://tidemark.example.lan`; used for links in messages |
+| `TIDEMARK_ICONS` ✎ | `on` | `off` disables app icons (no requests to the icon CDN) |
+| `TIDEMARK_ICONS_URL` ✎ | `https://cdn.jsdelivr.net/gh/selfhst/icons` | Icon base URL, e.g. a self-hosted mirror |
+| `TIDEMARK_TELEGRAM_BOT_TOKEN` ✎ | — | Turns on [notifications](#notifications), together with the chat ID. Only sent to api.telegram.org |
+| `TIDEMARK_TELEGRAM_CHAT_ID` ✎ | — | Chat to send to: your user ID, a group's ID (negative) or `@channelname` |
+| `TIDEMARK_NOTIFY_LEVEL` ✎ | `all` | Lowest level that's sent: `all`, `attention` or `breaking` |
+| `TIDEMARK_NOTIFY_DIGEST` ✎ | — | Cron spec for one digest message, e.g. `0 9 * * *` (`CRON_TZ=` works as for the schedule, `off` doesn't); without it a message goes out after each check run that finds something new |
+| `TIDEMARK_PUBLIC_URL` ✎ | — | Where you open Tidemark, e.g. `https://tidemark.example.lan`; used for links in messages |
 | `TIDEMARK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `TIDEMARK_SETTINGS_EDITABLE` | `false` | `true` lets the Settings dialog change the ✎ settings. Off by default because Tidemark has no login: anyone who can open it could then redirect your notifications. Saved values, tokens included, are stored in the database in the data dir |
 | `TIDEMARK_DOCKER_SNAPSHOT` | — | Read containers from a `scripts/snapshot.sh` file instead of Docker (development, see [Snapshots](#without-docker-snapshots)) |
 
-An invalid `TIDEMARK_SCHEDULE`, `TIDEMARK_LOG_LEVEL`, `TIDEMARK_NOTIFY_LEVEL` or `TIDEMARK_PUBLIC_URL` stops startup, and so does setting only one of the Telegram variables or, with Telegram set, an invalid `TIDEMARK_NOTIFY_DIGEST`. `off` (schedule, icons) is case-insensitive. Registry requests are anonymous, so a private or missing image shows "not found, or private".
+An invalid value in any of these variables stops startup (the dialog checks its fields the same way), and so does setting only one of the Telegram variables, unless settings are editable and the other one is saved in the dialog. `off` (schedule, icons) is case-insensitive. Registry requests are anonymous, so a private or missing image shows "not found, or private".
 
 ### Per-container rules
 
@@ -127,7 +128,7 @@ Tidemark can send a Telegram message when a check finds new updates. Each update
 
 1. Message [@BotFather](https://t.me/BotFather), send `/newbot` and copy the token it gives you.
 2. Send your new bot any message, then open `https://api.telegram.org/bot<token>/getUpdates` and copy `"chat":{"id":…}`. For a group, add the bot to the group first; group IDs are negative.
-3. Add both to the `.env` file next to `compose.yaml` and pass them through:
+3. With `TIDEMARK_SETTINGS_EDITABLE=true`, paste both into **Settings → Notifications** and save. Or add them to the `.env` file next to `compose.yaml` and pass them through:
 
 ```yaml
     environment:
@@ -136,7 +137,7 @@ Tidemark can send a Telegram message when a check finds new updates. Each update
       TIDEMARK_PUBLIC_URL: https://tidemark.example.lan   # optional: links in messages
 ```
 
-Restart, open Settings and use **Send test message**. The first check run after that sends one message with every update that's pending now.
+Restart (env vars only), open Settings and use **Send test message**. The first check run after that sends one message with every update that's pending now.
 
 ## Development
 

@@ -42,14 +42,13 @@ const (
 var changelogFiles = []string{"CHANGELOG.md", "CHANGES.md", "changelog.md"}
 
 // ErrRateLimited means GitHub refused the request until its rate limit resets.
-var ErrRateLimited = errors.New("GitHub rate limit reached (60 requests/hour without a token); set TIDEMARK_GITHUB_TOKEN")
+var ErrRateLimited = errors.New("GitHub rate limit reached (60 requests/hour without a token); set a GitHub token in Settings or TIDEMARK_GITHUB_TOKEN")
 
 var errNotFound = errors.New("not found")
 
 type Service struct {
 	store *store.Store
 	http  *http.Client
-	token string
 	log   *slog.Logger
 
 	githubAPI string
@@ -57,6 +56,7 @@ type Service struct {
 	gitlab    string
 
 	mu           sync.Mutex
+	token        string                 // GitHub token, "" for none; see SetToken
 	locks        map[string]*sync.Mutex // one sync per repo at a time
 	limitedUntil time.Time              // GitHub rate limit reset; no API calls before it
 	rateLimit    RateLimit              // last quota lookup (settings), see RateLimit
@@ -287,14 +287,15 @@ func (s *Service) get(ctx context.Context, u, etag string, githubAPI bool) (body
 	if githubAPI {
 		s.mu.Lock()
 		limited := time.Now().Before(s.limitedUntil)
+		token := s.token
 		s.mu.Unlock()
 		if limited {
 			return nil, "", 0, ErrRateLimited
 		}
 		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-		if s.token != "" {
-			req.Header.Set("Authorization", "Bearer "+s.token)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
 		}
 	}
 	if etag != "" {

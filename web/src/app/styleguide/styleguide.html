@@ -457,6 +457,80 @@
     </div>
   </section>
 
+  <!-- ── Form pieces ────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">Form pieces</h2>
+    <p class="mb-4 text-fg-muted">
+      <span class="font-mono text-sm">tm-field</span> wraps one control: label above, hint, error or locked note below, ids linked.
+      The controls (<span class="font-mono text-sm">input[tmInput]</span>, <span class="font-mono text-sm">tm-password-input</span>,
+      <span class="font-mono text-sm">tm-select</span>, <span class="font-mono text-sm">tm-switch</span>) work with Signal Forms'
+      <span class="font-mono text-sm">[formField]</span> or with <span class="font-mono text-sm">[(value)]</span> /
+      <span class="font-mono text-sm">[(checked)]</span>. In a plain box, since a <span class="font-mono text-sm">tm-card</span> would clip
+      an open select.
+    </p>
+    <div class="rounded-lg border border-line bg-surface p-5 pb-10 shadow-raised">
+      <div class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
+        <tm-field label="Check schedule" hint="Cron, @daily, @every 3h, or off." required>
+          <input tmInput mono [value]="formSchedule()" (input)="formSchedule.set($any($event.target).value)" />
+        </tm-field>
+        <tm-field label="Public URL" hint="Links in notifications point here.">
+          <input tmInput mono type="url" placeholder="https://tidemark.lan" [value]="formUrl()" (input)="formUrl.set($any($event.target).value)" />
+        </tm-field>
+        <tm-field label="Notify digest" error="invalid cron spec: expected exactly 5 fields, found 3">
+          <input tmInput mono [value]="formBad()" />
+        </tm-field>
+        <tm-field label="Icons URL" hint="Where app logos come from." locked="Set by TIDEMARK_ICONS_URL">
+          <input tmInput mono disabled value="https://cdn.jsdelivr.net/gh/selfhst/icons" />
+        </tm-field>
+        <tm-field label="GitHub token" hint="Raises the GitHub limit from 60 to 5000 requests an hour.">
+          <tm-password-input placeholder="github_pat_…" [(value)]="formToken" />
+        </tm-field>
+        <tm-field label="Bot token" hint="Filled: use the eye to show it.">
+          <tm-password-input [(value)]="formTokenFilled" />
+        </tm-field>
+        <tm-field label="Notify about" hint="Which updates send a message.">
+          <tm-select [options]="formLevels" [(value)]="formLevel" />
+        </tm-field>
+        <tm-field label="Notify about" error="unknown level &quot;some&quot; (use all, attention or breaking)">
+          <tm-select placeholder="Choose a level" [options]="formLevelsOrNone" [(value)]="formEmptyLevel" />
+        </tm-field>
+        <tm-field label="Notify about" locked="Set by TIDEMARK_NOTIFY_LEVEL">
+          <tm-select [options]="formLevels" [value]="'breaking'" disabled />
+        </tm-field>
+        <tm-field label="Note" hint="A textarea, for longer text.">
+          <textarea tmInput rows="3" placeholder="Anything to remember"></textarea>
+        </tm-field>
+        <tm-field label="App icons" hint="Logos next to container names." inline>
+          <tm-switch [(checked)]="formIcons" />
+        </tm-field>
+        <tm-field label="App icons" locked="Set by TIDEMARK_ICONS" inline>
+          <tm-switch [checked]="false" disabled />
+        </tm-field>
+      </div>
+      <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-line pt-5">
+        <input tmInput size="sm" class="w-48" placeholder="sm input" aria-label="sm input" />
+        <tm-password-input size="sm" class="w-48" label="sm secret" placeholder="sm secret" />
+        <tm-select size="sm" class="w-48" label="Notify about" [options]="formLevels" [(value)]="formLevel" />
+        <tm-switch size="sm" label="Dim quiet rows" [(checked)]="formDim" />
+        <tm-switch label="Dim quiet rows" [(checked)]="formDim" />
+        <span class="text-sm text-fg-muted">
+          sm (32 px) controls, a sm and a md switch; chosen level <span class="font-mono">{{ formLevel() }}</span>
+        </span>
+      </div>
+      <div class="mt-6 border-t border-line pt-5">
+        <p class="mb-3 text-sm text-fg-muted">
+          <span class="font-mono">tm-secret-setting</span> (settings dialog): a write-only token. Set, not set and set by an env var;
+          Replace opens a password input, Clear marks it for Save.
+        </p>
+        <div class="grid gap-5 sm:grid-cols-3">
+          <tm-secret-setting label="Bot token" hint="From @BotFather." [field]="secretSet" [(value)]="secretEdit" />
+          <tm-secret-setting label="Token" hint="Read-only, public repositories." placeholder="github_pat_…" [field]="secretUnset" />
+          <tm-secret-setting label="Token" [field]="secretLocked" />
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ── Buttons ────────────────────────────────────────── -->
   <section>
     <h2 class="mb-4 text-xl font-semibold">Buttons</h2>

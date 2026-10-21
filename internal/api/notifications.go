@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -70,7 +71,14 @@ func (s *Server) testNotification(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, "notifications are not configured")
 		return
 	}
-	if err := s.notify.Test(r.Context()); err != nil {
+	if !s.notify.Enabled() {
+		writeError(w, http.StatusConflict, notify.ErrOff.Error())
+		return
+	}
+	if err := s.notify.Test(r.Context()); errors.Is(err, notify.ErrOff) {
+		writeError(w, http.StatusConflict, err.Error()) // turned off in between
+		return
+	} else if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}

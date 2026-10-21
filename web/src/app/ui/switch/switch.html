@@ -1,0 +1,21 @@
+<button
+  #button
+  type="button"
+  role="switch"
+  class="group relative inline-flex shrink-0 cursor-pointer items-center rounded-full border border-line-strong bg-hover p-px transition-colors aria-checked:border-accent aria-checked:bg-accent aria-invalid:border-attention disabled:cursor-not-allowed disabled:opacity-50"
+  [class]="size() === 'sm' ? 'h-4 w-7' : 'h-5 w-9'"
+  [attr.id]="field?.controlId() ?? null"
+  [attr.aria-checked]="checked()"
+  [attr.aria-label]="field ? null : (label() ?? null)"
+  [attr.aria-describedby]="field?.describedBy() ?? null"
+  [attr.aria-invalid]="isInvalid() ? 'true' : null"
+  [disabled]="disabled()"
+  (click)="toggle()"
+  (blur)="touch.emit()"
+>
+  <span
+    aria-hidden="true"
+    class="block rounded-full bg-fg-muted shadow-sm transition-transform duration-150 group-aria-checked:bg-on-accent motion-reduce:transition-none"
+    [class]="size() === 'sm' ? 'size-3 group-aria-checked:translate-x-3' : 'size-4 group-aria-checked:translate-x-4'"
+  ></span>
+</button>

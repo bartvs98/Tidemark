@@ -2,15 +2,20 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/bartvs98/tidemark/internal/config"
+	"github.com/bartvs98/tidemark/internal/settings"
 )
 
-// settingsJSON is what the settings dialog shows. It's read-only: everything comes from
-// env vars, and secrets are only reported as set or not.
+// settingsJSON is what the settings dialog shows. Secrets are only ever reported as set
+// or not, never with their value.
 type settingsJSON struct {
 	Version string       `json:"version"`
 	Source  sourceJSON   `json:"source"`
@@ -20,6 +25,20 @@ type settingsJSON struct {
 	Icons   bool         `json:"icons"`
 	// Notifications is absent when notifications are off. It never holds the bot token or chat ID.
 	Notifications *notificationsJSON `json:"notifications,omitempty"`
+
+	Editable bool                 `json:"editable"`         // TIDEMARK_SETTINGS_EDITABLE
+	Fields   map[string]fieldJSON `json:"fields,omitempty"` // by JSON name; absent without a settings manager
+	Warnings []string             `json:"warnings,omitempty"`
+}
+
+// fieldJSON is one editable setting. Non-secret fields always carry value (possibly "");
+// secret fields only say whether a value is set.
+type fieldJSON struct {
+	Value  *string `json:"value,omitempty"`
+	Secret bool    `json:"secret,omitempty"`
+	Set    *bool   `json:"set,omitempty"`
+	Source string  `json:"source"` // env | stored | default
+	Env    string  `json:"env"`
 }
 
 type githubJSON struct {
@@ -47,14 +66,20 @@ type rulesFile struct {
 	Error   string `json:"error,omitempty"`   // the file didn't load
 }
 
-func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
+// maxSettingsBody bounds a PATCH body; the real thing is a few hundred bytes.
+const maxSettingsBody = 64 << 10
+
+func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.settingsBody(r.Context()))
+}
+
+func (s *Server) settingsBody(ctx context.Context) settingsJSON {
 	info := s.source.Info()
 	out := settingsJSON{
 		Version: s.version,
 		Source:  sourceJSON{Kind: info.Kind, Location: info.Location, CapturedAt: info.CapturedAt},
-		Checks:  scheduleJSON{Schedule: s.schedule},
 		Rules:   rulesFile{Path: s.configFile},
-		Icons:   s.icons != nil,
+		Icons:   s.icons.Load() != nil,
 	}
 	if s.configFile != "" {
 		if _, err := os.Stat(s.configFile); errors.Is(err, fs.ErrNotExist) {
@@ -62,15 +87,16 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.checks != nil {
-		out.Checks.NextRunAt = s.checks.Status().NextRunAt
+		st := s.checks.Status()
+		out.Checks = scheduleJSON{Schedule: s.checks.Schedule(), NextRunAt: st.NextRunAt}
 		out.Rules.Error = s.checks.RulesError()
 	}
-	if s.notify != nil {
-		out.Notifications = toNotificationsJSON(s.notify.Status(r.Context()))
+	if s.notify != nil && s.notify.Enabled() {
+		out.Notifications = toNotificationsJSON(s.notify.Status(ctx))
 	}
 	if s.changelogs != nil {
 		out.GitHub.Token = s.changelogs.HasToken()
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		if rl, err := s.changelogs.RateLimit(ctx); err != nil {
 			out.GitHub.RateLimitError = err.Error()
@@ -78,5 +104,69 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 			out.GitHub.RateLimit = &rateLimitJSON{Limit: rl.Limit, Remaining: rl.Remaining, ResetAt: rl.ResetAt}
 		}
 	}
-	writeJSON(w, http.StatusOK, out)
+	if s.settings != nil {
+		out.Editable = s.settings.Editable()
+		out.Warnings = s.settings.Warnings()
+		out.Fields = map[string]fieldJSON{}
+		for _, v := range s.settings.View() {
+			f := fieldJSON{Source: string(v.Source), Env: v.Field.Env}
+			if v.Field.Secret {
+				set := v.Set
+				f.Secret, f.Set = true, &set
+			} else {
+				value := v.Value
+				f.Value = &value
+			}
+			out.Fields[v.Field.JSON] = f
+		}
+	}
+	return out
+}
+
+// patchSettings changes editable settings. The body maps JSON field names to a string
+// (set) or null (clear, back to the default); "" counts as null.
+func (s *Server) patchSettings(w http.ResponseWriter, r *http.Request) {
+	if s.settings == nil || !s.settings.Editable() {
+		writeError(w, http.StatusForbidden, settings.ErrReadOnly.Error())
+		return
+	}
+	var body map[string]json.RawMessage
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxSettingsBody)).Decode(&body); err != nil || body == nil {
+		writeError(w, http.StatusBadRequest, "body must be a JSON object of settings")
+		return
+	}
+	patch := settings.Patch{}
+	for name, raw := range body {
+		f, ok := config.FieldByJSON(name)
+		if !ok {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown setting %q", name))
+			return
+		}
+		if string(raw) == "null" {
+			patch[f.Key] = nil
+			continue
+		}
+		var v string
+		if err := json.Unmarshal(raw, &v); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("%s must be a string or null", name))
+			return
+		}
+		patch[f.Key] = &v
+	}
+
+	err := s.settings.Update(r.Context(), patch)
+	var fe settings.FieldErrors
+	switch {
+	case errors.As(err, &fe):
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": "Some settings aren't valid", "fields": fe})
+		return
+	case errors.Is(err, settings.ErrReadOnly):
+		writeError(w, http.StatusForbidden, err.Error())
+		return
+	case err != nil:
+		s.log.Warn("applying settings failed", "err", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, s.settingsBody(r.Context()))
 }

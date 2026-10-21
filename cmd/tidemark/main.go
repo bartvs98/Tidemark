@@ -28,6 +28,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/registry"
 	"github.com/bartvs98/tidemark/internal/resolve"
 	"github.com/bartvs98/tidemark/internal/rules"
+	"github.com/bartvs98/tidemark/internal/settings"
 	reposource "github.com/bartvs98/tidemark/internal/source"
 	"github.com/bartvs98/tidemark/internal/store"
 	tmversion "github.com/bartvs98/tidemark/internal/version"
@@ -70,12 +71,6 @@ func run(cfg config.Config, log *slog.Logger) error {
 	info := source.Info()
 	log.Info("container source", "kind", info.Kind, "location", info.Location)
 
-	var iconSvc *icons.Service
-	if cfg.Icons {
-		iconSvc = icons.New(cfg.IconsURL, filepath.Join(cfg.DataDir, "icons"), log)
-		iconSvc.Start(ctx)
-	}
-
 	db, err := store.Open(filepath.Join(cfg.DataDir, "tidemark.db"))
 	if err != nil {
 		return err
@@ -91,8 +86,8 @@ func run(cfg config.Config, log *slog.Logger) error {
 	}
 
 	// Prefetch release notes for containers with an update, so the detail page is instant
-	// and later steps can scan them for breaking changes.
-	changelogs := changelog.New(db, cfg.GitHubToken, log)
+	// and later steps can scan them for breaking changes. The token comes from settings.
+	changelogs := changelog.New(db, "", log)
 	checks.SetAfterCheck(func(ctx context.Context, c docker.Container, rs rules.Rules, r resolve.Result) {
 		if r.Class == tmversion.None {
 			return
@@ -113,46 +108,38 @@ func run(cfg config.Config, log *slog.Logger) error {
 			log.Debug("changelog prefetch failed", "repo", repo.Key(), "err", err)
 		}
 	})
-	schedule := ""
-	if !strings.EqualFold(cfg.Schedule, "off") {
-		schedule = cfg.Schedule
-		if err := checks.Schedule(ctx, cfg.Schedule); err != nil {
-			return fmt.Errorf("TIDEMARK_SCHEDULE: %w", err)
-		}
-		log.Info("check schedule", "spec", cfg.Schedule, "next", checks.Status().NextRunAt)
-	}
 
 	// Notifications: one Telegram message per check run with the new updates, or a digest.
-	var notifier *notify.Service
-	if cfg.TelegramBotToken != "" {
-		notifier = notify.New(notify.NewTelegram(cfg.TelegramBotToken, cfg.TelegramChatID), db,
-			notify.Options{MinLevel: cfg.NotifyLevel, PublicURL: cfg.PublicURL, Log: log})
-		if cfg.NotifyDigest != "" {
-			if err := notifier.Schedule(ctx, cfg.NotifyDigest); err != nil {
-				return fmt.Errorf("TIDEMARK_NOTIFY_DIGEST: %w", err)
-			}
-		}
-		checks.SetAfterRun(func(ctx context.Context, _ string) { notifier.AfterRun(ctx) })
-		log.Info("notifications", "notifier", "telegram", "level", cfg.NotifyLevel.String(), "digest", cfg.NotifyDigest)
-	}
+	// The service always exists; settings turn it on and off.
+	notifier := notify.New(db, notify.Options{Log: log})
+	checks.SetAfterRun(func(ctx context.Context, _ string) { notifier.AfterRun(ctx) })
+
+	// Editable settings (env var > stored > default) are pushed into the services by Start
+	// and after every change in the settings dialog. The manager runs appliers one at a
+	// time, so their state needs no lock. Icons go to the API server, built below.
+	var apiSrv *api.Server
+	setIcons := func(svc *icons.Service) { apiSrv.SetIcons(svc) }
+	settingsMgr := settings.New(db, cfg.Env, cfg.Editable, appliers(ctx, cfg, log, checks, changelogs, notifier, setIcons), log)
 
 	// The API server is built before the startup check so the first run's hook has its source.
-	apiSrv := api.New(api.Deps{
+	apiSrv = api.New(api.Deps{
 		Version:    version,
 		Log:        log,
 		Source:     source,
-		Icons:      iconSvc,
 		Checks:     checks,
 		Changelogs: changelogs,
 		Store:      db,
 		Notify:     notifier,
-		Schedule:   schedule,
+		Settings:   settingsMgr,
 		ConfigFile: cfg.ConfigFile,
 		Background: ctx,
 	})
-	if notifier != nil {
-		notifier.UseSource(apiSrv.Updates)
+	notifier.UseSource(apiSrv.Updates)
+
+	if err := settingsMgr.Start(ctx); err != nil {
+		return err
 	}
+	log.Info("settings", "editable", cfg.Editable)
 
 	// Check at startup unless a recent run covered every container, so restarts don't hammer
 	// registries. Containers without a valid result (new, recreated, or with changed rules)
@@ -199,6 +186,79 @@ func run(cfg config.Config, log *slog.Logger) error {
 		log.Warn("a check run was still busy at shutdown", "err", err)
 	}
 	return nil
+}
+
+// appliers connect the settings manager to the running services. Each one only acts
+// when its part of the settings changed, and logs the new state (never a secret).
+func appliers(ctx context.Context, cfg config.Config, log *slog.Logger, checks *check.Service,
+	changelogs *changelog.Service, notifier *notify.Service, setIcons func(*icons.Service)) settings.Appliers {
+	var (
+		iconsURL    string             // URL of the running icon service, "" when off
+		stopIcons   context.CancelFunc // stops its index refresh
+		notifySetup *config.Runtime    // last notification settings applied
+	)
+	return settings.Appliers{
+		Schedule: func(spec string) error {
+			if spec == checks.Schedule() {
+				return nil
+			}
+			if err := checks.SetSchedule(ctx, spec); err != nil {
+				return err
+			}
+			if spec == "" {
+				log.Info("check schedule", "spec", "off")
+			} else {
+				log.Info("check schedule", "spec", spec, "next", checks.Status().NextRunAt)
+			}
+			return nil
+		},
+		GitHubToken: changelogs.SetToken,
+		Icons: func(on bool, url string) {
+			if !on {
+				url = ""
+			}
+			if url == iconsURL {
+				return
+			}
+			if stopIcons != nil {
+				stopIcons()
+				stopIcons = nil
+			}
+			iconsURL = url
+			if url == "" {
+				setIcons(nil)
+				log.Info("icons", "on", false)
+				return
+			}
+			// A new service per URL: its cache holds the index of the collection it came from.
+			iconCtx, cancel := context.WithCancel(ctx)
+			svc := icons.New(url, filepath.Join(cfg.DataDir, "icons"), log)
+			svc.Start(iconCtx)
+			setIcons(svc)
+			stopIcons = cancel
+			log.Info("icons", "on", true, "url", url)
+		},
+		Notify: func(rt config.Runtime) error {
+			if notifySetup != nil && rt.TelegramBotToken == notifySetup.TelegramBotToken && rt.TelegramChatID == notifySetup.TelegramChatID &&
+				rt.NotifyLevel == notifySetup.NotifyLevel && rt.NotifyDigest == notifySetup.NotifyDigest && rt.PublicURL == notifySetup.PublicURL {
+				return nil
+			}
+			var n notify.Notifier
+			if rt.Telegram() {
+				n = notify.NewTelegram(rt.TelegramBotToken, rt.TelegramChatID)
+			}
+			if err := notifier.Configure(ctx, n, rt.NotifyLevel, rt.PublicURL, rt.NotifyDigest); err != nil {
+				return err
+			}
+			notifySetup = &rt
+			if n == nil {
+				log.Info("notifications", "on", false)
+			} else {
+				log.Info("notifications", "notifier", n.Name(), "level", rt.NotifyLevel.String(), "digest", rt.NotifyDigest)
+			}
+			return nil
+		},
+	}
 }
 
 func dockerSource(cfg config.Config) (docker.Source, error) {

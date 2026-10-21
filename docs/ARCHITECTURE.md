@@ -59,7 +59,10 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 ```
 /cmd/tidemark/main.go        entrypoint: config, wiring, start HTTP + scheduler
 /internal/
-  config/                     TIDEMARK_* environment variables
+  config/                     TIDEMARK_* environment variables; the editable settings' keys, shared validation
+                              (Normalize) and precedence (env > stored > default)
+  settings/                   editable settings: stored values, validation of a change, applied live through
+                              appliers wired in main (schedule, GitHub token, icons, notifier)
   docker/                     Source interface: live Engine API client + snapshot file reader
   imageref/                   parse image references (registry, repository, tag, digest)
   icons/                      selfh.st icon index, container → icon matching, cached icon serving, built-in icons (builtin/, embedded)
@@ -132,6 +135,7 @@ reviews         container_name (PK), kind (reviewed|snoozed), version, until, cr
 history         id, container_name, image_id, running, prev_image_id, prev_running, detected_at, via (check; oneclick later)
 notified        container_name + key (PK; the review key), level (as sent), notified_at
 notifications   id, sent_at, notifier (telegram), kind (updates|first|test), items (count), error
+settings        key (PK; e.g. schedule, github_token), value (canonical form, secrets in plain text)
 ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reasons_json   (later)
 ```
 
@@ -150,7 +154,7 @@ ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reas
 
 ## HTTP API (v1)
 
-PUT, DELETE and POST need the header `X-Tidemark: 1` (403 without; see Security).
+PUT, PATCH, DELETE and POST need the header `X-Tidemark: 1` (403 without; see Security).
 
 ```
 GET  /api/health                    {status: "ok", version}; `tidemark healthcheck` calls it (Dockerfile HEALTHCHECK)
@@ -162,8 +166,12 @@ PUT  /api/containers/{name}/review  mark reviewed or snooze: {kind: "reviewed", 
                                     | {kind: "snoozed", version}; 200 + the review, 400 bad body, 404 unknown name, 502 Docker unreachable, 501 without a store
 DELETE /api/containers/{name}/review   remove it; 204 (also when there was none), 404 unknown name
 POST /api/checks                    start a check run unless one is running; always 202 + the current run status
-GET  /api/settings                  read-only configuration for the settings dialog (secrets only as set / not set)
-POST /api/notifications/test        send a test message; 204, 502 {error} when sending failed, 501 when notifications are off
+GET  /api/settings                  configuration for the settings dialog (secrets only as set / not set)
+PATCH /api/settings                 change editable settings: {name: "value" | null}; 200 + the same body as GET,
+                                    403 when not editable, 400 bad body or unknown name, 422 {error, fields: {name: message}},
+                                    500 stored but applying failed
+POST /api/notifications/test        send a test message; 204, 502 {error} when sending failed, 409 when notifications are off,
+                                    501 without a notify service (tests)
 GET  /api/icons/{ref}[?variant=light|dark]   app icon from the local cache (fetched from the CDN on first use); built-in ones (`tidemark`) from the binary
 
 later:
@@ -195,7 +203,9 @@ Response shapes (Go structs in `internal/api`, TypeScript types in `web/src/app/
     - `releases` in range, newest first, each with a `level` and its flagged lines as `hits`: `{line, level, match?, section?}`. `match` is the words that set the level; `section` the flagged heading it inherits from, when that's higher.
     - `partial` (older releases not fetched), `error` (last sync failure), `fetchedAt`.
     - `links`: `compare`, `releases`, `running` (source tree at your version), `inList` (GitHub release list at your version).
-- **`GET /api/settings`** → `{version, source, github: {token (bool), rateLimit: {limit, remaining, resetAt} | rateLimitError}, checks: {schedule (absent when off), nextRunAt}, rules: {path, missing, error}, icons, notifications}`. The quota comes from GitHub's free `/rate_limit` endpoint, cached a minute and updated from the `X-RateLimit-*` headers of every GitHub API response. `rateLimitError` is set when GitHub can't be reached or rejects the token. `notifications` is absent when they're off, otherwise `{notifier: "telegram", level (`all` | `attention` | `breaking`), digest (absent = after each run), publicUrl, last: {at, kind (`updates` | `first` | `test`), items, error}}`; `last` is the newest send attempt, absent before the first. Never the bot token or the chat ID.
+- **`GET /api/settings`** → `{version, source, github: {token (bool), rateLimit: {limit, remaining, resetAt} | rateLimitError}, checks: {schedule (absent when off), nextRunAt}, rules: {path, missing, error}, icons, notifications, editable, fields, warnings}`. The quota comes from GitHub's free `/rate_limit` endpoint, cached a minute and updated from the `X-RateLimit-*` headers of every GitHub API response. `rateLimitError` is set when GitHub can't be reached or rejects the token. `notifications` is absent when they're off, otherwise `{notifier: "telegram", level (`all` | `attention` | `breaking`), digest (absent = after each run), publicUrl, last: {at, kind (`updates` | `first` | `test`), items, error}}`; `last` is the newest send attempt, absent before the first.
+  - `editable` (`TIDEMARK_SETTINGS_EDITABLE`), `fields` and `warnings` (stored values that were invalid and skipped; absent when none). `fields` has one entry per editable setting (`schedule`, `githubToken`, `icons`, `iconsUrl`, `telegramBotToken`, `telegramChatId`, `notifyLevel`, `notifyDigest`, `publicUrl`): `{value, source (`env` | `stored` | `default`), env (the env var's name)}`. Secret fields (the two tokens) have `secret: true` and `set` instead of `value`: a token is never returned (tested).
+- **`PATCH /api/settings`** takes a subset of those names; a string sets the value, `null` or `""` removes the stored one (back to the default). Each value goes through the same validation as its env var; a setting whose env var is set can't be changed (field error). Nothing is stored when any field fails. Valid changes are stored in `settings` and applied without a restart: the check cron is replaced (a running check keeps going), the GitHub token swapped (forgetting the old token's rate-limit state), a new icon service started when icons turn on or the URL changes, and the notifier rebuilt (a send in progress finishes with the old one).
 - Unknown `/api/*` paths → 404 `{error}`. Icons → 404 when icons are off, the reference is neither built in nor in the selfh.st index, the variant doesn't exist, or the CDN fetch fails.
 - Everything else is the SPA: existing files are served directly (content-hashed assets with a one-year `immutable` cache), extensionless paths get `index.html` (client routes, `no-cache`), a missing file with an extension is a 404. A binary built without the frontend answers 503 with a page explaining how to build it.
 
@@ -225,8 +235,8 @@ What the pages show is in [FEATURES §1](FEATURES.md#1-dashboard) and [§6](FEAT
 
 - **Docker socket access is root-equivalent**, so Tidemark reaches Docker only through [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) with `CONTAINERS=1 IMAGES=1`, `POST=0` (setup: [README](../README.md#run-it-with-docker); mounting the socket `:ro` doesn't restrict the API). One-click updates (later) will need `POST=1` and the matching create/start/stop endpoints, as a conscious opt-in (`TIDEMARK_ENABLE_UPDATES`, default off).
 - Container inspect is never called and only image `*_VERSION` variables are read (see Check pipeline).
-- Secrets only come from env vars, are never returned by the API, and are never logged. `TIDEMARK_GITHUB_TOKEN` is only sent to api.github.com, `TIDEMARK_TELEGRAM_BOT_TOKEN` only to api.telegram.org. The bot token is part of Telegram's URL, so send errors are stripped of the URL (and any echo of the token) before they're logged, stored in `notifications.error` or returned (tested).
-- No auth in v1, so keep it LAN-only or behind your reverse proxy's auth: anyone who can reach it can start checks, mark updates reviewed or snoozed and send test messages (it never touches containers).
+- Secrets (the GitHub and bot tokens) come from env vars or, when settings are editable, from the `settings` table (plain text, like the rest of the data dir, so protect the volume). They're write-only in the UI, never returned by the API and never logged (a settings change logs only the names of the keys). The GitHub token is only sent to api.github.com, the bot token only to api.telegram.org. The bot token is part of Telegram's URL, so send errors are stripped of the URL (and any echo of the token) before they're logged, stored in `notifications.error` or returned (tested).
+- No auth in v1, so keep it LAN-only or behind your reverse proxy's auth: anyone who can reach it can start checks, mark updates reviewed or snoozed and send test messages (it never touches containers). That's why settings are read-only unless `TIDEMARK_SETTINGS_EDITABLE=true`: an editable chat ID would let anyone on the network redirect the notifications, and an editable bot token or GitHub token could be swapped for someone else's.
 - **Cross-site requests:** API writes (anything but GET/HEAD/OPTIONS under `/api/`) need the header `X-Tidemark: 1`, otherwise 403. A cross-site form or `fetch` can't set it without a CORS preflight, which the server never grants. The SPA adds it in an HTTP interceptor (`csrf-header.interceptor.ts`); scripts calling the API must send it too. Every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`, so other sites can't frame the UI.
 - Release notes are untrusted HTML/markdown, so they're sanitised with DOMPurify before rendering. Images in them never load (that would reveal the viewer's IP to whoever hosts them): each one becomes an "Image: alt" link to its URL. For the AI summary (later), they're passed as data, not instructions.
 - **App icons** are fetched by the server only (browsers never contact the CDN), cached under `$TIDEMARK_DATA_DIR/icons`, and only for references listed in the selfh.st index (no arbitrary URLs or paths); built-in icons are embedded and need no request. Served icons get `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `X-Content-Type-Options: nosniff`, so a malicious icon can't run script on Tidemark's origin. Requests to the CDN do reveal which icons you use; `TIDEMARK_ICONS=off` avoids them.

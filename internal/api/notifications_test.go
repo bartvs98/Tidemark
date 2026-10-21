@@ -63,7 +63,10 @@ func newNotifyFixture(t *testing.T, withNotify bool) notifyFixture {
 	f := notifyFixture{n: &fakeNotifier{token: secretToken, chat: secretChat}, db: db}
 	deps := Deps{Version: "t", Log: log, Source: src, Checks: checks, Store: db}
 	if withNotify {
-		deps.Notify = notify.New(f.n, db, notify.Options{MinLevel: analysis.Attention, PublicURL: "https://tidemark.example.lan", Log: log})
+		deps.Notify = notify.New(db, notify.Options{Log: log})
+		if err := deps.Notify.Configure(t.Context(), f.n, analysis.Attention, "https://tidemark.example.lan", ""); err != nil {
+			t.Fatal(err)
+		}
 	}
 	f.srv = New(deps)
 	f.h = f.srv.Handler(fstest.MapFS{})
@@ -141,6 +144,25 @@ func TestTestNotificationNotConfigured(t *testing.T) {
 	rec := send(t, f.h, http.MethodPost, "/api/notifications/test", "")
 	if rec.Code != http.StatusNotImplemented || !strings.Contains(rec.Body.String(), "notifications are not configured") {
 		t.Errorf("got %d %s", rec.Code, rec.Body)
+	}
+}
+
+// A service that's off (no notifier configured, or turned off in the dialog) answers 409.
+func TestTestNotificationOff(t *testing.T) {
+	f := newNotifyFixture(t, true)
+	if err := f.srv.notify.Configure(t.Context(), nil, analysis.None, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	rec := send(t, f.h, http.MethodPost, "/api/notifications/test", "")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"notifications are off"`) {
+		t.Errorf("got %d %s", rec.Code, rec.Body)
+	}
+	if len(f.n.sent) != 0 {
+		t.Errorf("sent while off: %+v", f.n.sent)
+	}
+	// Settings show no notifications while off.
+	if rec := do(t, f.h, "/api/settings"); strings.Contains(rec.Body.String(), `"notifications"`) {
+		t.Errorf("notifications present while off: %s", rec.Body)
 	}
 }
 

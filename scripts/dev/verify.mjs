@@ -316,6 +316,7 @@ async function shoot(page, { name: parts, path, view, theme, do: actions = [], e
       else report.problems.push({ shot: name, kind: 'scenario', error: `nothing to click: ${a.click} ${a.text ?? ''}` });
     }
     if (a.key) await page.keyboard.press(a.key);
+    if (a.type !== undefined) await page.keyboard.type(a.type); // into whatever has focus
     await new Promise((r) => setTimeout(r, a.wait ?? 250));
   }
   const ms = Date.now() - t0;

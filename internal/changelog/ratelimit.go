@@ -22,7 +22,23 @@ type RateLimit struct {
 }
 
 // HasToken reports whether GitHub requests are sent with a token.
-func (s *Service) HasToken() bool { return s.token != "" }
+func (s *Service) HasToken() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.token != ""
+}
+
+// SetToken replaces the GitHub token ("" = none) for the next request. Changing it forgets
+// the known rate-limit state (limitedUntil, cached quota), since the quota belongs to the token.
+func (s *Service) SetToken(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if token == s.token {
+		return
+	}
+	s.token = token
+	s.limitedUntil, s.rateLimit, s.rateLimitAt = time.Time{}, RateLimit{}, time.Time{}
+}
 
 // RateLimit asks GitHub for the current quota. GitHub's /rate_limit endpoint doesn't count
 // against the quota itself. Answers are cached for rateLimitFor, and replaced by the
@@ -34,6 +50,7 @@ func (s *Service) RateLimit(ctx context.Context) (RateLimit, error) {
 		s.mu.Unlock()
 		return rl, nil
 	}
+	token := s.token
 	s.mu.Unlock()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.githubAPI+"/rate_limit", nil)
@@ -43,8 +60,8 @@ func (s *Service) RateLimit(ctx context.Context) (RateLimit, error) {
 	req.Header.Set("User-Agent", "tidemark")
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if s.token != "" {
-		req.Header.Set("Authorization", "Bearer "+s.token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	resp, err := s.http.Do(req)
 	if err != nil {

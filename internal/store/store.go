@@ -560,3 +560,43 @@ func (s *Store) SentUpdatesBefore(ctx context.Context) (bool, error) {
 		SELECT COUNT(*) FROM notifications WHERE kind IN ('updates', 'first') AND error = ''`).Scan(&n)
 	return n > 0, err
 }
+
+// Settings returns the stored editable settings by key.
+func (s *Store) Settings(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM settings`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, rows.Err()
+}
+
+// SaveSettings upserts set and deletes the keys in remove, in one transaction.
+func (s *Store) SaveSettings(ctx context.Context, set map[string]string, remove []string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for k, v := range set {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO settings (key, value) VALUES (?, ?)
+			ON CONFLICT (key) DO UPDATE SET value = excluded.value`, k, v); err != nil {
+			return err
+		}
+	}
+	for _, k := range remove {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM settings WHERE key = ?`, k); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}

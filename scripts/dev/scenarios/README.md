@@ -19,7 +19,7 @@ Committed scenarios use the made-up demo host (`"base": "scripts/dev/demo-snapsh
     // shots are taken after all setup steps, per browser × theme × width: <browser>-<shot>-<theme>-<width>.png
     { "shot": "history", "path": "/containers/traefik",
       "view": "list",                          // dashboard view (list | tiles), for path "/"
-      "do": [{ "click": "[role=tab]", "text": "History" }, { "key": "Escape" }, { "wait": 500 }],
+      "do": [{ "click": "[role=tab]", "text": "History" }, { "key": "Escape" }, { "wait": 500 }],   // "type": "text" types into the focused element
       "element": "main",                       // crop to this element (otherwise the full page)
       "full": false }                          // viewport only instead of the full page
   ]
