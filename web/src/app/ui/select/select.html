@@ -1,0 +1,52 @@
+<div
+  ngCombobox
+  #combobox="ngCombobox"
+  [(expanded)]="expanded"
+  [disabled]="disabled()"
+  [softDisabled]="false"
+  [class]="triggerClass()"
+  [attr.id]="field?.controlId() ?? null"
+  [attr.aria-labelledby]="field?.labelId() ?? null"
+  [attr.aria-label]="field ? null : (label() ?? null)"
+  [attr.aria-describedby]="field?.describedBy() ?? null"
+  [attr.aria-invalid]="isInvalid() ? 'true' : null"
+  [attr.aria-required]="field?.required() ? 'true' : null"
+  (focusout)="onFocusout($event)"
+>
+  <span class="min-w-0 flex-1 truncate" [class.text-fg-subtle]="!selected()">{{ selected()?.label ?? placeholder() }}</span>
+  <tm-icon name="chevron-down" [size]="14" class="text-fg-muted transition-transform motion-reduce:transition-none" [class.rotate-180]="expanded()" />
+</div>
+<ng-template ngComboboxPopup [combobox]="combobox">
+  <div
+    ngComboboxWidget
+    ngListbox
+    #listbox="ngListbox"
+    focusMode="activedescendant"
+    selectionMode="explicit"
+    tabindex="-1"
+    [activeDescendant]="listbox.activeDescendant()"
+    [value]="listValue()"
+    (valueChange)="choose($event)"
+    [attr.aria-labelledby]="field?.labelId() ?? null"
+    [attr.aria-label]="field ? null : (label() ?? null)"
+    class="absolute top-full left-0 z-30 mt-1 flex max-h-72 w-max max-w-[min(28rem,calc(100vw-2rem))] min-w-full flex-col overflow-y-auto rounded-lg border border-line-strong bg-surface p-1 shadow-overlay outline-none"
+    (mousedown)="$event.preventDefault()"
+  >
+    @for (option of options(); track option.value) {
+      <div
+        ngOption
+        [value]="option.value"
+        [label]="option.label"
+        class="flex min-h-8 cursor-pointer items-start gap-2 rounded-sm px-2.5 py-1.5 text-sm text-fg select-none hover:bg-hover data-[active=true]:bg-hover"
+      >
+        <tm-icon name="check" [size]="14" class="mt-0.5 text-fg-muted" [class.invisible]="option.value !== value()" />
+        <span class="flex min-w-0 flex-col">
+          <span>{{ option.label }}</span>
+          @if (option.hint) {
+            <span class="text-xs text-fg-muted">{{ option.hint }}</span>
+          }
+        </span>
+      </div>
+    }
+  </div>
+</ng-template>

@@ -14,7 +14,13 @@ import {
   TmLevel,
   TmMenu,
   TmSection,
+  TmField,
+  TmInput,
+  TmPasswordInput,
   TmSearch,
+  TmSelect,
+  TmSwitch,
+  SelectOption,
   TmSegmented,
   TmSkeleton,
   TmThemeSwitch,
@@ -104,7 +110,12 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
     ReviewActions,
     History,
     TmSection,
+    TmField,
+    TmInput,
+    TmPasswordInput,
     TmSearch,
+    TmSelect,
+    TmSwitch,
     TmSegmented,
     TmSkeleton,
     TmThemeSwitch,
@@ -209,6 +220,23 @@ export class Styleguide {
     { value: 'newer', label: 'Until a newer version', disabled: true, hint: 'The latest version is unknown, so there is nothing to mark it against.' },
   ];
   protected readonly menuChoice = signal('');
+
+  protected readonly formSchedule = signal('0 */6 * * *');
+  protected readonly formUrl = signal('');
+  protected readonly formBad = signal('every six hours');
+  protected readonly formToken = signal('');
+  protected readonly formTokenFilled = signal('123456789:AAE-example-token');
+  protected readonly formLevel = signal<'all' | 'attention' | 'breaking'>('all');
+  protected readonly formEmptyLevel = signal<'' | 'all' | 'attention' | 'breaking'>('');
+  protected readonly formLevels: SelectOption<'all' | 'attention' | 'breaking'>[] = [
+    { value: 'all', label: 'Every update' },
+    { value: 'attention', label: 'Attention and breaking', hint: 'Skips updates without risk' },
+    { value: 'breaking', label: 'Breaking only' },
+  ];
+  /** The same options, typed to allow '' (nothing chosen yet). */
+  protected readonly formLevelsOrNone: SelectOption<'' | 'all' | 'attention' | 'breaking'>[] = this.formLevels;
+  protected readonly formIcons = signal(true);
+  protected readonly formDim = signal(false);
   protected readonly dialogOpen = signal(false);
   protected readonly pagesDialogOpen = signal(false);
 
