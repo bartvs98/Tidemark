@@ -2,6 +2,7 @@ package changelog
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -91,5 +92,62 @@ func TestRateLimitFromResponseHeaders(t *testing.T) {
 	s.noteQuota(http.Header{"X-Ratelimit-Limit": {"x"}, "X-Ratelimit-Remaining": {"1"}, "X-Ratelimit-Reset": {"1"}})
 	if rl2, _ := s.RateLimit(context.Background()); rl2 != rl {
 		t.Errorf("cache changed to %+v", rl2)
+	}
+}
+
+func TestSetToken(t *testing.T) {
+	var auth atomic.Value
+	var limited atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth.Store(r.Header.Get("Authorization"))
+		if r.URL.Path == "/rate_limit" {
+			_, _ = io.WriteString(w, `{"resources":{"core":{"limit":60,"remaining":0,"reset":1792351465}}}`)
+			return
+		}
+		if limited.Load() {
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.Header().Set("X-RateLimit-Reset", "4102444800") // far away
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	s := New(nil, "", slog.New(slog.NewTextHandler(io.Discard, nil)), WithBaseURLs(srv.URL, srv.URL, srv.URL))
+	ctx := context.Background()
+	if s.HasToken() {
+		t.Error("HasToken without a token")
+	}
+	limited.Store(true)
+	if _, _, _, err := s.get(ctx, srv.URL+"/repos/a/b/releases", "", true); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, err := s.RateLimit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	s.SetToken("ghp_new")
+	if !s.HasToken() {
+		t.Error("HasToken = false after SetToken")
+	}
+	// The rate limit belonged to the old token: requests go out again, with the new one.
+	limited.Store(false)
+	if _, _, status, err := s.get(ctx, srv.URL+"/repos/a/b/releases", "", true); err != nil || status != http.StatusNotFound {
+		t.Fatalf("after SetToken: %d, %v", status, err)
+	}
+	if auth.Load() != "Bearer ghp_new" {
+		t.Errorf("Authorization = %q", auth.Load())
+	}
+	s.mu.Lock()
+	cached := !s.rateLimitAt.IsZero()
+	s.mu.Unlock()
+	if cached {
+		t.Error("the old quota is still cached")
+	}
+
+	s.SetToken("")
+	if _, _, _, _ = s.get(ctx, srv.URL+"/repos/a/b/releases", "", true); auth.Load() != "" {
+		t.Errorf("Authorization after clearing = %q", auth.Load())
 	}
 }

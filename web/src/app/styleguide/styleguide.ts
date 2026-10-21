@@ -38,6 +38,8 @@ import { DashboardSkeleton } from '../dashboard/dashboard-skeleton/dashboard-ske
 import { DetailSkeleton } from '../detail/detail-skeleton/detail-skeleton';
 import { ContainerLink, ContainerTable } from '../dashboard/container-table/container-table';
 import { ContainerTile } from '../dashboard/container-tile/container-tile';
+import { SecretSetting } from '../settings/secret-setting/secret-setting';
+import type { SettingField } from '../settings/settings-dialog';
 import { ContainerSummary, groupByStack, UpdateInfo } from '../dashboard/containers';
 import { ContainerUpdate } from '../dashboard/container-update/container-update';
 import { ContainerVersion } from '../dashboard/container-version/container-version';
@@ -88,6 +90,7 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
   selector: 'tm-styleguide',
   imports: [
     ContainerRuleProblems,
+    SecretSetting,
     ContainerUpdate,
     ContainerVersion,
     ContainerColumnBar,
@@ -237,6 +240,10 @@ export class Styleguide {
   protected readonly formLevelsOrNone: SelectOption<'' | 'all' | 'attention' | 'breaking'>[] = this.formLevels;
   protected readonly formIcons = signal(true);
   protected readonly formDim = signal(false);
+  protected readonly secretEdit = signal<string | null | undefined>(undefined);
+  protected readonly secretSet: SettingField = { secret: true, set: true, source: 'stored', env: 'TIDEMARK_TELEGRAM_BOT_TOKEN' };
+  protected readonly secretUnset: SettingField = { secret: true, set: false, source: 'default', env: 'TIDEMARK_GITHUB_TOKEN' };
+  protected readonly secretLocked: SettingField = { secret: true, set: true, source: 'env', env: 'TIDEMARK_GITHUB_TOKEN' };
   protected readonly dialogOpen = signal(false);
   protected readonly pagesDialogOpen = signal(false);
 

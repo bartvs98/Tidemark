@@ -192,8 +192,8 @@ func (s *Server) toContainerJSON(ctx context.Context, c docker.Container, review
 		img.Tag = ref.Tag
 	}
 	var icon *iconJSON
-	if s.icons != nil {
-		if ic, ok := s.icons.Resolve(ref, c.Name, c.Service, c.Labels); ok {
+	if svc := s.icons.Load(); svc != nil {
+		if ic, ok := svc.Resolve(ref, c.Name, c.Service, c.Labels); ok {
 			icon = &iconJSON{Src: "/api/icons/" + ic.Ref}
 			if ic.Light {
 				icon.Light = icon.Src + "?variant=light"

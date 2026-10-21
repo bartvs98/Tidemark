@@ -39,7 +39,13 @@ type harness struct {
 
 var t0 = time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 
-func newHarness(t *testing.T, opt Options) *harness {
+// opts is what the harness passes to Configure.
+type opts struct {
+	MinLevel  analysis.Level
+	PublicURL string
+}
+
+func newHarness(t *testing.T, o opts) *harness {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "tidemark.db"))
 	if err != nil {
@@ -47,8 +53,10 @@ func newHarness(t *testing.T, opt Options) *harness {
 	}
 	t.Cleanup(func() { st.Close() })
 	h := &harness{t: t, st: st, n: &fakeNotifier{}, now: t0}
-	opt.Now = func() time.Time { return h.now }
-	h.svc = New(h.n, st, opt)
+	h.svc = New(st, Options{Now: func() time.Time { return h.now }})
+	if err := h.svc.Configure(t.Context(), h.n, o.MinLevel, o.PublicURL, ""); err != nil {
+		t.Fatal(err)
+	}
 	h.svc.UseSource(func(context.Context) ([]Update, error) { return slices.Clone(h.updates), nil })
 	return h
 }
@@ -84,7 +92,7 @@ func want(t *testing.T, got []string, w ...string) {
 }
 
 func TestRunNewOnceThenNothing(t *testing.T) {
-	h := newHarness(t, Options{})
+	h := newHarness(t, opts{})
 	h.updates = []Update{upd("sonarr", "1.1.0", analysis.None)}
 	want(t, h.run(), "sonarr:new")
 	if h.lastKind() != KindFirst {
@@ -101,7 +109,7 @@ func TestRunNewOnceThenNothing(t *testing.T) {
 }
 
 func TestRunSkips(t *testing.T) {
-	h := newHarness(t, Options{})
+	h := newHarness(t, opts{})
 	noKey := upd("a", "1.1.0", analysis.None)
 	noKey.Key = ""
 	noClass := upd("b", "1.1.0", analysis.None)
@@ -117,7 +125,7 @@ func TestRunSkips(t *testing.T) {
 }
 
 func TestRunMinLevel(t *testing.T) {
-	h := newHarness(t, Options{MinLevel: analysis.Attention})
+	h := newHarness(t, opts{MinLevel: analysis.Attention})
 	h.updates = []Update{upd("quiet", "1.1.0", analysis.None), upd("loud", "1.1.0", analysis.Attention)}
 	want(t, h.run(), "loud:new")
 	got, _ := h.st.Notified(context.Background())
@@ -130,7 +138,7 @@ func TestRunMinLevel(t *testing.T) {
 }
 
 func TestRunRaised(t *testing.T) {
-	h := newHarness(t, Options{})
+	h := newHarness(t, opts{})
 	h.updates = []Update{upd("sonarr", "2.0.0", analysis.None)}
 	want(t, h.run(), "sonarr:new")
 	h.updates[0].Level = analysis.Breaking
@@ -141,7 +149,7 @@ func TestRunRaised(t *testing.T) {
 }
 
 func TestRunSnoozeEnded(t *testing.T) {
-	h := newHarness(t, Options{})
+	h := newHarness(t, opts{})
 	h.updates = []Update{upd("sonarr", "2.0.0", analysis.None)}
 	want(t, h.run(), "sonarr:new")
 
@@ -157,7 +165,7 @@ func TestRunSnoozeEnded(t *testing.T) {
 
 // A snooze that ran out before the update was sent doesn't count as ended since.
 func TestRunSnoozeEndedBeforeSent(t *testing.T) {
-	h := newHarness(t, Options{})
+	h := newHarness(t, opts{})
 	u := upd("sonarr", "2.0.0", analysis.None)
 	u.Review = &store.Review{ContainerName: "sonarr", Kind: review.Snoozed, Until: t0.Add(-time.Hour)}
 	h.updates = []Update{u}
@@ -167,7 +175,7 @@ func TestRunSnoozeEndedBeforeSent(t *testing.T) {
 }
 
 func TestRunFailedSendRetries(t *testing.T) {
-	h := newHarness(t, Options{})
+	h := newHarness(t, opts{})
 	h.updates = []Update{upd("sonarr", "2.0.0", analysis.None)}
 	h.n.err = errors.New("telegram: Bad Request: chat not found")
 	if n, err := h.svc.Run(context.Background()); err == nil || n != 0 {
@@ -189,7 +197,7 @@ func TestRunFailedSendRetries(t *testing.T) {
 }
 
 func TestNothingNewLogsNothing(t *testing.T) {
-	h := newHarness(t, Options{})
+	h := newHarness(t, opts{})
 	want(t, h.run())
 	if _, ok, _ := h.st.LastNotification(context.Background()); ok {
 		t.Error("an empty run was logged")
@@ -197,20 +205,20 @@ func TestNothingNewLogsNothing(t *testing.T) {
 }
 
 func TestAfterRunAndDigest(t *testing.T) {
-	h := newHarness(t, Options{})
+	h := newHarness(t, opts{})
 	h.updates = []Update{upd("sonarr", "2.0.0", analysis.None)}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if h.svc.Digest() != "" {
-		t.Error("digest set before Schedule")
+		t.Error("digest set without one")
 	}
-	if err := h.svc.Schedule(ctx, "not a cron"); err == nil {
+	if err := h.svc.Configure(ctx, h.n, analysis.None, "", "not a cron"); err == nil {
 		t.Error("invalid spec accepted")
 	}
 	if h.svc.Digest() != "" {
-		t.Error("a failed Schedule turned on digest mode")
+		t.Error("a failed Configure turned on digest mode")
 	}
-	if err := h.svc.Schedule(ctx, "CRON_TZ=Europe/Amsterdam 0 9 * * *"); err != nil {
+	if err := h.svc.Configure(ctx, h.n, analysis.None, "", "CRON_TZ=Europe/Amsterdam 0 9 * * *"); err != nil {
 		t.Fatal(err)
 	}
 	if h.svc.Digest() != "CRON_TZ=Europe/Amsterdam 0 9 * * *" {
@@ -221,7 +229,7 @@ func TestAfterRunAndDigest(t *testing.T) {
 		t.Error("AfterRun sent in digest mode")
 	}
 
-	h2 := newHarness(t, Options{})
+	h2 := newHarness(t, opts{})
 	h2.updates = h.updates
 	h2.svc.AfterRun(ctx)
 	if len(h2.n.batches) != 1 {
@@ -229,8 +237,73 @@ func TestAfterRunAndDigest(t *testing.T) {
 	}
 }
 
+// Configure replaces the digest: the old cron is stopped, back to after-each-run sends.
+func TestConfigureReplacesDigest(t *testing.T) {
+	h := newHarness(t, opts{})
+	h.updates = []Update{upd("sonarr", "2.0.0", analysis.None)}
+	ctx := t.Context()
+	if err := h.svc.Configure(ctx, h.n, analysis.None, "", "@every 1h"); err != nil {
+		t.Fatal(err)
+	}
+	first := h.svc.digestCron
+	if err := h.svc.Configure(ctx, h.n, analysis.None, "", "@every 2h"); err != nil {
+		t.Fatal(err)
+	}
+	if h.svc.digestCron == first || h.svc.Digest() != "@every 2h" {
+		t.Errorf("digest not replaced: %q", h.svc.Digest())
+	}
+	if err := h.svc.Configure(ctx, h.n, analysis.None, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if h.svc.digestCron != nil || h.svc.Digest() != "" {
+		t.Errorf("digest still on: %q", h.svc.Digest())
+	}
+	h.svc.AfterRun(ctx)
+	if len(h.n.batches) != 1 {
+		t.Errorf("AfterRun sent %d batches, want 1", len(h.n.batches))
+	}
+}
+
+func TestOff(t *testing.T) {
+	h := newHarness(t, opts{MinLevel: analysis.Breaking, PublicURL: "https://t.example"})
+	h.updates = []Update{upd("sonarr", "2.0.0", analysis.Breaking)}
+	ctx := t.Context()
+	if !h.svc.Enabled() {
+		t.Fatal("not enabled after Configure")
+	}
+	if err := h.svc.Configure(ctx, nil, analysis.None, "", "@every 1h"); err != nil {
+		t.Fatal(err)
+	}
+	if h.svc.Enabled() || h.svc.digestCron != nil {
+		t.Errorf("enabled %v, digest cron %v", h.svc.Enabled(), h.svc.digestCron)
+	}
+	h.svc.AfterRun(ctx)
+	if _, err := h.svc.Run(ctx); !errors.Is(err, ErrOff) {
+		t.Errorf("Run err = %v", err)
+	}
+	if err := h.svc.Test(ctx); !errors.Is(err, ErrOff) {
+		t.Errorf("Test err = %v", err)
+	}
+	if len(h.n.batches) != 0 {
+		t.Errorf("sent while off: %+v", h.n.batches)
+	}
+	if st := h.svc.Status(ctx); st.Notifier != "" || st.Last != nil {
+		t.Errorf("status = %+v", st)
+	}
+	// New services start off.
+	if New(h.st, Options{}).Enabled() {
+		t.Error("a new service is enabled")
+	}
+	// And on again, with the new level.
+	if err := h.svc.Configure(ctx, h.n, analysis.None, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	h.updates = []Update{upd("radarr", "2.0.0", analysis.None)}
+	want(t, h.run(), "radarr:new")
+}
+
 func TestSortAndGroups(t *testing.T) {
-	h := newHarness(t, Options{})
+	h := newHarness(t, opts{})
 	stack := func(u Update, s string) Update { u.Stack = s; return u }
 	h.updates = []Update{
 		stack(upd("zeta", "1.1.0", analysis.None), ""),
@@ -256,7 +329,7 @@ func TestSortAndGroups(t *testing.T) {
 }
 
 func TestURLs(t *testing.T) {
-	h := newHarness(t, Options{PublicURL: "https://tidemark.example.lan/"})
+	h := newHarness(t, opts{PublicURL: "https://tidemark.example.lan/"})
 	h.updates = []Update{upd("my app/1", "1.1.0", analysis.None)}
 	h.run()
 	b := h.n.batches[0]
@@ -267,7 +340,7 @@ func TestURLs(t *testing.T) {
 		t.Errorf("detail = %q", got)
 	}
 
-	h2 := newHarness(t, Options{})
+	h2 := newHarness(t, opts{})
 	h2.updates = h.updates
 	h2.run()
 	if b := h2.n.batches[0]; b.DashboardURL != "" || b.Items[0].URL != "" {
@@ -276,7 +349,7 @@ func TestURLs(t *testing.T) {
 }
 
 func TestTestAndStatus(t *testing.T) {
-	h := newHarness(t, Options{MinLevel: analysis.Attention, PublicURL: "https://t.example"})
+	h := newHarness(t, opts{MinLevel: analysis.Attention, PublicURL: "https://t.example"})
 	ctx := context.Background()
 	if st := h.svc.Status(ctx); st.Last != nil || st.Notifier != "telegram" || st.MinLevel != analysis.Attention || st.PublicURL != "https://t.example" || st.Digest != "" {
 		t.Errorf("status = %+v", st)

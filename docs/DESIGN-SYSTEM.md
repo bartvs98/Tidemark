@@ -84,7 +84,7 @@ Forms use **Signal Forms** (`form()` and the `[formField]` directive from `@angu
 - **`tm-field` wraps one control** and links them: label, description and error state reach the control through `TM_FIELD`, so pages don't wire ids by hand.
 - **Errors go through `tm-field`'s `error`.** Map server errors (the API's `fields: {name: message}`) onto it; it shows the message with an icon and marks the control invalid. A control's own `invalid` (from Signal Forms validators) only draws the attention border once the control is `touched`, and never shows text, so give the text to the field.
 - **Locked fields** (set by an env var): pass `locked="Set by TIDEMARK_X"` to the field and disable the control.
-- **Secrets** use `tm-password-input` and stay write-only: the page never fills it with the stored value.
+- **Secrets** use `tm-password-input` and stay write-only: the page never fills it with the stored value. In the settings dialog they're a `tm-secret-setting` ([settings/secret-setting/](../web/src/app/settings/secret-setting/)): `label`, `hint`, `error`, `placeholder`, `field` (the API's `{secret, set, source, env}`) and two-way `value` (`undefined` untouched, a string being typed, `null` cleared on Save). It shows Set / Not set with Replace (or Set) and Clear, a password input with Cancel while typing, "Cleared on Save" with Undo, and only the state plus the locked note when an env var sets it.
 
 ### Tables across sections
 

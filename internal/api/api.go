@@ -8,12 +8,14 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/icons"
 	"github.com/bartvs98/tidemark/internal/notify"
+	"github.com/bartvs98/tidemark/internal/settings"
 	"github.com/bartvs98/tidemark/internal/store"
 )
 
@@ -21,20 +23,23 @@ type Deps struct {
 	Version string
 	Log     *slog.Logger
 	Source  docker.Source
-	Icons   *icons.Service // nil when icons are turned off
+	Icons   *icons.Service // nil when icons are turned off; see Server.SetIcons
 	Checks  *check.Service // nil in tests that don't need update checks
 	// Changelogs serves release notes on the detail endpoint; nil disables them.
 	Changelogs *changelog.Service
 	// Store keeps review states and update history; nil disables reviews (the endpoints
 	// answer 501) and history (always empty).
 	Store *store.Store
-	// Schedule (cron spec, "" when off) and ConfigFile (rules file path) are only shown in settings.
-	Schedule   string
+	// ConfigFile (rules file path) is only shown in settings.
 	ConfigFile string
 
-	// Notify sends update messages; nil when notifications are off (the test endpoint
-	// answers 501 and settings show no notifications).
+	// Notify sends update messages. Main always sets it (off until configured); nil in
+	// tests means off too (the test endpoint answers 501).
 	Notify *notify.Service
+
+	// Settings serves and edits the editable settings; nil leaves settings read-only and
+	// without per-field state (tests).
+	Settings *settings.Manager
 
 	// Context for background work started by requests (check runs); it outlives the request.
 	Background context.Context
@@ -44,12 +49,12 @@ type Server struct {
 	version    string
 	log        *slog.Logger
 	source     docker.Source
-	icons      *icons.Service
+	icons      atomic.Pointer[icons.Service] // nil when icons are off; swapped live
 	checks     *check.Service
 	changelogs *changelog.Service
 	store      *store.Store
 	notify     *notify.Service
-	schedule   string
+	settings   *settings.Manager
 	configFile string
 	background context.Context
 }
@@ -59,8 +64,13 @@ func New(d Deps) *Server {
 	if bg == nil {
 		bg = context.Background()
 	}
-	return &Server{version: d.Version, log: d.Log, source: d.Source, icons: d.Icons, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, notify: d.Notify, schedule: d.Schedule, configFile: d.ConfigFile, background: bg}
+	s := &Server{version: d.Version, log: d.Log, source: d.Source, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, notify: d.Notify, settings: d.Settings, configFile: d.ConfigFile, background: bg}
+	s.icons.Store(d.Icons)
+	return s
 }
+
+// SetIcons swaps the icon service; nil turns icons off.
+func (s *Server) SetIcons(svc *icons.Service) { s.icons.Store(svc) }
 
 // Handler returns the full HTTP handler: API routes plus the SPA served from spa.
 func (s *Server) Handler(spa fs.FS) http.Handler {
@@ -72,7 +82,8 @@ func (s *Server) Handler(spa fs.FS) http.Handler {
 	mux.HandleFunc("DELETE /api/containers/{name}/review", s.deleteReview)
 	mux.HandleFunc("GET /api/icons/{ref}", s.icon)
 	mux.HandleFunc("POST /api/checks", s.startCheck)
-	mux.HandleFunc("GET /api/settings", s.settings)
+	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("PATCH /api/settings", s.patchSettings)
 	mux.HandleFunc("POST /api/notifications/test", s.testNotification)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
@@ -109,11 +120,12 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) icon(w http.ResponseWriter, r *http.Request) {
-	if s.icons == nil {
+	svc := s.icons.Load()
+	if svc == nil {
 		http.NotFound(w, r)
 		return
 	}
-	s.icons.Serve(w, r, r.PathValue("ref"), r.URL.Query().Get("variant"))
+	svc.Serve(w, r, r.PathValue("ref"), r.URL.Query().Get("variant"))
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

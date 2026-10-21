@@ -3,7 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { Toasts } from '../ui';
-import { Settings, SettingsDialog } from './settings-dialog';
+import { SettingField, SettingKey, Settings, SettingsDialog } from './settings-dialog';
 
 const SETTINGS: Settings = {
   version: 'sha-1382579',
@@ -12,6 +12,7 @@ const SETTINGS: Settings = {
   checks: { schedule: '0 */6 * * *', nextRunAt: '2026-10-19T00:00:00Z' },
   rules: { path: '/data/config.yaml', error: 'line 3: unknown rule "pinn"' },
   icons: true,
+  editable: false,
 };
 
 describe('SettingsDialog', () => {
@@ -210,6 +211,223 @@ describe('SettingsDialog', () => {
       await new Promise((r) => setTimeout(r));
       http.expectOne('/api/settings').flush({ ...SETTINGS, notifications: on() });
       expect(toasts.items().map((t) => [t.message, t.tone])).toEqual([['telegram: Bad Request: chat not found', 'attention']]);
+    });
+  });
+
+  it('says how to turn editing on when read-only, with no form', async () => {
+    for (const settings of [SETTINGS, { ...SETTINGS, editable: true }]) {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])] });
+      http = TestBed.inject(HttpTestingController);
+      const fixture = await render();
+      fixture.componentRef.setInput('open', true);
+      fixture.detectChanges();
+      http.expectOne('/api/settings').flush(settings);
+      await fixture.whenStable();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('[data-testid="settings-readonly"]')?.textContent).toContain('TIDEMARK_SETTINGS_EDITABLE=true');
+      expect(el.querySelector('input, tm-switch, tm-select, tm-secret-setting')).toBeNull();
+    }
+  });
+
+  describe('editable', () => {
+    const FIELDS: Record<SettingKey, SettingField> = {
+      schedule: { value: '0 */6 * * *', source: 'default', env: 'TIDEMARK_SCHEDULE' },
+      githubToken: { secret: true, set: true, source: 'stored', env: 'TIDEMARK_GITHUB_TOKEN' },
+      icons: { value: 'on', source: 'default', env: 'TIDEMARK_ICONS' },
+      iconsUrl: { value: 'https://icons.example.lan', source: 'env', env: 'TIDEMARK_ICONS_URL' },
+      telegramBotToken: { secret: true, set: false, source: 'default', env: 'TIDEMARK_TELEGRAM_BOT_TOKEN' },
+      telegramChatId: { value: '', source: 'default', env: 'TIDEMARK_TELEGRAM_CHAT_ID' },
+      notifyLevel: { value: 'all', source: 'default', env: 'TIDEMARK_NOTIFY_LEVEL' },
+      notifyDigest: { value: '', source: 'default', env: 'TIDEMARK_NOTIFY_DIGEST' },
+      publicUrl: { value: 'https://tidemark.example.lan', source: 'stored', env: 'TIDEMARK_PUBLIC_URL' },
+    };
+    const EDITABLE: Settings = { ...SETTINGS, editable: true, fields: FIELDS };
+    const PAGES = ['general', 'checks', 'notifications', 'github'];
+
+    let fixture: Awaited<ReturnType<typeof render>>;
+    let el: HTMLElement;
+
+    async function open(settings: Settings = EDITABLE) {
+      fixture = await render();
+      fixture.componentRef.setInput('open', true);
+      fixture.detectChanges();
+      http.expectOne('/api/settings').flush(settings);
+      await settle();
+      el = fixture.nativeElement as HTMLElement;
+    }
+    const panel = () => el.querySelector('[role="tabpanel"]:not([inert])') as HTMLElement;
+    async function goTo(page: string) {
+      el.querySelectorAll<HTMLElement>('[role="tab"]')[PAGES.indexOf(page)].click();
+      await fixture.whenStable();
+    }
+    const input = (key: string) => panel().querySelector(`[data-testid="setting-${key}"]`) as HTMLInputElement;
+    const button = (text: string) =>
+      [...panel().querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === text) as HTMLButtonElement;
+    const saveBar = () => panel().querySelector('[data-testid="settings-save-bar"]');
+    async function type(field: HTMLInputElement, value: string) {
+      field.value = value;
+      field.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+    }
+    async function settle() {
+      await new Promise((r) => setTimeout(r));
+      await fixture.whenStable();
+    }
+    async function click(b: HTMLButtonElement) {
+      b.click();
+      await fixture.whenStable();
+    }
+
+    it('shows each page as a form with the values, locks fields set by env and never prefills secrets', async () => {
+      await open();
+      expect(el.querySelector('[data-testid="settings-readonly"]')).toBeNull();
+      const icons = panel().querySelector('[role="switch"]') as HTMLButtonElement;
+      expect(icons.getAttribute('aria-checked')).toBe('true');
+      expect(input('iconsUrl').value).toBe('https://icons.example.lan');
+      expect(input('iconsUrl').disabled).toBe(true);
+      expect(panel().textContent).toMatch(/Set by\s*TIDEMARK_ICONS_URL/);
+      expect(saveBar()).toBeNull();
+
+      await goTo('checks');
+      expect(input('schedule').value).toBe('0 */6 * * *');
+      expect(input('schedule').disabled).toBe(false);
+
+      await goTo('notifications');
+      expect(panel().querySelector('[data-testid="setting-telegramBotToken"]')?.textContent).toContain('Not set');
+      expect(input('publicUrl').value).toBe('https://tidemark.example.lan');
+      expect(panel().textContent).toContain('All updates');
+
+      await goTo('github');
+      expect(panel().querySelector('[data-testid="setting-githubToken"]')?.textContent).toContain('Set');
+      expect(panel().querySelector('input')).toBeNull();
+      await click(button('Replace'));
+      const secret = panel().querySelector('tm-password-input input') as HTMLInputElement;
+      expect(secret.value).toBe('');
+      expect(document.activeElement).toBe(secret);
+      expect(saveBar()).toBeNull(); // an open but empty input changes nothing
+    });
+
+    it('saves only the changed keys of the page, shows the answer and keeps other pages edits', async () => {
+      await open();
+      await goTo('checks');
+      await type(input('schedule'), '@daily');
+      expect(saveBar()).not.toBeNull();
+
+      await goTo('notifications');
+      await click(button('Set'));
+      await type(panel().querySelector('tm-password-input input') as HTMLInputElement, '123:abc');
+      await type(input('telegramChatId'), '42');
+      await type(input('publicUrl'), '');
+      await click(button('Save'));
+      const req = http.expectOne('/api/settings');
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body).toEqual({ telegramBotToken: '123:abc', telegramChatId: '42', publicUrl: null });
+      expect(button('Save').getAttribute('aria-busy')).toBe('true');
+      req.flush({
+        ...EDITABLE,
+        notifications: { notifier: 'telegram', level: 'all' },
+        fields: {
+          ...FIELDS,
+          telegramBotToken: { ...FIELDS.telegramBotToken, set: true, source: 'stored' },
+          telegramChatId: { ...FIELDS.telegramChatId, value: '42', source: 'stored' },
+          publicUrl: { ...FIELDS.publicUrl, value: '', source: 'default' },
+        },
+      });
+      await settle();
+      expect(TestBed.inject(Toasts).items().map((t) => t.message)).toEqual(['Settings saved']);
+      expect(saveBar()).toBeNull();
+      expect(panel().querySelector('[data-testid="setting-telegramBotToken"]')?.textContent).toContain('Set');
+      expect(panel().querySelector('tm-password-input')).toBeNull();
+      expect(input('telegramChatId').value).toBe('42');
+
+      await goTo('checks');
+      expect(input('schedule').value).toBe('@daily');
+      expect(saveBar()).not.toBeNull();
+    });
+
+    it('clears a secret on Save, with an undo', async () => {
+      await open();
+      await goTo('github');
+      await click(button('Clear'));
+      expect(panel().textContent).toContain('Cleared on Save');
+      await click(button('Undo'));
+      expect(saveBar()).toBeNull();
+      await click(button('Clear'));
+      await click(button('Save'));
+      const req = http.expectOne('/api/settings');
+      expect(req.request.body).toEqual({ githubToken: null });
+      req.flush({ ...EDITABLE, fields: { ...FIELDS, githubToken: { ...FIELDS.githubToken, set: false, source: 'default' } } });
+      await settle();
+      expect(panel().querySelector('[data-testid="setting-githubToken"]')?.textContent).toContain('Not set');
+    });
+
+    it('puts field errors under their field and keeps the edit', async () => {
+      await open();
+      await goTo('checks');
+      await type(input('schedule'), 'nope');
+      await click(button('Save'));
+      http
+        .expectOne('/api/settings')
+        .flush(
+          { error: "Some settings aren't valid", fields: { schedule: 'invalid cron spec: expected exactly 5 fields, found 1: [nope]' } },
+          { status: 422, statusText: 'Unprocessable Entity' },
+        );
+      await settle();
+      expect(panel().textContent).toContain('invalid cron spec: expected exactly 5 fields');
+      expect(input('schedule').getAttribute('aria-invalid')).toBe('true');
+      expect(input('schedule').value).toBe('nope');
+      expect(saveBar()).not.toBeNull();
+      expect(TestBed.inject(Toasts).items()).toEqual([]);
+
+      await type(input('schedule'), 'nope2'); // editing clears the error
+      expect(input('schedule').getAttribute('aria-invalid')).toBeNull();
+    });
+
+    it('toasts other errors', async () => {
+      await open();
+      await goTo('checks');
+      await type(input('schedule'), '@daily');
+      await click(button('Save'));
+      http.expectOne('/api/settings').flush({ error: 'applying failed' }, { status: 500, statusText: 'Internal Server Error' });
+      await settle();
+      expect(TestBed.inject(Toasts).items().map((t) => [t.message, t.tone])).toEqual([['applying failed', 'attention']]);
+    });
+
+    it('discards the page edits, and closing the dialog drops them all', async () => {
+      await open();
+      const icons = panel().querySelector('[role="switch"]') as HTMLButtonElement;
+      await click(icons);
+      expect(icons.getAttribute('aria-checked')).toBe('false');
+      await click(button('Discard'));
+      expect(icons.getAttribute('aria-checked')).toBe('true');
+      expect(saveBar()).toBeNull();
+
+      await goTo('checks');
+      await type(input('schedule'), '@daily');
+      fixture.componentRef.setInput('open', false);
+      fixture.detectChanges();
+      fixture.componentRef.setInput('open', true);
+      fixture.detectChanges();
+      http.expectOne('/api/settings').flush(EDITABLE);
+      await settle();
+      expect(input('schedule').value).toBe('0 */6 * * *');
+      expect(saveBar()).toBeNull();
+    });
+
+    it('waits with the test message while the notifications page has changes', async () => {
+      await open({ ...EDITABLE, notifications: { notifier: 'telegram', level: 'all' } });
+      await goTo('notifications');
+      const test = panel().querySelector('[data-testid="settings-notify-test"]') as HTMLButtonElement;
+      expect(test.disabled).toBe(false);
+      await type(input('notifyDigest'), '0 9 * * *');
+      expect(test.disabled).toBe(true);
+      expect(test.parentElement?.getAttribute('data-tooltip')).toContain('Save or discard');
+    });
+
+    it('shows warnings on the General page', async () => {
+      await open({ ...EDITABLE, warnings: ['stored schedule: invalid cron spec: x'] });
+      expect(panel().querySelector('[data-testid="settings-warnings"]')?.textContent).toContain('stored schedule: invalid cron spec: x');
     });
   });
 });

@@ -376,3 +376,21 @@ func TestNotifications(t *testing.T) {
 		t.Errorf("last = %+v, want the failed test", n)
 	}
 }
+
+func TestSettingsRoundTrip(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	if got, err := s.Settings(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("empty = %v, %v", got, err)
+	}
+	if err := s.SaveSettings(ctx, map[string]string{"schedule": "@daily", "github_token": "ghp_a"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveSettings(ctx, map[string]string{"schedule": "@hourly"}, []string{"github_token", "never_set"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Settings(ctx)
+	if err != nil || len(got) != 1 || got["schedule"] != "@hourly" {
+		t.Errorf("settings = %v, %v", got, err)
+	}
+}

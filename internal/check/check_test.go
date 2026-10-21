@@ -176,20 +176,75 @@ func TestSourceError(t *testing.T) {
 	}
 }
 
-func TestSchedule(t *testing.T) {
+func TestSetSchedule(t *testing.T) {
 	s := New(listSource{}, &countingRegistry{calls: map[string]int{}}, openStore(t, filepath.Join(t.TempDir(), "t.db")), quiet)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := s.Schedule(ctx, "every so often"); err == nil {
+	if s.Schedule() != "" || s.Status().NextRunAt != nil {
+		t.Error("scheduled before SetSchedule")
+	}
+	if err := s.SetSchedule(ctx, "every so often"); err == nil {
 		t.Error("invalid spec should be rejected")
 	}
-	if err := s.Schedule(ctx, "0 */6 * * *"); err != nil {
+	if err := s.SetSchedule(ctx, "0 */6 * * *"); err != nil {
 		t.Fatal(err)
 	}
 	next := s.Status().NextRunAt
 	if next == nil || !next.After(time.Now()) || next.After(time.Now().Add(6*time.Hour)) || next.Minute() != 0 || next.Hour()%6 != 0 {
 		t.Errorf("next run = %v", next)
+	}
+
+	// Replace: the new spec is in effect, the old one is gone.
+	if err := s.SetSchedule(ctx, "@every 1m"); err != nil {
+		t.Fatal(err)
+	}
+	next = s.Status().NextRunAt
+	if s.Schedule() != "@every 1m" || next == nil || next.After(time.Now().Add(time.Minute+time.Second)) {
+		t.Errorf("schedule %q, next run = %v", s.Schedule(), next)
+	}
+	// A failed replace keeps the current schedule.
+	if err := s.SetSchedule(ctx, "nope"); err == nil || s.Schedule() != "@every 1m" {
+		t.Errorf("after a failed replace: %q, %v", s.Schedule(), err)
+	}
+
+	// Off.
+	if err := s.SetSchedule(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	if s.Schedule() != "" || s.Status().NextRunAt != nil {
+		t.Errorf("off: %q, next %v", s.Schedule(), s.Status().NextRunAt)
+	}
+}
+
+// blockingSource holds a run in Containers until release is closed or ctx ends.
+type blockingSource struct{ release chan struct{} }
+
+func (b *blockingSource) Containers(ctx context.Context) ([]docker.Container, error) {
+	select {
+	case <-b.release:
+		return nil, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+func (b *blockingSource) Info() docker.SourceInfo { return docker.SourceInfo{} }
+
+// Turning the schedule off while a run is busy lets the run finish.
+func TestSetScheduleKeepsRunningCheck(t *testing.T) {
+	src := &blockingSource{release: make(chan struct{})}
+	s := New(src, &countingRegistry{calls: map[string]int{}}, openStore(t, filepath.Join(t.TempDir(), "t.db")), quiet)
+	ctx := context.Background()
+	if err := s.SetSchedule(ctx, "@every 1h"); err != nil {
+		t.Fatal(err)
+	}
+	s.Start(ctx, TriggerSchedule)
+	if err := s.SetSchedule(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	close(src.release)
+	if st := waitDone(t, s); st.Err != "" {
+		t.Errorf("run ended with %q", st.Err)
 	}
 }
 

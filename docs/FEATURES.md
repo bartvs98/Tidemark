@@ -149,7 +149,10 @@ The level is computed from the stored notes on every request, so the dashboard a
   - A failed check still counts as checked, so it doesn't force a check at startup.
   - Failures are per container and per stage: when GitHub is rate limited, the version info still shows and only the notes are stale.
 - **Rate-limited tag lists** fall back to the stored list, so the check still succeeds (the detail page says "Tag list from <time>"). That registry isn't asked again for the repo for 5 min, and a rate limit is never retried straight away.
-- **Settings dialog** (gear in the header): read-only, since everything is set by env vars. Pages (General, Checks, Notifications, GitHub) behind side tabs, a tab row on phones. It shows whether a GitHub token is set (never the token), GitHub's remaining quota, the schedule and next run, the rules file and whether it loaded, the container source, whether icons are on, the notification settings with a test button ([§10](#10-notifications)), a link to the styleguide, and the version.
+- **Settings dialog** (gear in the header): read-only unless `TIDEMARK_SETTINGS_EDITABLE=true` (no login, so editing is opt-in). Pages (General, Checks, Notifications, GitHub) behind side tabs, a tab row on phones. It shows whether a GitHub token is set (never the token), GitHub's remaining quota, the schedule and next run, the rules file and whether it loaded, the container source, whether icons are on, the notification settings with a test button ([§10](#10-notifications)), a link to the styleguide, and the version.
+  - **Editable settings:** the schedule, the GitHub token, icons on/off and their URL, and everything for Telegram (bot token, chat ID, level, digest, links). Each page saves on its own (Save / Discard appear once something changed); an invalid value shows its error under the field and nothing on the page is saved. Changes apply without a restart.
+  - **Precedence:** an env var wins and its field is locked ("Set by `TIDEMARK_SCHEDULE`"); otherwise the saved value, then the default. A saved value that's no longer valid is skipped (default used) and shown as a warning on the General page. Startup-only settings (listen address, data dir, Docker host, snapshot, log level, rules file) stay env-only; the rules file is still edited by hand.
+  - **Tokens are write-only:** the dialog shows whether one is set, with Replace and Clear, but never the token itself.
   - The quota is updated from every GitHub response, so it's current right after a check. Without a token it's per IP address, shared with other tools on the server, and the dialog says so.
 
 ## 8. Rules
@@ -180,7 +183,7 @@ All three are kept per container name, so a recreated container keeps them. Code
 
 ## 10. Notifications
 
-A Telegram message when a check finds new updates. Off until a bot is configured ([README → Notifications](../README.md#notifications)). Code: `internal/notify`.
+A Telegram message when a check finds new updates. Off until a bot token and chat ID are configured, by env vars or in the settings dialog ([README → Notifications](../README.md#notifications)); turning them on, off or changing them applies without a restart. Code: `internal/notify`.
 
 - **Only new updates.** Each update (a container and its latest version, or its new build) is sent once. Tidemark remembers what it sent, so a restart doesn't send it again. It's sent again when:
   - its level rises, say once its release notes arrive and show it's breaking ("level raised");
@@ -192,7 +195,7 @@ A Telegram message when a check finds new updates. Off until a bot is configured
   - `TIDEMARK_NOTIFY_LEVEL=attention` or `breaking` leaves out quieter updates. They aren't remembered as sent, so one that later becomes breaking is still new.
   - `TIDEMARK_NOTIFY_DIGEST` (a cron spec) sends one message at that time instead of after each run, with everything new since the last message, judged on the latest check results.
 - **A failed send** is retried at the next run (or digest): nothing is marked as sent.
-- **Settings dialog:** whether notifications are on, the level, after each check or digest, the link base, the last message (or why it failed), and a **Send test message** button.
+- **Settings dialog:** whether notifications are on, the level, after each check or digest, the link base, the last message (or why it failed), and a **Send test message** button (it uses the saved settings, so it waits until unsaved changes are saved). When settings are editable, all of these can be changed there ([§7](#7-checks-failures-and-settings)).
 
 ## Out of scope (for now)
 

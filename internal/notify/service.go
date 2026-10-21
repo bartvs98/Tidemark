@@ -22,35 +22,47 @@ import (
 
 // Options configure a Service.
 type Options struct {
-	MinLevel  analysis.Level   // updates below this level are skipped (and not remembered)
-	PublicURL string           // base for links, "" for no links
-	Log       *slog.Logger     // nil = slog.Default()
-	Now       func() time.Time // nil = time.Now (tests)
+	Log *slog.Logger     // nil = slog.Default()
+	Now func() time.Time // nil = time.Now (tests)
 }
 
+// ErrOff is returned by Run and Test while no notifier is configured.
+var ErrOff = errors.New("notifications are off")
+
 // Service decides which updates are new and sends them through a Notifier: after each
-// check run, or on a digest schedule.
+// check run, or on a digest schedule. It exists also while notifications are off, so
+// Configure can turn them on without a restart.
 type Service struct {
-	n   Notifier
 	st  *store.Store
 	opt Options
 
 	run sync.Mutex // one Run or Test at a time
 
-	mu     sync.Mutex
-	src    Source
-	digest string
+	mu         sync.Mutex
+	src        Source
+	cfg        setup
+	digestCron *cron.Cron  // nil without a digest (or while off)
+	stopDigest func() bool // undoes the ctx hook that stops digestCron
 }
 
-func New(n Notifier, st *store.Store, opt Options) *Service {
+// setup is what Configure sets. Run and Test take a copy at their start, so a run in
+// progress finishes with the setup it began with.
+type setup struct {
+	n         Notifier // nil = off
+	minLevel  analysis.Level
+	publicURL string // no trailing "/"; "" = no links
+	digest    string // cron spec; "" = after each check run
+}
+
+// New returns a Service that is off until Configure gives it a notifier.
+func New(st *store.Store, opt Options) *Service {
 	if opt.Log == nil {
 		opt.Log = slog.Default()
 	}
 	if opt.Now == nil {
 		opt.Now = time.Now
 	}
-	opt.PublicURL = strings.TrimRight(opt.PublicURL, "/")
-	return &Service{n: n, st: st, opt: opt}
+	return &Service{st: st, opt: opt}
 }
 
 // UseSource sets where the current updates come from (api.Server.Updates).
@@ -60,61 +72,98 @@ func (s *Service) UseSource(src Source) {
 	s.mu.Unlock()
 }
 
-// Schedule turns on digest mode: Run on a cron spec instead of after each check run.
-// Same syntax as the check schedule ("CRON_TZ=" allowed); stopped when ctx ends.
-func (s *Service) Schedule(ctx context.Context, spec string) error {
-	c := cron.New()
-	if _, err := c.AddFunc(spec, func() { s.runAndLog(ctx, "digest") }); err != nil {
-		return fmt.Errorf("schedule %q: %w", spec, err)
+// Configure replaces the notifier (nil = off), the minimum level (updates below it are
+// skipped and not remembered), the public URL for links ("" = none) and the digest
+// ("" = after each check run; same cron syntax as the check schedule, "CRON_TZ=" allowed).
+// The previous digest cron is stopped; a run in progress finishes with the old notifier.
+// ctx bounds the digest cron. An invalid digest changes nothing.
+func (s *Service) Configure(ctx context.Context, n Notifier, minLevel analysis.Level, publicURL, digest string) error {
+	var c *cron.Cron
+	if digest != "" {
+		c = cron.New()
+		if _, err := c.AddFunc(digest, func() { s.runAndLog(ctx, "digest") }); err != nil {
+			return fmt.Errorf("schedule %q: %w", digest, err)
+		}
+		if n == nil {
+			c = nil // valid, but there's nothing to send while off
+		} else {
+			c.Start()
+		}
 	}
 	s.mu.Lock()
-	s.digest = spec
+	old, oldStop := s.digestCron, s.stopDigest
+	s.cfg = setup{n: n, minLevel: minLevel, publicURL: strings.TrimRight(publicURL, "/"), digest: digest}
+	s.digestCron, s.stopDigest = c, nil
+	if c != nil {
+		s.stopDigest = context.AfterFunc(ctx, func() { c.Stop() })
+	}
 	s.mu.Unlock()
-	c.Start()
-	go func() {
-		<-ctx.Done()
-		c.Stop()
-	}()
+	if old != nil {
+		oldStop()
+		old.Stop() // only stops the timer; a digest being sent finishes
+	}
 	return nil
 }
 
-// Digest returns the digest spec, "" when sending after each run.
-func (s *Service) Digest() string {
+// Enabled reports whether a notifier is configured.
+func (s *Service) Enabled() bool { return s.setup().n != nil }
+
+func (s *Service) setup() setup {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.digest
+	return s.cfg
 }
 
+// Digest returns the digest spec, "" when sending after each run.
+func (s *Service) Digest() string { return s.setup().digest }
+
 // AfterRun is called by the check service when a run finished without a run error; it
-// calls Run unless digest mode is on.
+// calls Run unless notifications are off or digest mode is on.
 func (s *Service) AfterRun(ctx context.Context) {
-	if s.Digest() != "" {
+	if cfg := s.setup(); cfg.n == nil || cfg.digest != "" {
 		return
 	}
 	s.runAndLog(ctx, "check")
 }
 
 func (s *Service) runAndLog(ctx context.Context, after string) {
-	n, err := s.Run(ctx)
+	n, name, err := s.runNamed(ctx)
+	if errors.Is(err, ErrOff) {
+		return // turned off since this was scheduled
+	}
 	if err != nil {
-		s.opt.Log.Warn("notification failed", "notifier", s.n.Name(), "after", after, "err", err)
+		s.opt.Log.Warn("notification failed", "notifier", name, "after", after, "err", err)
 		return
 	}
 	if n > 0 {
-		s.opt.Log.Info("notification sent", "notifier", s.n.Name(), "after", after, "items", n)
+		s.opt.Log.Info("notification sent", "notifier", name, "after", after, "items", n)
 	}
 }
 
 // Run selects the new items, sends one Batch if there are any, logs the attempt and
 // records the items on success. It returns the number of items sent. A failed send
-// records no items, so the next Run sends them again.
+// records no items, so the next Run sends them again. While off it returns ErrOff.
 func (s *Service) Run(ctx context.Context) (int, error) {
+	n, _, err := s.runNamed(ctx)
+	return n, err
+}
+
+// runNamed is Run that also returns the notifier's name, for logs.
+func (s *Service) runNamed(ctx context.Context) (int, string, error) {
 	s.run.Lock()
 	defer s.run.Unlock()
 
 	s.mu.Lock()
-	src := s.src
+	src, cfg := s.src, s.cfg
 	s.mu.Unlock()
+	if cfg.n == nil {
+		return 0, "", ErrOff
+	}
+	n, err := s.send(ctx, src, cfg)
+	return n, cfg.n.Name(), err
+}
+
+func (s *Service) send(ctx context.Context, src Source, cfg setup) (int, error) {
 	if src == nil {
 		return 0, errors.New("notify: no update source")
 	}
@@ -127,7 +176,7 @@ func (s *Service) Run(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("notify: read notified: %w", err)
 	}
 	now := s.opt.Now()
-	items := s.selectItems(updates, notified, now)
+	items := cfg.selectItems(updates, notified, now)
 	if len(items) == 0 {
 		return 0, nil
 	}
@@ -141,8 +190,8 @@ func (s *Service) Run(ctx context.Context) (int, error) {
 	}
 	sortItems(items)
 
-	sendErr := s.n.Send(ctx, Batch{Kind: kind, Items: items, DashboardURL: s.dashboardURL()})
-	logRow := store.Notification{SentAt: now, Notifier: s.n.Name(), Kind: kind, Items: len(items)}
+	sendErr := cfg.n.Send(ctx, Batch{Kind: kind, Items: items, DashboardURL: cfg.dashboardURL()})
+	logRow := store.Notification{SentAt: now, Notifier: cfg.n.Name(), Kind: kind, Items: len(items)}
 	if sendErr != nil {
 		logRow.Error = sendErr.Error()
 	}
@@ -165,7 +214,7 @@ func (s *Service) Run(ctx context.Context) (int, error) {
 // selectItems picks what to send: updates with a key, not under an active review, at or
 // above the minimum level, and either never sent, sent with a lower level, or sent before
 // a time snooze that has run out since.
-func (s *Service) selectItems(updates []Update, notified map[store.NotifiedKey]store.Notified, now time.Time) []Item {
+func (c setup) selectItems(updates []Update, notified map[store.NotifiedKey]store.Notified, now time.Time) []Item {
 	var items []Item
 	for _, u := range updates {
 		if u.Key == "" || u.Class == version.None || u.Class == "" {
@@ -174,7 +223,7 @@ func (s *Service) selectItems(updates []Update, notified map[store.NotifiedKey]s
 		if u.Review != nil && review.Active(*u.Review, u.Key, now) {
 			continue
 		}
-		if u.Level < s.opt.MinLevel {
+		if u.Level < c.minLevel {
 			continue // not recorded: when it rises to the threshold later, it's new
 		}
 		var reason string
@@ -189,7 +238,7 @@ func (s *Service) selectItems(updates []Update, notified map[store.NotifiedKey]s
 		default:
 			continue
 		}
-		items = append(items, Item{Update: u, Reason: reason, URL: s.detailURL(u.Container)})
+		items = append(items, Item{Update: u, Reason: reason, URL: c.detailURL(u.Container)})
 	}
 	return items
 }
@@ -208,18 +257,18 @@ func parseLevel(s string) analysis.Level {
 	return l
 }
 
-func (s *Service) dashboardURL() string {
-	if s.opt.PublicURL == "" {
+func (c setup) dashboardURL() string {
+	if c.publicURL == "" {
 		return ""
 	}
-	return s.opt.PublicURL + "/"
+	return c.publicURL + "/"
 }
 
-func (s *Service) detailURL(name string) string {
-	if s.opt.PublicURL == "" {
+func (c setup) detailURL(name string) string {
+	if c.publicURL == "" {
 		return ""
 	}
-	return s.opt.PublicURL + "/containers/" + url.PathEscape(name)
+	return c.publicURL + "/containers/" + url.PathEscape(name)
 }
 
 // sortItems orders items by stack (stacks by their highest level, highest first, then
@@ -249,12 +298,16 @@ func sortItems(items []Item) {
 	})
 }
 
-// Test sends a test Batch and logs it (kind test).
+// Test sends a test Batch and logs it (kind test). While off it returns ErrOff.
 func (s *Service) Test(ctx context.Context) error {
 	s.run.Lock()
 	defer s.run.Unlock()
-	sendErr := s.n.Send(ctx, Batch{Kind: KindTest, DashboardURL: s.dashboardURL()})
-	row := store.Notification{SentAt: s.opt.Now(), Notifier: s.n.Name(), Kind: KindTest}
+	cfg := s.setup()
+	if cfg.n == nil {
+		return ErrOff
+	}
+	sendErr := cfg.n.Send(ctx, Batch{Kind: KindTest, DashboardURL: cfg.dashboardURL()})
+	row := store.Notification{SentAt: s.opt.Now(), Notifier: cfg.n.Name(), Kind: KindTest}
 	if sendErr != nil {
 		row.Error = sendErr.Error()
 	}
@@ -264,9 +317,13 @@ func (s *Service) Test(ctx context.Context) error {
 	return sendErr
 }
 
-// Status is what the settings dialog shows. A store error leaves Last nil.
+// Status is what the settings dialog shows (Notifier "" while off). A store error leaves Last nil.
 func (s *Service) Status(ctx context.Context) Status {
-	st := Status{Notifier: s.n.Name(), MinLevel: s.opt.MinLevel, Digest: s.Digest(), PublicURL: s.opt.PublicURL}
+	cfg := s.setup()
+	st := Status{MinLevel: cfg.minLevel, Digest: cfg.digest, PublicURL: cfg.publicURL}
+	if cfg.n != nil {
+		st.Notifier = cfg.n.Name()
+	}
 	last, ok, err := s.st.LastNotification(ctx)
 	if err != nil {
 		s.opt.Log.Warn("read last notification", "err", err)
