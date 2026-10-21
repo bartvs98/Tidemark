@@ -25,8 +25,6 @@ services:
     ports:
       - "8080:8080"
     labels:
-      # Tidemark's own image is private while it's a prototype, so it can't check itself.
-      - "tidemark.ignore=true"
       # Behind Traefik instead of a published port (Tidemark has no login: keep it internal):
       # - "traefik.enable=true"
       # - "traefik.http.routers.tidemark.rule=Host(`tidemark.example.com`)"

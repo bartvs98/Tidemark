@@ -1,133 +1,182 @@
 # Features
 
-How Tidemark behaves and the rules behind its decisions. Scope: a single Docker host, ~20 containers, one user, no login (LAN only). Configuration syntax (env vars, labels, config file) is in the [README](../README.md#configuration); how it's built is in [ARCHITECTURE.md](ARCHITECTURE.md); planned behaviour is in the [ROADMAP](ROADMAP.md).
+How Tidemark behaves and the rules behind its decisions. Scope: one Docker host, ~20 containers, one user, no login (LAN only). Config syntax is in the [README](../README.md#configuration), how it's built in [ARCHITECTURE.md](ARCHITECTURE.md), plans in the [ROADMAP](ROADMAP.md).
+
+Ordinary UI behaviour (Back restores the scroll position, Escape closes things, errors offer a retry) isn't listed here. This page covers what Tidemark decides and why.
 
 ## 1. Dashboard
 
-- **Inventory:** all containers via the Docker API, running and stopped (with their state and Docker's status text, "Up 3 days"). Per container: name, image reference, image ID, digests, platform and build time, created time, Compose project and service.
-- **Hero:** headline "N updates" (open ones: not reviewed or snoozed) / "No open updates" (only reviewed or snoozed ones left) / "All up to date" / "Checking done/total" (or "N containers" before any successful check), a summary line (containers · stacks · not running · reviewed · snoozed · ignored · checked/next times · "N checks failed", meaning the latest attempt failed, with or without a kept result), the Breaking / Attention / Updates figures (open updates only) and Up to date, **Check now**, and a "Snapshot · date" badge in snapshot mode.
-- **Tide gauge:** beside the hero, drawn like the logo: the line is the latest version, the water how many of the checked containers are up to date, with "N/M up to date" over it. Ignored and not-yet-checked containers aren't counted, and hovering the count says so. A very faint tide moves along the bottom of every page. All motion stops when the OS asks for reduced motion.
-- **Toolbar** (each choice remembered per browser): filter All / Updates / Breaking with counts (reviewed updates included, snoozed ones not; with nothing open, the empty state points to the snoozed ones under All); a search field; group by Stack or Severity; List or Tiles view.
-- **Search:** filters containers by name, image or Compose stack (case-insensitive, also inside the Ignored group) and combines with the filter; the hero figures keep counting everything. `/` focuses it, Escape or the x clears it. The query lasts for the browser tab (so it survives a visit to a detail page), not across sessions. No match: "No containers match …" with "Clear search".
-  - **By stack:** Compose stacks (`com.docker.compose.project`) as sections, standalone containers in "Ungrouped"; stacks with something to do first; within them, up-to-date containers fade (see "Per container" below). Under "All", stacks that are fully up to date or reviewed go into one collapsed "Up to date · N stacks" section (each stack under a small heading inside), which opens by itself when a search only matches there; under the Updates and Breaking filters such stacks (with a reviewed update) come last as their own sections.
-  - **By severity:** Breaking, Attention, Updates, Check failed (never checked successfully), Not checked yet, Up to date (collapsed), then Snoozed and Ignored (both collapsed), each row naming its stack. A kept result whose refresh failed counts by that result.
-  - Snoozed and ignored containers only show under All, in collapsed, muted sections at the bottom ("Snoozed" above "Ignored"); a reviewed one stays in its stack or severity section ([§9](#9-reviewed-snoozed-and-history)).
-- **Per container:** running → latest, how the version was determined, the update class and the risk level (reasons in a tooltip, shortened; in full on the detail page). Each row or tile is one link to the detail page. Up-to-date, snoozed and ignored containers stay quiet, in every section: muted name, greyed icon, faded to 60% without a surface, and full again, colours included, on hover or keyboard focus (list and tiles alike), so containers with an update (bold name) stand out. A reviewed update has faded badges and a quiet "Reviewed" marker (what and when on hover); a snoozed one says "until 3 Nov" / "until newer than 1.6.0". Tooltips open on hover or keyboard focus, and on touch screens with a tap (tap again or elsewhere to close; a tap on a badge shows its tip instead of opening the detail page). Badges for a non-running state, "image missing", "check failed" (no successful check yet, reason in a tooltip) and "rule skipped"; a version held back by a rule shows as a quiet line under the version change; a kept result whose refresh failed shows as usual plus a quiet "refresh failed" note (time and error on hover) and still counts for the filters. A config file that won't load gets a notice at the top.
-- **While a check runs,** the headline shows progress, results fill in as they arrive (skeletons until then), and a toast says when the run finished or failed. Without a run the page refreshes every minute, so scheduled and startup checks show up without a reload. A failed refresh keeps the containers as last loaded, with a "Couldn't refresh" callout (the detail page does the same).
-- **Coming back** from a detail page ("← Containers" or the browser's Back) returns to where you were, with collapsed sections as you left them: the last list shows at once while it reloads. A detail page opens at the top.
-- **Empty states:** no containers; nothing under the filter ("No updates" / "Nothing breaking" + "Show all containers"); can't list containers (+ "Try again").
-- On phones (below 640 px), list rows stack: icon and name, then the version change and update badges.
+- **Inventory:** every container from the Docker API, running and stopped, with its image, Compose project and service.
+- **Hero:** the headline, a summary line and the figures.
+  - Headline: "N updates" (open ones, i.e. not reviewed or snoozed), "No open updates" (only reviewed or snoozed ones left), "All up to date", or "Checking done/total" during a run.
+  - The Breaking / Attention / Updates figures count open updates only.
+  - The summary line also counts reviewed, snoozed, ignored and failed checks, and shows when the last and next check run.
+  - In snapshot mode a "Snapshot · date" badge shows.
+- **Tide gauge:** beside the hero, drawn like the logo. The line is the latest version; the water rises with the share of checked containers that are up to date. Ignored and unchecked containers don't count (the tooltip says so). All motion stops under reduced motion.
+- **Toolbar:** filter All / Updates / Breaking, a search field, group by Stack or Severity, List or Tiles. Choices are remembered per browser; the search lasts for the browser tab only.
+  - Filter counts include reviewed updates but not snoozed ones.
+  - Search matches name, image or stack and combines with the filter. The hero figures keep counting everything.
+- **Grouping by stack:** Compose stacks as sections (standalone containers under "Ungrouped"), stacks with work first. Under "All", stacks with nothing to do (everything up to date or reviewed) go into one collapsed "Up to date · N stacks" section, which opens by itself when a search only matches there.
+- **Grouping by severity:** Breaking, Attention, Updates, Check failed (never checked successfully), Not checked yet, then Up to date (collapsed). Each row names its stack.
+- **Snoozed and ignored** containers only show under All, in collapsed sections at the bottom ("Snoozed" above "Ignored"). A reviewed one stays in its section ([§9](#9-reviewed-snoozed-and-history)).
+- **Per container:** running → latest, how the running version was found, the update class and the risk level, with the reasons on hover. The row or tile links to the detail page.
+  - **Quiet when there's nothing to do:** up-to-date, snoozed and ignored containers fade, and come back on hover or focus. Containers with an update have a bold name, so they stand out.
+  - **Reviewed** updates keep their place with faded badges and a quiet "Reviewed" marker. **Snoozed** ones say "until 3 Nov" or "until newer than 1.6.0".
+  - **Extra badges:** not running, "image missing", "check failed" (no successful check yet) and "rule skipped". A version held back by a rule shows as a quiet line under the version.
+  - **A failed refresh** of an earlier result keeps that result (it still counts for the filters) and adds a quiet "refresh failed" note ([§7](#7-checks-failures-and-settings)).
+  - A config file that won't load gets a notice at the top.
+- **Refreshing:** during a run, results fill in as they arrive. Otherwise the page reloads its data every minute, so scheduled checks show up without a reload. If that reload fails, the last data stays with a "Couldn't refresh" callout.
 
 ### App icons
 
-From [selfh.st/icons](https://selfh.st/icons/) (CC BY 4.0), plus Tidemark's own icon built in (for images named `…/tidemark`; it works before the index loads and without the CDN). Matched from the image name first (exact, alias like `postgres` → `postgresql` or `docker-socket-proxy` → `docker`, trimmed like `woodpecker-agent` → `woodpecker`, unique prefix like `stirling` → `stirling-pdf`), then the image namespace (`vaultwarden/server` → `vaultwarden`), then the Compose service and container name; generic words (`server`, `app`, `agent`, …) are skipped. The `tidemark.icon=<reference>` label overrides it (an unknown reference falls back to automatic matching), `tidemark.icon=none` turns it off. No match gives a letter avatar. The icon index is refreshed daily; when a download fails (no network yet at boot), it's retried after 1, 5 and 15 min. An icon the CDN doesn't have (404/403) isn't asked for again for an hour; other errors are retried on the next request. Near-black icons swap to their light variant on the dark theme, near-white icons to their dark variant on the light theme.
+Icons come from [selfh.st/icons](https://selfh.st/icons/) (CC BY 4.0). Tidemark's own icon is built in, so it shows even without the CDN.
+
+- **Matching**, first hit wins:
+  1. The image name: exact, an alias (`postgres` → `postgresql`, `docker-socket-proxy` → `docker`), trimmed (`woodpecker-agent` → `woodpecker`), or a unique prefix (`stirling` → `stirling-pdf`).
+  2. The image namespace (`vaultwarden/server` → `vaultwarden`).
+  3. The Compose service, then the container name.
+
+  Generic words (`server`, `app`, `agent`, …) are skipped. No match gives a letter avatar.
+- **Overrides:** the label `tidemark.icon=<reference>` (an unknown reference falls back to matching), `tidemark.icon=none` turns it off.
+- **Theme:** near-black icons switch to their light variant on the dark theme, and near-white icons to their dark variant on the light theme.
+- **Fetching:** the index is refreshed daily; a failed download (no network yet at boot) is retried after 1, 5 and 15 min. An icon the CDN doesn't have isn't asked for again for an hour.
 
 ## 2. Running version resolution
 
 Many images run as `:latest` or a floating tag (`:1`, `:1.4`), so the tag alone often isn't the version. First hit wins:
 
-1. **Tag** is a full version (`1.4.2`, `v1.4.2`, `1.4.2-alpine`).
-2. **Version label**: `org.opencontainers.image.version`, `org.label-schema.version`, `version`, or linuxserver's `build_version` (`Linuxserver.io version:- 1.4.2-ls123 ...`), **only if it's plausible**. Labels are inherited from base images (`mongo:8.3` reports `24.04`, its Ubuntu base), so a label only counts if the registry has a tag with exactly that version (matching the `tag-pattern` rule if set) and, with a version tag, the label is the same variant and extends it (`16.10-alpine` for `16-alpine`). With a word tag the label must be that word's variant (`latest`: the plain image, `alpine`: an alpine tag), and a channel tag (below) never takes a label. With a full version tag, a label that only adds a packaging build refines it (`1.20.0` → `1.20.0-ls166`).
-3. **Digest match**: a version tag in the registry whose digest equals the running image's digest. Up to 30 tags written like the running one are tried, newest first; a tag is skipped when a more precise one starts with it (`17` when `17.6` exists).
-4. **Image `*_VERSION` variable** (`PG_VERSION=16.10`, `REDIS_VERSION`). Official images are rebuilt and re-pushed under the same version tags, so an older pull's digest no longer matches any tag; these images record their version in their own environment instead. Only `*_VERSION` variables are ever read. The value must exist as a tag and must extend a version tag (`16.10` for `16-alpine`); for word tags like `latest` the variable must be named after the image (or a known alias: `PG_VERSION` for `postgres`), so a `NODE_VERSION` inherited from a Node base image is ignored.
-5. A partial version tag (`16-alpine`, `8.3`) as-is.
-6. Unknown: still report "new image" if the floating tag's digest moved.
+1. **Tag:** a full version (`1.4.2`, `v1.4.2`, `1.4.2-alpine`).
+2. **Version label:** `org.opencontainers.image.version`, `org.label-schema.version`, `version`, or linuxserver's `build_version`. Labels are inherited from base images (`mongo:8.3` reports `24.04`, its Ubuntu base), so a label only counts when it's plausible:
+   - the registry has a tag with exactly that version (matching `tag-pattern` if set);
+   - with a version tag, the label extends it in the same variant (`16.10-alpine` for `16-alpine`);
+   - with a word tag, the label is that word's variant (`latest`: the plain image; `alpine`: an alpine tag);
+   - a channel tag (below) never takes a label.
 
-The UI shows *how* the version was found (tag / label / digest match / `*_VERSION` variable / unknown), so you know how much to trust it.
+   With a full version tag, a label that only adds a packaging build refines it (`1.20.0` → `1.20.0-ls166`).
+3. **Digest match:** a version tag whose registry digest equals the running image's. Up to 30 tags written like the running one are tried, newest first, skipping a tag when a more precise one exists (`17` when `17.6` exists).
+4. **Image `*_VERSION` variable** (`PG_VERSION=16.10`). Official images are re-pushed under the same tags, so an older pull's digest stops matching any tag; these images record their version in their environment instead. Only `*_VERSION` variables are ever read. The value must exist as a tag and extend the version tag (`16.10` for `16-alpine`). For a word tag like `latest`, the variable must be named after the image or a known alias (`PG_VERSION` for `postgres`), so an inherited `NODE_VERSION` is ignored.
+5. **Partial version tag** (`16-alpine`, `8.3`) as-is.
+6. **Unknown.** Tidemark still reports "new image" when the floating tag's digest moved.
 
-**Channel tags** (a pre-release word as the whole tag: `nightly`, `dev`, `edge`, `beta`, …) follow builds, not releases, and are usually ahead of the newest stable release. So they're never compared with it: the running version stays unknown, the only update is "new image" when the tag's digest moved ("new build available"), and there's no breaking verdict from stable release notes. The newest stable release is shown as a quiet line ("newest stable v2.36.0"), and the detail page shows its notes for reference.
+The UI shows how the version was found, so you know how much to trust it.
+
+**Channel tags** are a pre-release word as the whole tag (`nightly`, `dev`, `edge`, `beta`, …). They follow builds, not releases, and are usually ahead of the newest stable release, so they're never compared with it. The running version stays unknown, the only update is a new build (the tag's digest moved), and there's no breaking verdict. The newest stable release shows as a quiet line, and the detail page shows its notes for reference.
 
 ## 3. Latest version lookup
 
-- Tags come from the registry (Docker Hub, GHCR, Quay, lscr.io, GitLab, generic OCI v2 registries), anonymously, so only public images for now.
-- Only tags that parse as versions **and share the running tag's variant** count: `1.4-alpine` is only compared with `x.y-alpine`, never with `x.y` or `x.y-debian`. The word tags `latest`, `stable`, `release`, `main` and `master` follow the plain (unsuffixed) family. The highest wins; on a tie, the running tag's spelling (`v` prefix, raw variant) is preferred.
-- **Numeric suffixes** (`16-3.4` for PostGIS 3.4 on PostgreSQL 16, `4.0.2-20` for Node 20, Debian-style revisions `-1`) sort after the version, and the running tag's line is preferred: `16-3.4` → `17-3.5`, `4.0.2-20` → `4.0.5-20` (not `-22`), plain `4.0.2` → plain `4.0.5`. When that line doesn't exist for the newest version, the highest suffix wins, so a revision that changes doesn't stop updates. A suffix-only bump (`16-3.4` → `16-3.5`) is a patch.
-- **Date tags** (`2025-01-01`) are compared only with other date tags, never with version tags of the same image.
-- Pre-releases (`-rc`, `-beta`, `-alpha`, `-dev`, `nightly`, `canary`, `edge`, …; full list in `internal/version`) are ignored unless the `prerelease` rule is on. They order by stage (`nightly`/`dev` < `alpha` < `beta` < `pre`/`preview` < `rc`), then by number (`rc.2` < `rc.10`). A tag that is only such a word is a channel (§2).
-- **Update class:** patch / minor / major / digest (same tag with a new image, or a packaging-build bump like `-ls174` → `-ls175`). A missing component counts as 0 (`16` → `16.4` is minor); a pre-release → its release is a patch. In calendar versions and dates (first number 2000–2099) a new year is minor, not major (`2024.12.4` → `2025.1.0`): the year says when, not how much changed, so the notes decide.
-- The newest version **within the current major** is reported too, so a "major available" container can still show "1.9.3 is a safe step". Not shown while a pin or `allow-major=false` is active.
-- "New image, same tag" for floating tags needs the image's registry digest (`RepoDigests`, set when the image was pulled).
+- Tags come from the registry (Docker Hub, GHCR, Quay, lscr.io, GitLab, any OCI v2 registry), anonymously, so only public images work.
+- **Same variant only:** `1.4-alpine` is compared with `x.y-alpine`, never with `x.y` or `x.y-debian`. The words `latest`, `stable`, `release`, `main` and `master` follow the plain (unsuffixed) tags. The highest version wins; on a tie, the running tag's spelling (`v` prefix, variant) wins.
+- **Numeric suffixes** sort after the version: `16-3.4` (PostGIS 3.4 on PostgreSQL 16), `4.0.2-20` (Node 20), Debian revisions like `-1`. The running tag's line is preferred: `16-3.4` → `17-3.5`, `4.0.2-20` → `4.0.5-20` (not `-22`). If the newest version doesn't have that line, the highest suffix wins, so a changing revision doesn't block updates. A suffix-only bump (`16-3.4` → `16-3.5`) is a patch.
+- **Date tags** (`2025-01-01`) are only compared with other date tags.
+- **Pre-releases** (`-rc`, `-beta`, `-alpha`, `-dev`, `nightly`, `canary`, `edge`, …; full list in `internal/version`) are ignored unless the `prerelease` rule is on. They sort by stage (`nightly`/`dev` < `alpha` < `beta` < `pre`/`preview` < `rc`), then by number (`rc.2` < `rc.10`).
+- **Update class:** patch, minor, major or digest (a new image under the same tag, or a packaging-build bump like `-ls174` → `-ls175`).
+  - A missing number counts as 0 (`16` → `16.4` is minor), and a pre-release → its release is a patch.
+  - In calendar versions (first number 2000–2099) a new year is minor, not major: the year says when, not how much changed, so the release notes decide.
+- **Safe step:** the newest version within the current major is reported too, so a container with a major update can still show "or 1.9.3 in your major". Not shown while a pin or `allow-major=false` applies.
+- "New image, same tag" needs the image's registry digest (`RepoDigests`, set when the image was pulled).
 
 ## 4. Changelog between versions
 
-- **Source repository** (GitHub or GitLab), first hit wins:
-  1. The `repo` rule: a `tidemark.repo` label (always trusted) or the config file (shown as "set in the config file"). A repo on another host falls back to the steps below.
-  2. Image label `org.opencontainers.image.source` (or `org.label-schema.vcs-url`), **only if it plausibly belongs to the image**: same owner as the image namespace, or the repo name shares a word with a part of the image path. Labels are inherited from base images (an image built on a linuxserver base claims `linuxserver/docker-baseimage-ubuntu`).
-  3. `ghcr.io/owner/repo` → `github.com/owner/repo`.
-  4. A short list of official Docker Hub images (`redis` → `redis/redis`, `postgres` → `postgres/postgres`, …).
-  5. A guess: `docker.io/namespace/name` → `github.com/namespace/name`, shown as "guessed" with a hint to set `tidemark.repo`.
-- linuxserver.io images point at their packaging repo (`linuxserver/docker-<app>`); its releases match the `-ls` tags and include the upstream changes.
-- **Which releases:** GitHub or GitLab Releases after the running version up to and including the latest, newest first. Drafts are skipped; pre-releases only show when you run one or the latest is one (which needs the `prerelease` rule). With an unknown running version, only the latest release is shown.
-- Release tags match image versions ignoring a `v` prefix and the variant; prefixed tags like `release-1.2.3`, `release/1.2.3`, `version-1.2.3` and `app@1.2.3` are understood too.
-- **Fallback** when a repo has no releases: `CHANGELOG.md`, `CHANGES.md` or `changelog.md` from the default branch, split into sections by version headings (levels 1–4); a date in the heading becomes the release date.
-- **Fetching:** notes are stored in SQLite and refreshed at most every 6 h, or sooner when the running version isn't covered yet. GitHub requests send the ETag, and "304 Not Modified" answers don't count against the rate limit. Pages are fetched only until the running version is covered (at most 5 × 100 releases); when even that doesn't reach it, the older notes show as not loaded and the pages aren't fetched again until the 6 h are up. When GitHub's rate limit is hit (or its secondary limit, which says when to retry), no further GitHub calls are made until it resets (15 min if GitHub doesn't say when), and the stored notes are still shown.
-- **Prefetched** after each check for containers with an update, so the detail page opens instantly. Opening a container whose notes weren't prefetched fetches them then (waiting up to 15 s, then showing whatever is stored).
-- Rendered as sanitised markdown (DOMPurify): `#123` links to the issue or PR, `@user` to the profile; links open in a new tab without a referrer. Images don't load: each becomes an "Image: alt" link, so opening the notes reveals nothing to their hosts.
+**Source repository** (GitHub or GitLab), first hit wins:
+
+1. The `repo` rule (label or config file). A repo on another host is ignored and detection carries on.
+2. The image label `org.opencontainers.image.source` (or `org.label-schema.vcs-url`), but only if it plausibly belongs to the image: same owner as the image namespace, or the repo name shares a word with the image path. Labels are inherited too (images on a linuxserver base claim `linuxserver/docker-baseimage-ubuntu`).
+3. `ghcr.io/owner/repo` → `github.com/owner/repo`.
+4. A short list of official Docker Hub images (`redis` → `redis/redis`, …).
+5. A guess, `docker.io/namespace/name` → `github.com/namespace/name`, marked as guessed with a hint to set `tidemark.repo`.
+
+linuxserver.io images point at their packaging repo (`linuxserver/docker-<app>`), whose releases match the `-ls` tags and include the upstream changes.
+
+**Which releases:** GitHub or GitLab Releases after the running version, up to and including the latest, newest first.
+
+- Drafts are skipped. Pre-releases only show when you run one or the latest is one.
+- With an unknown running version, only the latest release shows.
+- Release tags match versions ignoring a `v` prefix and the variant. Prefixes like `release-1.2.3`, `release/1.2.3`, `version-1.2.3` and `app@1.2.3` are understood.
+- **Fallback** for repos without releases: `CHANGELOG.md` (or `CHANGES.md`, `changelog.md`) from the default branch, split on version headings; a date in the heading becomes the release date.
+
+**Fetching:**
+
+- Notes are stored and refreshed at most every 6 h, or sooner when the running version isn't covered yet.
+- They're fetched right after each check for containers with an update, so the detail page opens instantly. Otherwise the detail page fetches them, waiting up to 15 s.
+- Pages are fetched only until the running version is covered, at most 5 × 100 releases. Older notes beyond that show as "not loaded".
+- When GitHub's rate limit is hit, no GitHub calls are made until it resets (15 min if GitHub doesn't say), and the stored notes still show.
+
+**Rendering:** sanitised markdown. `#123` links to the issue or PR and `@user` to the profile. Images never load: each becomes an "Image: alt" link, so opening the notes reveals nothing to their hosts.
 
 ## 5. Breaking change highlighting
 
-A heuristic pass (`internal/analysis`) over each release's notes between running and latest gives per-release flags and an overall level of **none / attention / breaking**:
+A heuristic pass (`internal/analysis`) reads each release's notes between running and latest. It flags lines and gives an overall level of **none / attention / breaking**:
 
 | Signal | Level |
 |---|---|
-| Major version bump (or `0.x` minor bump); needs both versions known | breaking |
+| Major version bump (or a `0.x` minor bump); needs both versions known | breaking |
 | e.g. `BREAKING` (upper case), `breaking change(s)`, `potentially` / `possibly breaking`, a line starting with `Breaking`, `backward(s)-incompatible`, `not backward compatible`, `incompatible changes`, `💥`, conventional-commit `feat!:` / `fix(x)!:` | breaking |
 | e.g. `⚠️`, `action required`, `manual step` / `manual intervention`, "read the migration/upgrade guide", `upgrade notes`, "you need to migrate / update your …", "existing users should …", "migration may take", "has been / will be removed", "is deprecated", "no longer supported / available", "drops support", end of life, a line starting with `Removed` / `Deprecated` / `Dropped` / `Important` / `Warning` / `Heads up`, GitHub `[!IMPORTANT]` / `[!WARNING]` / `[!CAUTION]`, a renamed env var / setting / option / endpoint | attention |
 
 Rules that keep it honest (tuned on ~900 real releases):
 
-- **Phrases, not words.** "fix a bug breaking the import", "Migrate mqtt to the new API", "while the entity is removed" and "clear it when it is removed, and …" are everyday release-note language and don't count. "No breaking changes", "non-breaking", "fix breaking changes in X" and "add a breaking change note" are negations.
-- **`⚠️` alone is attention**, not breaking: projects use it for recurring reminders (Vaultwarden's "migrate off bitwardenrs").
-- **Sections inherit.** Lines under a flagged heading or bold label ("## Breaking changes", "⚠️ **Breaking Changes**", "## Upgrade notes") get its level (or higher), until the next heading at the same level or a generic one ("Features", "Bug fixes", "Other", …). An empty flagged section ("None", "N/A") says nothing.
-- **Only news counts.** Lines that already appear in the running release's notes, compared without numbers and links, are skipped: some projects repeat their history or boilerplate ("read the migration guide (#v3715)") in every release.
+- **Phrases, not words.** "fix a bug breaking the import", "Migrate mqtt to the new API" and "when it is removed" are everyday release-note language and don't count. "No breaking changes", "non-breaking" and "fix breaking changes in X" are negations.
+- **`⚠️` alone is attention,** not breaking: projects use it for recurring reminders.
+- **Sections inherit.** Lines under a flagged heading or bold label ("## Breaking changes", "⚠️ **Breaking Changes**", "## Upgrade notes") get its level or higher, until the next heading at the same level or a generic one ("Features", "Bug fixes", …). A flagged section that only says "None" or "N/A" says nothing.
+- **Only news counts.** Lines that already appear in the running release's notes (compared without numbers and links) are skipped: some projects repeat boilerplate in every release.
 - Code blocks and HTML comments are ignored.
-- **It says why.** Each flagged line records the words that set its level, or the heading it inherits from when that's higher. In the notes those words get a dotted underline in the level's colour, and hovering the line says it: "Attention · matched “is removed”", "Breaking · under “⚠ BREAKING CHANGES”".
+- **It says why.** Each flagged line records the words that set its level, or the heading it inherits from. In the notes those words get a dotted underline, and hovering the line says "Attention · matched “is removed”" or "Breaking · under “⚠ BREAKING CHANGES”".
 
-The level is computed from the stored notes on every request, so it appears once the notes are fetched and the dashboard never disagrees with the detail page. Without stored notes (e.g. rate limited) only the version jump counts.
+The level is computed from the stored notes on every request, so the dashboard and the detail page always agree. Without stored notes (e.g. rate limited) only the version jump counts.
 
 ## 6. Container detail page
 
-`/containers/<name>`, titled "`<name>` · Tidemark".
+`/containers/<name>`.
 
-- **Header card:** version change and badges; a compact tide gauge with "N releases behind" ("N+" when the list may be cut off; shown when there's an update, a known running version and releases); for breaking/attention a slowly circling border in the level's colour. A callout explains the verdict ("v3.0.0 Redis 8.0 or newer is now required": every flagged line, in full, breaking first, capped with "Show all" when the list is long). Each quote's release tag is a button that opens that release, expands its notes, scrolls to the flagged line and briefly rings it.
+- **Header:** version change and badges, a compact tide gauge with "N releases behind" ("N+" when the list may be cut off), and for breaking or attention a slowly circling border in the level's colour.
+- **Verdict callout:** quotes every flagged line in full, breaking first. Each quote's release tag jumps to that line in the notes.
 - **Links:**
-  - **Compare** (`https://github.com/owner/repo/compare/v1.4.2...v1.6.0`), using the repo's own tag names, so a `v` or `release-` prefix is picked up automatically. Only when both versions have a matching repo tag.
-  - **"`<running>` in releases"** (GitHub): opens `/releases` on the page that holds your version (10 per page, pre-releases included), scrolled to and highlighting its heading via a text fragment, so you see it in relation to everything newer.
-  - "All releases" (or "Changelog" for a CHANGELOG.md source), the source tree at your version, the repo, and each release's own page.
-- **Review actions** (right of the tabs, above them on phones; only with an update): "Mark reviewed" and a "Snooze" menu (1 day, 1 week, 1 month, Until a newer version), or the current state ("Reviewed up to 1.6.0 · 20 Oct", "Snoozed until 3 Nov") with Undo / Unsnooze. A toast confirms. While reviewed or snoozed, the severity frame stops circling; the level and the callout stay. Rules: [§9](#9-reviewed-snoozed-and-history).
-- **Changes tab** (with the release count): the notes per release, newest first. The newest and the breaking ones are open, attention ones collapsed with their badge; flagged lines are highlighted, with what triggered each one (see [§5](#5-breaking-change-highlighting)); long notes are capped with "Show all", which says how many flagged lines it hides ("Show all · 2 flagged lines").
-- **Callouts** for: a failed check (at the top: "Refresh failed at <time>" / "Check failed at <time>", the error in mono, which result is shown, and a hint for rate limits, timeouts, network and registry errors), ignored container, notes couldn't be refreshed (shows the stored ones), guessed repo (hint to set `tidemark.repo`), no release notes found, running version unknown (latest release only), channel build (the newest stable release's notes for reference, no verdict), older releases not loaded, no source repo found, notes not fetched for ignored containers.
-- **Details tab:** a Rules card (each rule, where it came from, skipped ones), then image, running version and how it was found, latest (and what's held back), checked time (the last successful check, or "No successful check yet"; "· refresh failed, see above" when the latest attempt failed; "Tag list from <time>" when the tag list was reused), source repo and how it was found, Compose project/service, status, platform, image build time, image ID, digests and OCI labels.
-- **History tab** (with the entry count): the container's detected image changes, newest first: "1.4.2 → 1.6.0", or "New image" with short image IDs when the version didn't change or is unknown, "ran 1.4.2 for 12 days" when the earlier entry is there, and "Tracking started · running 1.4.2" at the bottom. Empty until the first successful check.
-- A 404 ("No container named …") and an error state with retry.
+  - **Compare** (`…/compare/v1.4.2...v1.6.0`) using the repo's own tag names, only when both versions have a matching tag.
+  - **"`<running>` in releases"** (GitHub): the releases page that holds your version, scrolled to it, so you see it next to everything newer.
+  - All releases (or the changelog), the source tree at your version, the repo, and each release's own page.
+- **Review actions** (only with an update): "Mark reviewed" and "Snooze" (1 day, 1 week, 1 month, until a newer version), or the current state with Undo. While reviewed or snoozed, the border stops circling; the level and callout stay. Rules in [§9](#9-reviewed-snoozed-and-history).
+- **Changes tab:** the notes per release, newest first. The newest and the breaking releases are open, attention ones collapsed with their badge. Long notes are capped with "Show all", which says how many flagged lines it hides.
+- **Details tab:** the rules and where each came from, then image, running version and how it was found, latest (and what's held back), last successful check, source repo and how it was found, Compose project, image metadata and OCI labels.
+- **History tab:** detected image changes, newest first: "1.4.2 → 1.6.0", or "New image" when the version didn't change or is unknown, with "ran 1.4.2 for 12 days", and "Tracking started" at the bottom.
+- **Callouts** explain anything missing: a failed check (with the error and a hint), an ignored container, a guessed repo, notes that couldn't be refreshed or weren't found, an unknown running version, a channel build, older releases not loaded.
 
 ## 7. Checks, failures and settings
 
-- Checks run at startup, on the schedule (`TIDEMARK_SCHEDULE`) and with **Check now**; one run at a time, so a trigger during a run is ignored. At startup a check runs only if the last one finished more than 1 hour ago, or a non-ignored container has no valid result (new, recreated, or its rules changed), so restarts don't hammer registries.
-- **A failed check** (registry unreachable, e.g. right after the host wakes from sleep) keeps the last good result, with level and reasons still computed from it, plus the quiet "refresh failed" note with a short reason when the failure is known ("refresh failed · rate limited"; full error on hover or keyboard focus). A container that never had a successful check shows "check failed" with the same short reason. Reasons: rate limited (HTTP 429), not found or private (401/403/404), timed out, network error (DNS, refused connection), registry error (5xx); anything else shows the raw error. A rate-limited tag list falls back to the stored list, so the check still succeeds (the detail page says "Tag list from <time>"); the registry isn't asked again for that repo for 5 min, and a rate limit is never retried straight away. go-containerregistry already asks for 1,000 tags per page, so repos with thousands of signature tags (some have over 6,000) take only a few requests. A failed check counts as checked, so it doesn't force a check at startup. Failures are per container and per stage: when GitHub's rate limit is hit, the version info still shows and the detail page says the notes couldn't be refreshed.
-- **Settings dialog** (gear in the header): read-only, since everything is set by env vars. Shows whether a GitHub token is set (never the token) with a hint to set `TIDEMARK_GITHUB_TOKEN` without one, GitHub's remaining quota and reset time (looked up live and cached for a minute, but every GitHub API response Tidemark gets updates it from its `X-RateLimit-*` headers, so it's current right after a check; without a token the quota is per IP address, so other tools on the server calling GitHub use it too, and the dialog says so), the check schedule and next run, the rules file (path, "not found" or "didn't load"), the container source (Docker host or snapshot) and whether app icons are on, then a link to the styleguide and Tidemark's version. The version is also in the page footer.
+- **When checks run:** at startup, on the schedule (`TIDEMARK_SCHEDULE`) and with **Check now**. One run at a time; a trigger during a run is ignored.
+- **Startup** only checks if the last run finished over an hour ago, or a container lacks a valid result (new, recreated or its rules changed), so restarts don't hammer registries.
+- **A failed check keeps the last good result,** with its level and reasons, plus a quiet "refresh failed" note (e.g. after the host wakes from sleep). A container that never had a successful check shows "check failed" instead.
+  - Short reasons: rate limited (429), not found or private (401/403/404), timed out, network error, registry error (5xx). Anything else shows the raw error.
+  - A failed check still counts as checked, so it doesn't force a check at startup.
+  - Failures are per container and per stage: when GitHub is rate limited, the version info still shows and only the notes are stale.
+- **Rate-limited tag lists** fall back to the stored list, so the check still succeeds (the detail page says "Tag list from <time>"). That registry isn't asked again for the repo for 5 min, and a rate limit is never retried straight away.
+- **Settings dialog** (gear in the header): read-only, since everything is set by env vars. It shows whether a GitHub token is set (never the token), GitHub's remaining quota, the schedule and next run, the rules file and whether it loaded, the container source, whether icons are on, a link to the styleguide, and the version.
+  - The quota is updated from every GitHub response, so it's current right after a check. Without a token it's per IP address, shared with other tools on the server, and the dialog says so.
 
 ## 8. Rules
 
-Per-container rules (ignore, pin, allow-major, prerelease, tag-pattern, repo) come from container labels or the config file; syntax in [README → Per-container rules](../README.md#per-container-rules). Code: `internal/rules`.
+Per-container rules (ignore, pin, allow-major, prerelease, tag-pattern, repo) come from container labels or the config file. Syntax: [README → Per-container rules](../README.md#per-container-rules). Code: `internal/rules`.
 
-- **Precedence per rule:** container label > `containers:` entry > `images:` entry > default. Within a section all matching entries merge rule by rule, the most specific first (exact before glob, longer key before shorter). An `images:` key without a registry also matches the same repository on lscr.io, ghcr.io and so on.
-- **Ignored containers** aren't checked at all (no registry or GitHub calls, no release notes) and a stored result is deleted at the next run. Their app icon still shows. They're left out of the Updates / Breaking filters.
-- **Held back, still shown:** a version that a pin or `allow-major=false` keeps back is shown quietly: "2.1.0 held back by pin 1.4", "3.0.0 held back, majors off". The update class and risk level are those of the version within the rule.
-- **The file is re-read at the start of every check run.** A file that doesn't load (bad YAML, an unknown key, an empty key, two keys for the same container like `app` and `/app`, an image key with a tag or digest) is reported on the dashboard; the last good file stays in use and labels always apply. A missing file means no file rules.
-- **Invalid values don't break a container:** that rule is skipped and shown as "rule skipped" on the dashboard and in the detail page's Rules card (`tidemark.allow-major: "maybe" is not true or false`). A `repo` on a host other than GitHub or GitLab is silently ignored, and the repo is detected as usual.
-- **Edge cases:** a pin above the running version is offered as an update; a pin matching no tag gives no latest version (the newest one shows as held back); `allow-major=false` can't apply while the running version is unknown (e.g. `:latest` with no label, digest or `*_VERSION` match); pin and `allow-major=false` together both apply. A version label only counts if a tag matching the `tag-pattern` has that version.
-- **Results follow the rules:** each stored result records the rules it was checked with. When they change (a new label means a recreated container), the result is stale until the next check, and startup checks right away.
+- **Precedence per rule:** container label > `containers:` entry > `images:` entry > default. Within a section, all matching entries merge rule by rule, most specific first (exact before glob, longer key before shorter). An `images:` key without a registry also matches the same repository on lscr.io, ghcr.io and so on.
+- **Ignored containers** aren't checked at all (no registry or GitHub calls), and their stored result is deleted at the next run. They still get an icon, and they're left out of the Updates / Breaking filters.
+- **Held back, still shown:** a version kept back by a pin or `allow-major=false` shows quietly ("2.1.0 held back by pin 1.4"). The class and level are those of the version within the rule.
+- **The file is re-read at the start of every run.** A file that doesn't load is reported on the dashboard, and the last good file stays in use. Reasons it won't load: bad YAML, an unknown or empty key, two keys for the same container (`app` and `/app`), an image key with a tag or digest. A missing file means no file rules; labels always apply.
+- **Invalid values don't break a container:** that rule is skipped and shown as "rule skipped" (`tidemark.allow-major: "maybe" is not true or false`).
+- **Edge cases:**
+  - A pin above the running version is offered as an update.
+  - A pin matching no tag gives no latest version (the newest shows as held back).
+  - `allow-major=false` can't apply while the running version is unknown.
+  - Pin and `allow-major=false` together both apply.
+- **Results follow the rules:** each result records the rules it was checked with. When they change, the result is stale until the next check, and startup checks right away.
 
 ## 9. Reviewed, snoozed and history
 
-Per container name (a recreated container keeps them). Code: `internal/review`, `internal/check`, `internal/api/review.go`.
+All three are kept per container name, so a recreated container keeps them. Code: `internal/review`, `internal/check`, `internal/api/review.go`.
 
-- **Reviewed** means "I've read the changes up to the latest version" (1.6.0). It applies while the latest version isn't newer than 1.6.0 and ends by itself when a newer one appears: the update looks new again. A rebuild under the same version (official images every few weeks) keeps it: there are no new notes to read.
-- **Builds instead of versions:** on a channel tag (`nightly`), or a floating tag whose latest version is unknown, the update is a new build, so reviewed and "snoozed until newer" are set against the build (the tag's current digest in the registry): "Reviewed this build", "Snoozed until a new build". The next build ends it.
-- **Snoozed** hides the update until a time (1 day, 1 week, 1 month from now) or until a version newer than the latest at that moment (or a new build, see below). A snooze by time ends by the clock only, even if a newer version appears meanwhile. After that it's back in its section.
-- A container is either reviewed or snoozed; setting one replaces the other. Undo / Unsnooze removes it. It only shows while the container has an update (an ignored container never shows it).
-- **History** records a change whenever a container's image ID differs from the one at its previous successful check, so a `pull` + `up` is recorded even when the version stays the same (a rebuilt tag) or is unknown. The first successful check records "Tracking started". A failed check in between doesn't lose the previous image. Ignored containers aren't checked, so they get no history. History is kept when a container is removed; a new container with the same name continues it.
+- **Reviewed** means "I've read the changes up to the latest version" (say 1.6.0). It ends by itself when a newer version appears, and the update looks new again. A rebuild under the same version keeps it: there are no new notes to read.
+- **Snoozed** hides the update until a time (1 day, 1 week, 1 month) or until a version newer than the current latest. A snooze by time ends only by the clock, even if a newer version appears meanwhile.
+- **Builds instead of versions:** on a channel tag, or a floating tag whose latest version is unknown, there's no version to review against. Reviewed and "snoozed until newer" are then set against the build (the tag's current registry digest): "Reviewed this build", "Snoozed until a new build".
+- A container is either reviewed or snoozed; setting one replaces the other. Both only show while there's an update.
+- **History** records a change whenever a container's image ID differs from its previous successful check. So a `pull` + `up` is recorded even when the version stays the same or is unknown. The first successful check records "Tracking started", and a failed check in between doesn't lose the previous image. Ignored containers get no history. History is kept when a container is removed, and a new container with the same name continues it.
 
 ## Out of scope (for now)
 
