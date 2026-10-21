@@ -25,7 +25,13 @@ mkdir -p data && sudo chown 65532:65532 data   # the image runs as a non-root us
 docker compose up -d
 ```
 
-Images are published to `ghcr.io/bartvs98/tidemark` (linux/amd64) for each release: `latest` is the newest release, `1` and `1.2` follow the newest release in that line, and `1.2.3` is fixed. Releases are listed on the repository's Releases page. While the repository is private, the host needs a one-time `docker login ghcr.io` with a token that has `read:packages`. To build from a checkout instead, replace `image:` with `build: .` and run `docker compose up -d --build`. The compose file also works as a stack in a Docker manager like Portainer; the `./data` path is then relative to the stack's directory.
+Images are published to `ghcr.io/bartvs98/tidemark` (linux/amd64) for each release, listed on the [Releases](https://github.com/bartvs98/Tidemark/releases) page:
+
+- `latest`: the newest release
+- `1`, `1.2`: the newest release in that line
+- `1.2.3`: fixed
+
+To build from a checkout instead, replace `image:` with `build: .` and run `docker compose up -d --build`. The compose file also works as a stack in a Docker manager like Portainer; `./data` is then relative to the stack's directory.
 
 A named volume (`- tidemark-data:/data`) works too and needs no `chown`: Docker fills a new volume from the image, which already gives `/data` to uid 65532. The image has no shell, though, so to use a rules file, mount it separately:
 
