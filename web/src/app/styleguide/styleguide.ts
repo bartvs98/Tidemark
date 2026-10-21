@@ -210,6 +210,7 @@ export class Styleguide {
   ];
   protected readonly menuChoice = signal('');
   protected readonly dialogOpen = signal(false);
+  protected readonly pagesDialogOpen = signal(false);
 
   /** Per-container rules as the dashboard shows them (real components, sample data). */
   protected readonly ruleSamples: { label: string; container: ContainerSummary }[] = [

@@ -1,4 +1,4 @@
-import { Component, effect, ElementRef, input, model, viewChild } from '@angular/core';
+import { booleanAttribute, Component, effect, ElementRef, input, model, viewChild } from '@angular/core';
 import { TmButton } from '../button/button';
 
 let nextId = 0;
@@ -8,6 +8,10 @@ let nextId = 0;
  * the page behind it inert, closes on Escape and returns focus to the opener. A click on the
  * backdrop or the close button closes it too. Two-way `[(open)]`; content is projected, so
  * wrap anything that should only load while open in `@if (open)`.
+ *
+ * `size="lg"` is wider and keeps one height, for content with pages (side tabs) that shouldn't
+ * make the dialog jump. `flush` drops the body's padding and scrolling, for content that
+ * lays out and scrolls its own areas (a `.tm-tabs-vertical` fills it).
  *
  *   <button tmButton square variant="ghost" icon="settings" aria-label="Settings" (click)="open.set(true)"></button>
  *   <tm-dialog heading="Settings" [(open)]="open">…</tm-dialog>
@@ -21,6 +25,8 @@ let nextId = 0;
 export class TmDialog {
   readonly heading = input.required<string>();
   readonly open = model(false);
+  readonly size = input<'md' | 'lg'>('md');
+  readonly flush = input(false, { transform: booleanAttribute });
 
   protected readonly headingId = `tm-dialog-${nextId++}`;
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');

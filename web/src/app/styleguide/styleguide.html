@@ -673,9 +673,54 @@
       click on the backdrop closes it. Rows inside use <span class="font-mono text-sm">.tm-setting</span>. The header's gear
       opens the settings dialog built from it.
     </p>
+    <p class="mb-4 text-fg-muted">
+      With pages: <span class="font-mono text-sm">size="lg"</span> (wider, one height, so switching pages doesn't make it
+      jump) and <span class="font-mono text-sm">flush</span>, filled by side tabs
+      (<span class="font-mono text-sm">.tm-tabs tm-tabs-vertical</span>). Below 640px the tabs become a row on top.
+    </p>
     <tm-card>
-      <button tmButton icon="settings" data-testid="styleguide-dialog-open" (click)="dialogOpen.set(true)">Open dialog</button>
+      <div class="flex flex-wrap gap-2">
+        <button tmButton icon="settings" data-testid="styleguide-dialog-open" (click)="dialogOpen.set(true)">Open dialog</button>
+        <button tmButton data-testid="styleguide-dialog-pages-open" (click)="pagesDialogOpen.set(true)">Open dialog with pages</button>
+      </div>
     </tm-card>
+    <tm-dialog heading="Example dialog with pages" size="lg" flush [(open)]="pagesDialogOpen">
+      <div ngTabs class="tm-tabs tm-tabs-vertical">
+        <div ngTabList selectedTab="general" orientation="vertical" aria-label="Example pages">
+          <div ngTab value="general">General</div>
+          <div ngTab value="checks">Checks</div>
+          <div ngTab value="notifications">Notifications</div>
+        </div>
+        <div ngTabPanel value="general">
+          <dl>
+            <div class="tm-setting">
+              <dt>Version</dt>
+              <dd class="font-mono">1.1.0</dd>
+            </div>
+            <div class="tm-setting">
+              <dt>App icons</dt>
+              <dd>On</dd>
+            </div>
+          </dl>
+        </div>
+        <div ngTabPanel value="checks">
+          <dl>
+            <div class="tm-setting">
+              <dt>Schedule</dt>
+              <dd class="font-mono">0 */6 * * *</dd>
+            </div>
+          </dl>
+        </div>
+        <div ngTabPanel value="notifications">
+          <dl>
+            <div class="tm-setting">
+              <dt>Status</dt>
+              <dd><span class="inline-flex items-center gap-1.5"><tm-icon name="check" />On</span></dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+    </tm-dialog>
     <tm-dialog heading="Example dialog" [(open)]="dialogOpen">
       <dl>
         <div class="tm-setting">

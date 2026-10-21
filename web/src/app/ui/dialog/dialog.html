@@ -1,9 +1,9 @@
-<dialog #dialog class="tm-dialog" [attr.aria-labelledby]="headingId" (close)="open.set(false)" (click)="backdrop($event)">
-  <div class="flex max-h-[inherit] flex-col">
+<dialog #dialog class="tm-dialog" [class.tm-dialog-lg]="size() === 'lg'" [attr.aria-labelledby]="headingId" (close)="open.set(false)" (click)="backdrop($event)">
+  <div class="flex h-full max-h-[inherit] flex-col">
     <header class="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-line py-2 pr-3 pl-5">
       <h2 [id]="headingId" class="text-lg font-semibold">{{ heading() }}</h2>
       <button tmButton square variant="ghost" icon="x" aria-label="Close" (click)="open.set(false)"></button>
     </header>
-    <div class="overflow-y-auto px-5 py-4"><ng-content /></div>
+    <div class="min-h-0 flex-1" [class]="flush() ? 'flex flex-col' : 'overflow-y-auto px-5 py-4'"><ng-content /></div>
   </div>
 </dialog>

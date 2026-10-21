@@ -218,7 +218,7 @@ What the pages show is in [FEATURES §1](FEATURES.md#1-dashboard) and [§6](FEAT
   - A quoted reason jumps to its line: switch to Changes, open `details[data-release]`, `TmClamp.reveal` the `[data-flag~=i]` line, scroll, and ring it with `tm-flag-jumped` for 2 s.
   - Review actions sit on the tab row (`detail/review-actions/`: PUT/DELETE, then `reload()`).
   - *Later:* AI summary panel, update button with gate status.
-- **Settings dialog** (`settings/settings-dialog.ts` + `.html`, a `tm-dialog`): fetches `/api/settings` each time it opens; the Notifications section's **Send test message** posts to `/api/notifications/test` and reloads it.
+- **Settings dialog** (`settings/settings-dialog.ts` + `.html`, a `tm-dialog size="lg" flush` with `.tm-tabs-vertical` pages: General, Checks, Notifications, GitHub; the page is kept between opens): fetches `/api/settings` each time it opens; the Notifications section's **Send test message** posts to `/api/notifications/test` and reloads it.
 - Dev: `ng serve` (bound to 127.0.0.1) with a proxy for `/api` → `localhost:8080`.
 
 ## Security

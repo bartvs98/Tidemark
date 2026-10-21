@@ -1,9 +1,9 @@
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
-import { Component, inject, model, signal } from '@angular/core';
+import { Component, DestroyRef, DOCUMENT, inject, model, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { TmButton, TmCallout, TmDialog, TmIcon, TmSkeleton, TmTooltip, Toasts } from '../ui';
+import { TM_TABS, TmButton, TmCallout, TmDialog, TmIcon, TmSkeleton, TmTooltip, Toasts } from '../ui';
 
 /** Shape of GET /api/settings (internal/api/settings.go). Read-only: it all comes from env vars. */
 export interface Settings {
@@ -32,6 +32,8 @@ export interface Settings {
   };
 }
 
+export type SettingsPage = 'general' | 'checks' | 'notifications' | 'github';
+
 export const NOTIFY_LEVELS = {
   all: 'All updates',
   attention: 'Attention and breaking',
@@ -40,18 +42,24 @@ export const NOTIFY_LEVELS = {
 
 /**
  * The settings dialog behind the header's gear button. It shows how Tidemark is configured
- * (env vars, so nothing is editable here), the GitHub quota, a link to the styleguide and
- * Tidemark's version. Settings are fetched each time it opens.
+ * (env vars, so nothing is editable here) on pages behind side tabs (a tab row on phones):
+ * General (version, container source, icons, styleguide link), Checks, Notifications (a block
+ * per provider, with its test button) and GitHub (token, quota). Settings are fetched each time
+ * it opens; the page stays where it was.
  *
  *   <tm-settings-dialog [(open)]="settingsOpen" />
  */
 @Component({
   selector: 'tm-settings-dialog',
-  imports: [DatePipe, DecimalPipe, RouterLink, TmButton, TmCallout, TmDialog, TmIcon, TmSkeleton, TmTooltip],
+  imports: [DatePipe, DecimalPipe, NgTemplateOutlet, RouterLink, ...TM_TABS, TmButton, TmCallout, TmDialog, TmIcon, TmSkeleton, TmTooltip],
   templateUrl: './settings-dialog.html',
 })
 export class SettingsDialog {
   readonly open = model(false);
+
+  protected readonly page = signal<SettingsPage>('general');
+  /** The tabs are a column from 640px (.tm-tabs-vertical), so the arrow keys follow the layout. */
+  protected readonly orientation = signal<'vertical' | 'horizontal'>('vertical');
 
   /** Requested only while open; reopening asks again (the server keeps GitHub's quota current from its own requests and asks again after a minute). */
   protected readonly settings = httpResource<Settings>(() => (this.open() ? '/api/settings' : undefined));
@@ -61,6 +69,15 @@ export class SettingsDialog {
 
   protected readonly levels = NOTIFY_LEVELS;
   protected readonly testing = signal(false);
+
+  constructor() {
+    const media = inject(DOCUMENT).defaultView?.matchMedia?.('(width >= 40rem)');
+    if (!media) return;
+    const update = () => this.orientation.set(media.matches ? 'vertical' : 'horizontal');
+    update();
+    media.addEventListener('change', update);
+    inject(DestroyRef).onDestroy(() => media.removeEventListener('change', update));
+  }
 
   /** What the last attempt sent, e.g. "3 updates" or "test message". */
   protected sentWhat(last: NonNullable<NonNullable<Settings['notifications']>['last']>): string {
