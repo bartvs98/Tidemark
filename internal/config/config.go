@@ -4,9 +4,12 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/bartvs98/tidemark/internal/analysis"
 )
 
 type Config struct {
@@ -27,6 +30,13 @@ type Config struct {
 
 	Icons    bool   // TIDEMARK_ICONS: "off" disables app icons
 	IconsURL string // TIDEMARK_ICONS_URL: selfh.st icons base URL (CDN or a self-hosted mirror)
+
+	// Notifications go to Telegram when both the token and the chat ID are set.
+	TelegramBotToken string         // TIDEMARK_TELEGRAM_BOT_TOKEN
+	TelegramChatID   string         // TIDEMARK_TELEGRAM_CHAT_ID
+	NotifyLevel      analysis.Level // TIDEMARK_NOTIFY_LEVEL: all (default, = none) | attention | breaking
+	NotifyDigest     string         // TIDEMARK_NOTIFY_DIGEST: cron spec for one digest message; "" = after each check run
+	PublicURL        string         // TIDEMARK_PUBLIC_URL: base URL for links in messages, no trailing "/"; "" = no links
 }
 
 func Load() (Config, error) {
@@ -47,6 +57,29 @@ func Load() (Config, error) {
 	c.ConfigFile = env("TIDEMARK_CONFIG", filepath.Join(c.DataDir, "config.yaml"))
 	if err := c.LogLevel.UnmarshalText([]byte(env("TIDEMARK_LOG_LEVEL", "info"))); err != nil {
 		return Config{}, fmt.Errorf("TIDEMARK_LOG_LEVEL: %w", err)
+	}
+	c.TelegramBotToken = env("TIDEMARK_TELEGRAM_BOT_TOKEN", "")
+	c.TelegramChatID = env("TIDEMARK_TELEGRAM_CHAT_ID", "")
+	if (c.TelegramBotToken == "") != (c.TelegramChatID == "") {
+		return Config{}, fmt.Errorf("TIDEMARK_TELEGRAM_BOT_TOKEN and TIDEMARK_TELEGRAM_CHAT_ID must be set together")
+	}
+	switch lvl := strings.ToLower(env("TIDEMARK_NOTIFY_LEVEL", "all")); lvl {
+	case "all":
+		c.NotifyLevel = analysis.None
+	case "attention":
+		c.NotifyLevel = analysis.Attention
+	case "breaking":
+		c.NotifyLevel = analysis.Breaking
+	default:
+		return Config{}, fmt.Errorf("TIDEMARK_NOTIFY_LEVEL: unknown level %q (use all, attention or breaking)", lvl)
+	}
+	c.NotifyDigest = env("TIDEMARK_NOTIFY_DIGEST", "")
+	if pu := env("TIDEMARK_PUBLIC_URL", ""); pu != "" {
+		u, err := url.Parse(pu)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return Config{}, fmt.Errorf("TIDEMARK_PUBLIC_URL: %q is not an absolute http(s) URL", pu)
+		}
+		c.PublicURL = strings.TrimRight(pu, "/")
 	}
 	return c, nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/icons"
+	"github.com/bartvs98/tidemark/internal/notify"
 	"github.com/bartvs98/tidemark/internal/store"
 )
 
@@ -31,6 +32,10 @@ type Deps struct {
 	Schedule   string
 	ConfigFile string
 
+	// Notify sends update messages; nil when notifications are off (the test endpoint
+	// answers 501 and settings show no notifications).
+	Notify *notify.Service
+
 	// Context for background work started by requests (check runs); it outlives the request.
 	Background context.Context
 }
@@ -43,6 +48,7 @@ type Server struct {
 	checks     *check.Service
 	changelogs *changelog.Service
 	store      *store.Store
+	notify     *notify.Service
 	schedule   string
 	configFile string
 	background context.Context
@@ -53,7 +59,7 @@ func New(d Deps) *Server {
 	if bg == nil {
 		bg = context.Background()
 	}
-	return &Server{version: d.Version, log: d.Log, source: d.Source, icons: d.Icons, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, schedule: d.Schedule, configFile: d.ConfigFile, background: bg}
+	return &Server{version: d.Version, log: d.Log, source: d.Source, icons: d.Icons, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, notify: d.Notify, schedule: d.Schedule, configFile: d.ConfigFile, background: bg}
 }
 
 // Handler returns the full HTTP handler: API routes plus the SPA served from spa.
@@ -67,6 +73,7 @@ func (s *Server) Handler(spa fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/icons/{ref}", s.icon)
 	mux.HandleFunc("POST /api/checks", s.startCheck)
 	mux.HandleFunc("GET /api/settings", s.settings)
+	mux.HandleFunc("POST /api/notifications/test", s.testNotification)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})

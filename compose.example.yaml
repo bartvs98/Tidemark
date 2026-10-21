@@ -20,6 +20,10 @@ services:
     environment:
       TIDEMARK_DOCKER_HOST: tcp://socket-proxy:2375
       TIDEMARK_GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      # Telegram notifications (see the README):
+      # TIDEMARK_TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # TIDEMARK_TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # TIDEMARK_PUBLIC_URL: https://tidemark.example.com
     volumes:
       - ./data:/data
     ports:

@@ -75,6 +75,75 @@
         </dl>
       </section>
 
+      <section aria-labelledby="settings-notifications">
+        <h3 id="settings-notifications" class="mb-1 text-xs font-medium tracking-wide text-fg-subtle uppercase">Notifications</h3>
+        @if (s.notifications; as n) {
+          <dl data-testid="settings-notifications">
+            <div class="tm-setting">
+              <dt>Telegram</dt>
+              <dd><span class="inline-flex items-center gap-1.5"><tm-icon name="check" />On</span></dd>
+            </div>
+            <div class="tm-setting">
+              <dt>Level</dt>
+              <dd>{{ levels[n.level] }}</dd>
+            </div>
+            <div class="tm-setting">
+              <dt>Sends</dt>
+              <dd>
+                @if (n.digest) {
+                  Digest <span class="font-mono">{{ n.digest }}</span>
+                } @else {
+                  After each check
+                }
+              </dd>
+            </div>
+            <div class="tm-setting">
+              <dt>Links</dt>
+              <dd>
+                @if (n.publicUrl) {
+                  <span class="font-mono break-all">{{ n.publicUrl }}</span>
+                } @else {
+                  <span class="text-fg-muted">Not set, messages have no links</span>
+                }
+              </dd>
+            </div>
+            <div class="tm-setting">
+              <dt>Last sent</dt>
+              <dd data-testid="settings-notify-last">
+                @if (n.last; as last) {
+                  @if (last.error) {
+                    <span class="flex items-center gap-1.5 text-attention" [tmTooltip]="last.error">
+                      <tm-icon name="triangle-alert" />Failed
+                    </span>
+                    <span class="mt-0.5 block text-fg-muted">{{ last.at | date: 'd MMM, HH:mm' }}, {{ sentWhat(last) }}</span>
+                  } @else {
+                    {{ last.at | date: 'd MMM, HH:mm' }}, {{ sentWhat(last) }}
+                  }
+                } @else {
+                  <span class="text-fg-muted">Nothing sent yet</span>
+                }
+              </dd>
+            </div>
+          </dl>
+          <div class="mt-3">
+            <button tmButton type="button" size="sm" [loading]="testing()" [disabled]="testing()" (click)="sendTest()" data-testid="settings-notify-test">
+              Send test message
+            </button>
+          </div>
+        } @else {
+          <dl>
+            <div class="tm-setting">
+              <dt>Telegram</dt>
+              <dd data-testid="settings-notify-off"><span class="text-fg-muted">Off</span></dd>
+            </div>
+          </dl>
+          <p class="mt-2 text-sm text-fg-muted">
+            Set <span class="font-mono text-xs">TIDEMARK_TELEGRAM_BOT_TOKEN</span> and
+            <span class="font-mono text-xs">TIDEMARK_TELEGRAM_CHAT_ID</span> to get a message when a check finds new updates.
+          </p>
+        }
+      </section>
+
       <section aria-labelledby="settings-containers">
         <h3 id="settings-containers" class="mb-1 text-xs font-medium tracking-wide text-fg-subtle uppercase">Containers</h3>
         <dl>

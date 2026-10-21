@@ -10,12 +10,13 @@
 - **Release notes in between,** from GitHub or GitLab releases (or `CHANGELOG.md`), with compare links.
 - **Breaking-change flags.** Release notes are scanned for things like "BREAKING", "action required" and removed options. Each update gets a risk level (none / attention / breaking) with the reasons, and the lines that triggered it are highlighted.
 - **Reviewed, snoozed, history.** Mark an update as read up to its latest version, or snooze it for a while or until a newer version; a History tab lists the image changes Tidemark has seen per container.
+- **Telegram notifications** for new updates only, breaking ones first, with an optional daily digest or a breaking-only mode.
 - **Per-container rules** via labels or a config file: ignore, pin to `1.4.x`, no majors, include pre-releases, custom tag pattern, source repo override.
 - **Read-only and private.** Tidemark never changes your containers. It talks to Docker through a read-only socket proxy and never reads container environment variables.
 
 ![The Tidemark dashboard in dark mode](docs/brand/screenshot.png)
 
-Status: **in daily use on a home server.** Checking, changelogs, breaking-change highlighting, rules, reviewing and snoozing, and update history are done. Next on the [roadmap](docs/ROADMAP.md): Telegram notifications, AI changelog summaries and gated one-click updates. Only public images are supported.
+Status: **in daily use on a home server.** Checking, changelogs, breaking-change highlighting, rules, reviewing and snoozing, update history and Telegram notifications are done. Next on the [roadmap](docs/ROADMAP.md): AI changelog summaries and gated one-click updates. Only public images are supported.
 
 ## Run it with Docker
 
@@ -56,6 +57,7 @@ Recommended: create a [GitHub fine-grained token](https://github.com/settings/pe
 | Docker Engine API (via the socket proxy) | List containers and images (`GET` only; container inspect is never called) |
 | Container registries (Docker Hub, GHCR, Quay, lscr.io, …) | Tag lists and manifest digests, anonymously; `HEAD` where possible, which doesn't count towards Docker Hub's pull limit |
 | GitHub / GitLab | Release notes and `CHANGELOG.md` for containers with an update; GitHub's remaining API quota when you open Settings (that lookup doesn't count against it) |
+| api.telegram.org | Only with notifications on: the messages, sent with your bot token |
 | cdn.jsdelivr.net | App icons from [selfh.st/icons](https://selfh.st/icons/) (`TIDEMARK_ICONS=off` to disable, or `TIDEMARK_ICONS_URL` for a mirror) |
 
 Nothing else: no telemetry, no accounts.
@@ -74,10 +76,15 @@ Everything is set by environment variables (the Settings dialog only shows them)
 | `TIDEMARK_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker Engine API, e.g. `tcp://socket-proxy:2375` |
 | `TIDEMARK_ICONS` | `on` | `off` disables app icons (no requests to the icon CDN) |
 | `TIDEMARK_ICONS_URL` | `https://cdn.jsdelivr.net/gh/selfhst/icons` | Icon base URL, e.g. a self-hosted mirror |
+| `TIDEMARK_TELEGRAM_BOT_TOKEN` | — | Turns on [notifications](#notifications), together with the chat ID. Only sent to api.telegram.org |
+| `TIDEMARK_TELEGRAM_CHAT_ID` | — | Chat to send to: your user ID, or a group's ID (negative) |
+| `TIDEMARK_NOTIFY_LEVEL` | `all` | Lowest level that's sent: `all`, `attention` or `breaking` |
+| `TIDEMARK_NOTIFY_DIGEST` | — | Cron spec for one digest message, e.g. `0 9 * * *` (`CRON_TZ=` works as for the schedule, `off` doesn't); without it a message goes out after each check run that finds something new |
+| `TIDEMARK_PUBLIC_URL` | — | Where you open Tidemark, e.g. `https://tidemark.example.lan`; used for links in messages |
 | `TIDEMARK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `TIDEMARK_DOCKER_SNAPSHOT` | — | Read containers from a `scripts/snapshot.sh` file instead of Docker (development, see [Snapshots](#without-docker-snapshots)) |
 
-An invalid `TIDEMARK_SCHEDULE` or `TIDEMARK_LOG_LEVEL` stops startup. `off` (schedule, icons) is case-insensitive. Registry requests are anonymous, so a private or missing image shows "not found, or private".
+An invalid `TIDEMARK_SCHEDULE`, `TIDEMARK_LOG_LEVEL`, `TIDEMARK_NOTIFY_LEVEL` or `TIDEMARK_PUBLIC_URL` stops startup, and so does setting only one of the Telegram variables or, with Telegram set, an invalid `TIDEMARK_NOTIFY_DIGEST`. `off` (schedule, icons) is case-insensitive. Registry requests are anonymous, so a private or missing image shows "not found, or private".
 
 ### Per-container rules
 
@@ -113,6 +120,23 @@ images:
 Edits apply on the next check, without a restart. A version a rule holds back is still shown, quietly ("18.6 held back by pin 16"). Invalid values are skipped and flagged on the dashboard; a file that doesn't load is reported there too, and the last good one stays in use.
 
 Other labels: `tidemark.icon=<selfh.st reference>` picks an icon (`tidemark` is Tidemark's own, built in), `tidemark.icon=none` hides it.
+
+### Notifications
+
+Tidemark can send a Telegram message when a check finds new updates. Each update is sent once (again only if it turns out riskier, or a snooze runs out), so you won't get the same list every six hours. What's sent and when: [Features → Notifications](docs/FEATURES.md#10-notifications).
+
+1. Message [@BotFather](https://t.me/BotFather), send `/newbot` and copy the token it gives you.
+2. Send your new bot any message, then open `https://api.telegram.org/bot<token>/getUpdates` and copy `"chat":{"id":…}`. For a group, add the bot to the group first; group IDs are negative.
+3. Add both to the `.env` file next to `compose.yaml` and pass them through:
+
+```yaml
+    environment:
+      TIDEMARK_TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TIDEMARK_TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TIDEMARK_PUBLIC_URL: https://tidemark.example.lan   # optional: links in messages
+```
+
+Restart, open Settings and use **Send test message**. The first check run after that sends one message with every update that's pending now.
 
 ## Development
 

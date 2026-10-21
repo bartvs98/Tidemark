@@ -18,6 +18,8 @@ type settingsJSON struct {
 	Checks  scheduleJSON `json:"checks"`
 	Rules   rulesFile    `json:"rules"`
 	Icons   bool         `json:"icons"`
+	// Notifications is absent when notifications are off. It never holds the bot token or chat ID.
+	Notifications *notificationsJSON `json:"notifications,omitempty"`
 }
 
 type githubJSON struct {
@@ -62,6 +64,9 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	if s.checks != nil {
 		out.Checks.NextRunAt = s.checks.Status().NextRunAt
 		out.Rules.Error = s.checks.RulesError()
+	}
+	if s.notify != nil {
+		out.Notifications = toNotificationsJSON(s.notify.Status(r.Context()))
 	}
 	if s.changelogs != nil {
 		out.GitHub.Token = s.changelogs.HasToken()

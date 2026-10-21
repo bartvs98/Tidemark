@@ -579,3 +579,31 @@ func TestWait(t *testing.T) {
 		t.Error("run still marked running after Wait")
 	}
 }
+
+func TestAfterRun(t *testing.T) {
+	var triggers []string
+	s := New(listSource{list: []docker.Container{ctr("a", "team/app:1.0.0", "sha256:1")}}, &countingRegistry{calls: map[string]int{}}, openStore(t, filepath.Join(t.TempDir(), "t.db")), quiet)
+	s.SetAfterRun(func(_ context.Context, trigger string) { triggers = append(triggers, trigger) })
+	runOnce(t, s)
+	if err := s.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(triggers) != 1 || triggers[0] != TriggerManual {
+		t.Errorf("hook calls = %v", triggers)
+	}
+}
+
+func TestAfterRunNotCalledOnRunError(t *testing.T) {
+	called := false
+	s := New(listSource{err: errors.New("can't reach Docker")}, &countingRegistry{calls: map[string]int{}}, openStore(t, filepath.Join(t.TempDir(), "t.db")), quiet)
+	s.SetAfterRun(func(context.Context, string) { called = true })
+	if st := runOnce(t, s); st.Err == "" {
+		t.Fatalf("status = %+v", st)
+	}
+	if err := s.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Error("AfterRun ran after a failed run")
+	}
+}

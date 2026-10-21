@@ -465,3 +465,98 @@ func (s *Store) queryHistory(ctx context.Context, query string, args ...any) ([]
 	}
 	return out, rows.Err()
 }
+
+// ── Notifications ────────────────────────────────────────
+
+// NotifiedKey identifies a sent update: a container and its update's review key.
+type NotifiedKey struct{ Container, Key string }
+
+// Notified is an update that was sent, with the level it was sent with.
+type Notified struct {
+	ContainerName, Key string
+	Level              string // none | attention | breaking
+	NotifiedAt         time.Time
+}
+
+// Notification is one send attempt: an update message, the first message or a test.
+type Notification struct {
+	ID       int64
+	SentAt   time.Time
+	Notifier string // telegram
+	Kind     string // updates | first | test
+	Items    int
+	Error    string // "" when sent
+}
+
+// Notified returns every sent update by container and key.
+func (s *Store) Notified(ctx context.Context) (map[NotifiedKey]Notified, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT container_name, key, level, notified_at FROM notified`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[NotifiedKey]Notified{}
+	for rows.Next() {
+		var n Notified
+		var at string
+		if err := rows.Scan(&n.ContainerName, &n.Key, &n.Level, &at); err != nil {
+			return nil, err
+		}
+		n.NotifiedAt = parseTS(at)
+		out[NotifiedKey{n.ContainerName, n.Key}] = n
+	}
+	return out, rows.Err()
+}
+
+// MarkNotified stores the sent updates in one transaction, replacing earlier rows with
+// the same container and key.
+func (s *Store) MarkNotified(ctx context.Context, rows []Notified) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, n := range rows {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO notified (container_name, key, level, notified_at) VALUES (?, ?, ?, ?)
+			ON CONFLICT (container_name, key) DO UPDATE SET level = excluded.level, notified_at = excluded.notified_at`,
+			n.ContainerName, n.Key, n.Level, ts(n.NotifiedAt)); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// AddNotification logs a send attempt.
+func (s *Store) AddNotification(ctx context.Context, n Notification) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO notifications (sent_at, notifier, kind, items, error) VALUES (?, ?, ?, ?, ?)`,
+		ts(n.SentAt), n.Notifier, n.Kind, n.Items, n.Error)
+	return err
+}
+
+// LastNotification returns the newest send attempt of any kind, failed ones included.
+func (s *Store) LastNotification(ctx context.Context) (Notification, bool, error) {
+	var n Notification
+	var sent string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, sent_at, notifier, kind, items, error FROM notifications ORDER BY id DESC LIMIT 1`).
+		Scan(&n.ID, &sent, &n.Notifier, &n.Kind, &n.Items, &n.Error)
+	if errors.Is(err, sql.ErrNoRows) {
+		return n, false, nil
+	}
+	if err != nil {
+		return n, false, err
+	}
+	n.SentAt = parseTS(sent)
+	return n, true, nil
+}
+
+// SentUpdatesBefore reports whether an update message (or the first message) was ever
+// sent successfully. Tests and failed attempts don't count.
+func (s *Store) SentUpdatesBefore(ctx context.Context) (bool, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM notifications WHERE kind IN ('updates', 'first') AND error = ''`).Scan(&n)
+	return n > 0, err
+}

@@ -303,3 +303,76 @@ func TestHistory(t *testing.T) {
 		t.Errorf("last = %+v, %v", last, err)
 	}
 }
+
+func TestNotified(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	if got, err := s.Notified(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("empty = %v, %v", got, err)
+	}
+	if err := s.MarkNotified(ctx, []Notified{
+		{ContainerName: "sonarr", Key: "5.0.0", Level: "none", NotifiedAt: at},
+		{ContainerName: "radarr", Key: "sha256:b", Level: "attention", NotifiedAt: at},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Upsert: a raised level replaces the row.
+	later := at.Add(time.Hour)
+	if err := s.MarkNotified(ctx, []Notified{{ContainerName: "sonarr", Key: "5.0.0", Level: "breaking", NotifiedAt: later}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Notified(ctx)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("notified = %v, %v", got, err)
+	}
+	if n := got[NotifiedKey{"sonarr", "5.0.0"}]; n.Level != "breaking" || !n.NotifiedAt.Equal(later) {
+		t.Errorf("sonarr = %+v", n)
+	}
+	if n := got[NotifiedKey{"radarr", "sha256:b"}]; n.Level != "attention" || !n.NotifiedAt.Equal(at) {
+		t.Errorf("radarr = %+v", n)
+	}
+	if err := s.MarkNotified(ctx, nil); err != nil {
+		t.Errorf("nothing to mark: %v", err)
+	}
+}
+
+func TestNotifications(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	if _, ok, err := s.LastNotification(ctx); ok || err != nil {
+		t.Fatalf("empty: ok=%v err=%v", ok, err)
+	}
+	sent := func() bool {
+		t.Helper()
+		ok, err := s.SentUpdatesBefore(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	add := func(n Notification) {
+		t.Helper()
+		if err := s.AddNotification(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(Notification{SentAt: at, Notifier: "telegram", Kind: "test"})
+	add(Notification{SentAt: at, Notifier: "telegram", Kind: "first", Items: 3, Error: "telegram: Bad Request: chat not found"})
+	if sent() {
+		t.Error("a test and a failed first message count as sent updates")
+	}
+	n, ok, err := s.LastNotification(ctx)
+	if err != nil || !ok || n.Kind != "first" || n.Items != 3 || n.Error == "" || n.Notifier != "telegram" || !n.SentAt.Equal(at) || n.ID == 0 {
+		t.Errorf("last = %+v, %v, %v", n, ok, err)
+	}
+	add(Notification{SentAt: at.Add(time.Minute), Notifier: "telegram", Kind: "first", Items: 3})
+	if !sent() {
+		t.Error("a sent first message counts")
+	}
+	add(Notification{SentAt: at.Add(2 * time.Minute), Notifier: "telegram", Kind: "test", Error: "boom"})
+	if n, _, _ := s.LastNotification(ctx); n.Kind != "test" || n.Error != "boom" {
+		t.Errorf("last = %+v, want the failed test", n)
+	}
+}
