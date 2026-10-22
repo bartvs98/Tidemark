@@ -92,7 +92,7 @@ func (s *Server) settingsBody(ctx context.Context) settingsJSON {
 		out.Rules.Error = s.checks.RulesError()
 	}
 	if s.notify != nil && s.notify.Enabled() {
-		out.Notifications = toNotificationsJSON(s.notify.Status(ctx))
+		out.Notifications = toNotificationsJSON(s.notify.Status(ctx), out.Checks.NextRunAt)
 	}
 	if s.changelogs != nil {
 		out.GitHub.Token = s.changelogs.HasToken()

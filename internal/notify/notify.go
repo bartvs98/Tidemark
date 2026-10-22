@@ -5,6 +5,7 @@ package notify
 
 import (
 	"context"
+	"time"
 
 	"github.com/bartvs98/tidemark/internal/analysis"
 	"github.com/bartvs98/tidemark/internal/store"
@@ -75,4 +76,5 @@ type Status struct {
 	Digest    string // "" = after each run
 	PublicURL string
 	Last      *store.Notification // newest attempt, nil if none
+	NextAt    *time.Time          // when the digest runs next; nil without a digest
 }

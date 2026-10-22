@@ -17,6 +17,9 @@ type notificationsJSON struct {
 	Digest    string            `json:"digest,omitempty"`
 	PublicURL string            `json:"publicUrl,omitempty"`
 	Last      *notificationJSON `json:"last,omitempty"` // the newest send attempt; absent if none yet
+	// NextAt is when Tidemark next looks for something to send: the next digest, or after
+	// each check the next scheduled check. Absent after each check without a schedule.
+	NextAt *time.Time `json:"nextAt,omitempty"`
 }
 
 type notificationJSON struct {
@@ -26,8 +29,12 @@ type notificationJSON struct {
 	Error string    `json:"error,omitempty"` // absent when it was sent
 }
 
-func toNotificationsJSON(st notify.Status) *notificationsJSON {
-	out := &notificationsJSON{Notifier: st.Notifier, Level: "all", Digest: st.Digest, PublicURL: st.PublicURL}
+// toNotificationsJSON: nextCheck is the next scheduled check (nil without a schedule).
+func toNotificationsJSON(st notify.Status, nextCheck *time.Time) *notificationsJSON {
+	out := &notificationsJSON{Notifier: st.Notifier, Level: "all", Digest: st.Digest, PublicURL: st.PublicURL, NextAt: st.NextAt}
+	if st.Digest == "" {
+		out.NextAt = nextCheck
+	}
 	if st.MinLevel.String() != "none" {
 		out.Level = st.MinLevel.String()
 	}

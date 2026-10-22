@@ -246,6 +246,9 @@ func TestConfigureReplacesDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := h.svc.digestCron
+	if next := h.svc.Status(ctx).NextAt; next == nil || time.Until(*next) <= 0 || time.Until(*next) > time.Hour {
+		t.Errorf("next digest = %v, want within the hour", next)
+	}
 	if err := h.svc.Configure(ctx, h.n, analysis.None, "", "@every 2h"); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +258,7 @@ func TestConfigureReplacesDigest(t *testing.T) {
 	if err := h.svc.Configure(ctx, h.n, analysis.None, "", ""); err != nil {
 		t.Fatal(err)
 	}
-	if h.svc.digestCron != nil || h.svc.Digest() != "" {
+	if h.svc.digestCron != nil || h.svc.Digest() != "" || h.svc.Status(ctx).NextAt != nil {
 		t.Errorf("digest still on: %q", h.svc.Digest())
 	}
 	h.svc.AfterRun(ctx)

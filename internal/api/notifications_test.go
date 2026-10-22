@@ -205,16 +205,23 @@ func TestSettingsNotifications(t *testing.T) {
 
 func TestToNotificationsJSON(t *testing.T) {
 	at := time.Date(2026, 10, 21, 9, 0, 0, 0, time.UTC)
+	digestAt, checkAt := at.Add(24*time.Hour), at.Add(6*time.Hour)
 	got := toNotificationsJSON(notify.Status{
 		Notifier: "telegram", MinLevel: analysis.Breaking, Digest: "0 9 * * *", PublicURL: "https://x.lan",
-		Last: &store.Notification{SentAt: at, Kind: "test", Items: 0, Error: "boom"},
-	})
+		Last:   &store.Notification{SentAt: at, Kind: "test", Items: 0, Error: "boom"},
+		NextAt: &digestAt,
+	}, &checkAt)
 	b, _ := json.Marshal(got)
-	want := `{"notifier":"telegram","level":"breaking","digest":"0 9 * * *","publicUrl":"https://x.lan","last":{"at":"2026-10-21T09:00:00Z","kind":"test","items":0,"error":"boom"}}`
+	want := `{"notifier":"telegram","level":"breaking","digest":"0 9 * * *","publicUrl":"https://x.lan","last":{"at":"2026-10-21T09:00:00Z","kind":"test","items":0,"error":"boom"},"nextAt":"2026-10-22T09:00:00Z"}`
 	if string(b) != want {
 		t.Errorf("got  %s\nwant %s", b, want)
 	}
-	b, _ = json.Marshal(toNotificationsJSON(notify.Status{Notifier: "telegram"}))
+	// After each check, the next send is the next scheduled check.
+	b, _ = json.Marshal(toNotificationsJSON(notify.Status{Notifier: "telegram"}, &checkAt))
+	if string(b) != `{"notifier":"telegram","level":"all","nextAt":"2026-10-21T15:00:00Z"}` {
+		t.Errorf("after each check = %s", b)
+	}
+	b, _ = json.Marshal(toNotificationsJSON(notify.Status{Notifier: "telegram"}, nil))
 	if string(b) != `{"notifier":"telegram","level":"all"}` {
 		t.Errorf("minimal = %s", b)
 	}

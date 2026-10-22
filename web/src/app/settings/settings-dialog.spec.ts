@@ -183,6 +183,21 @@ describe('SettingsDialog', () => {
       expect(text).not.toContain('Failed');
     });
 
+    it('shows when the next message can go out', async () => {
+      const next = async (n: Partial<Notifications>) => {
+        TestBed.resetTestingModule();
+        TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])] });
+        http = TestBed.inject(HttpTestingController);
+        const el = await open(on(n));
+        return el.querySelector('[data-testid="settings-notify-next"]')?.textContent ?? '';
+      };
+      const digest = await next({ digest: '0 9 * * *', nextAt: '2026-10-20T09:00:00Z' });
+      expect(digest).toContain('20 Oct');
+      expect(digest).not.toContain('After the check');
+      expect(await next({ nextAt: '2026-10-20T06:00:00Z' })).toContain('After the check at 20 Oct');
+      expect(await next({})).toContain('none is scheduled');
+    });
+
     it('shows a failed last attempt', async () => {
       const el = await open(on({ last: { at: '2026-10-19T09:00:00Z', kind: 'test', items: 0, error: 'telegram: chat not found' } }));
       const last = el.querySelector('[data-testid="settings-notify-last"]')?.textContent ?? '';
