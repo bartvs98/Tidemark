@@ -342,6 +342,16 @@
       }
     </dd>
   </div>
+  <div class="tm-setting">
+    <dt>Next</dt>
+    <dd data-testid="settings-notify-next">
+      @if (n.nextAt) {
+        {{ n.digest ? '' : 'After the check at ' }}{{ n.nextAt | date: 'd MMM, HH:mm' }}<span class="text-fg-muted">, if anything is new</span>
+      } @else {
+        After the next check<span class="text-fg-muted">, none is scheduled</span>
+      }
+    </dd>
+  </div>
 </ng-template>
 
 <!-- The test uses the saved settings, so it waits while the page has changes. -->

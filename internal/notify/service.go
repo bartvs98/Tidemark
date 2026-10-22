@@ -319,10 +319,18 @@ func (s *Service) Test(ctx context.Context) error {
 
 // Status is what the settings dialog shows (Notifier "" while off). A store error leaves Last nil.
 func (s *Service) Status(ctx context.Context) Status {
-	cfg := s.setup()
+	s.mu.Lock()
+	cfg, c := s.cfg, s.digestCron
+	s.mu.Unlock()
 	st := Status{MinLevel: cfg.minLevel, Digest: cfg.digest, PublicURL: cfg.publicURL}
 	if cfg.n != nil {
 		st.Notifier = cfg.n.Name()
+	}
+	if c != nil {
+		if e := c.Entries(); len(e) > 0 && !e[0].Next.IsZero() {
+			next := e[0].Next
+			st.NextAt = &next
+		}
 	}
 	last, ok, err := s.st.LastNotification(ctx)
 	if err != nil {

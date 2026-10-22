@@ -65,6 +65,8 @@ export interface Settings {
     publicUrl?: string;
     /** The newest send attempt; error is set when it failed. */
     last?: { at: string; kind: 'updates' | 'first' | 'test'; items: number; error?: string };
+    /** When Tidemark next looks for something to send: the next digest, or the next scheduled check. */
+    nextAt?: string;
   };
   /** TIDEMARK_SETTINGS_EDITABLE: the fields can be changed here. */
   editable: boolean;

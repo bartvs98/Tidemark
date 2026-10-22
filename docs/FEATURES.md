@@ -195,7 +195,7 @@ A Telegram message when a check finds new updates. Off until a bot token and cha
   - `TIDEMARK_NOTIFY_LEVEL=attention` or `breaking` leaves out quieter updates. They aren't remembered as sent, so one that later becomes breaking is still new.
   - `TIDEMARK_NOTIFY_DIGEST` (a cron spec) sends one message at that time instead of after each run, with everything new since the last message, judged on the latest check results.
 - **A failed send** is retried at the next run (or digest): nothing is marked as sent.
-- **Settings dialog:** whether notifications are on, the level, after each check or digest, the link base, the last message (or why it failed), and a **Send test message** button (it uses the saved settings, so it waits until unsaved changes are saved). When settings are editable, all of these can be changed there ([§7](#7-checks-failures-and-settings)).
+- **Settings dialog:** whether notifications are on, the level, after each check or digest, the link base, the last message (or why it failed), when the next one can go out (the next digest, or the next scheduled check; only if something is new), and a **Send test message** button (it uses the saved settings, so it waits until unsaved changes are saved). When settings are editable, all of these can be changed there ([§7](#7-checks-failures-and-settings)).
 
 ## Out of scope (for now)
 
