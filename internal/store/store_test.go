@@ -394,3 +394,45 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Errorf("settings = %v, %v", got, err)
 	}
 }
+
+func TestAISummariesRoundTrip(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	if got, err := s.AISummaries(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("empty: %v %v", got, err)
+	}
+	at := time.Date(2026, 10, 1, 12, 0, 0, 123, time.UTC)
+	a := AISummary{Repo: "github.com/a/b", From: "1.0.0", To: "1.2.0", Provider: "anthropic", Model: "m",
+		Changes: []string{"c1", "c2"}, Actions: []string{"a1"}, Verdict: "breaking",
+		Reasons: []AIReason{{Text: "r", Tag: "v1.2.0"}, {Text: "r2"}}, Releases: 2, Omitted: 1,
+		NotesHash: "h", CreatedAt: at}
+	if err := s.PutAISummary(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	// Only a failure so far for another key: no summary fields, nil slices stored as [].
+	f := AISummary{Repo: "github.com/a/b", From: "?", To: "2.0", Error: "rate limited", FailedAt: at}
+	if err := s.PutAISummary(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.AISummaries(ctx)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got %v %v", got, err)
+	}
+	if fmt.Sprintf("%+v", got[0]) != fmt.Sprintf("%+v", a) {
+		t.Errorf("summary:\n got %+v\nwant %+v", got[1], a)
+	}
+	g := got[1]
+	if g.Verdict != "none" || !g.CreatedAt.IsZero() || g.Error != "rate limited" || !g.FailedAt.Equal(at) || g.Changes == nil || len(g.Changes) != 0 {
+		t.Errorf("failure row: %+v", g)
+	}
+
+	// Upsert by key.
+	a.Changes, a.Error, a.FailedAt = []string{"new"}, "", time.Time{}
+	if err := s.PutAISummary(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.AISummaries(ctx)
+	if len(got) != 2 || !slices.Equal(got[0].Changes, []string{"new"}) {
+		t.Errorf("upsert: %+v", got)
+	}
+}

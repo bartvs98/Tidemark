@@ -24,6 +24,9 @@ type detailJSON struct {
 	Image     imageDetail    `json:"image"`
 	Changelog *changelogJSON `json:"changelog,omitempty"` // nil: no source repository found
 	History   []historyJSON  `json:"history"`             // image changes, newest first; always an array
+	// AI is the update's AI summary state; nil when AI is off or there's nothing to summarise
+	// (ignored, no checked update, a channel build, no changelog).
+	AI *aiJSON `json:"ai,omitempty"`
 }
 
 type imageDetail struct {
@@ -118,12 +121,16 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 		res := assess(u.Class, running, latest, ch)
 		if u.Class != string(version.None) && u.Channel == "" { // a channel build isn't judged by stable notes
 			u.Level, u.Reasons = res.Level, res.Reasons
+			s.applyAI(u, repo, running, latest)
 		}
 		for i, rel := range res.Releases {
 			out.Changelog.Releases[i].Level = rel.Level
 			if rel.Hits != nil {
 				out.Changelog.Releases[i].Hits = rel.Hits
 			}
+		}
+		if t, ok := targetFor(u, ref, repo, ch); ok {
+			out.AI = s.aiState(t)
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

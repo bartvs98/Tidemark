@@ -20,6 +20,8 @@ type recorder struct {
 	icons     []string
 	notify    []config.Runtime
 	notifyErr error
+	ai        []config.Runtime
+	aiErr     error
 }
 
 func (r *recorder) appliers() Appliers {
@@ -33,6 +35,7 @@ func (r *recorder) appliers() Appliers {
 			r.icons = append(r.icons, url)
 		},
 		Notify: func(rt config.Runtime) error { r.notify = append(r.notify, rt); return r.notifyErr },
+		AI:     func(rt config.Runtime) error { r.ai = append(r.ai, rt); return r.aiErr },
 	}
 }
 
@@ -241,6 +244,48 @@ func TestUpdateApplierError(t *testing.T) {
 	}
 	if got, _ := st.Settings(context.Background()); got["public_url"] != "https://t.lan" {
 		t.Errorf("not stored: %v", got)
+	}
+}
+
+func TestUpdateAI(t *testing.T) {
+	st := openStore(t)
+	m, r, logs := newManager(t, st, nil, true)
+	if len(r.ai) != 1 || r.ai[0].AI() {
+		t.Fatalf("start applied %+v", r.ai)
+	}
+	err := m.Update(t.Context(), Patch{
+		config.KeyAIProvider: ptr("Anthropic"),
+		config.KeyAIAPIKey:   ptr("sk-ant-secret"),
+		config.KeyAIAutoMin:  ptr("3"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := r.ai[len(r.ai)-1]
+	if !rt.AI() || rt.AIProvider != "anthropic" || rt.AIAPIKey != "sk-ant-secret" || rt.AIAutoMin != 3 {
+		t.Errorf("ai got %+v", rt)
+	}
+	if v := view(m, config.KeyAIAPIKey); v.Value != "" || !v.Set {
+		t.Errorf("key view = %+v", v)
+	}
+	if strings.Contains(logs.String(), "sk-ant-secret") {
+		t.Errorf("the key was logged: %s", logs)
+	}
+
+	// openai has no default model, so it can't be stored without one.
+	var fe FieldErrors
+	err = m.Update(t.Context(), Patch{config.KeyAIProvider: ptr("openai")})
+	if !errors.As(err, &fe) || fe["aiModel"] != "needed for the openai provider" || len(fe) != 1 {
+		t.Errorf("openai without model: %v", err)
+	}
+	if err := m.Update(t.Context(), Patch{config.KeyAIProvider: ptr("openai"), config.KeyAIModel: ptr("gpt-x")}); err != nil {
+		t.Errorf("openai with model: %v", err)
+	}
+
+	r.aiErr = errors.New("boom")
+	err = m.Update(t.Context(), Patch{config.KeyAIAutoMin: ptr("0")})
+	if err == nil || !strings.HasPrefix(err.Error(), "AI summaries: boom") || errors.As(err, &fe) {
+		t.Errorf("err = %v", err)
 	}
 }
 

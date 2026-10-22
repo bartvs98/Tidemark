@@ -106,6 +106,10 @@
                   } @else if (reason.tag) {
                     <span class="me-1.5 font-mono text-sm">{{ reason.tag }}</span>
                   }
+                  <!-- Written by the AI summary: marked, and with no line to jump to. -->
+                  @if (reason.source === 'ai') {
+                    <tm-ai-marker class="me-1.5" />
+                  }
                   <span data-testid="reason-text">{{ reason.text }}</span>
                 </li>
               }
@@ -114,6 +118,11 @@
         </tm-callout>
       </div>
     }
+  }
+
+  <!-- ── AI summary (only when AI is on and there's something to summarise) ── -->
+  @if (d.ai; as ai) {
+    <tm-ai-summary [name]="d.container.name" [ai]="ai" (changed)="detail.reload()" class="mb-8" />
   }
 
   <!-- ── Links ──────────────────────────────────────────── -->

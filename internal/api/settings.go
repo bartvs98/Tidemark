@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/bartvs98/tidemark/internal/ai"
 	"github.com/bartvs98/tidemark/internal/config"
 	"github.com/bartvs98/tidemark/internal/settings"
 )
@@ -25,6 +26,8 @@ type settingsJSON struct {
 	Icons   bool         `json:"icons"`
 	// Notifications is absent when notifications are off. It never holds the bot token or chat ID.
 	Notifications *notificationsJSON `json:"notifications,omitempty"`
+	// AI is absent when AI summaries are off. It never holds the API key.
+	AI *aiSettingsJSON `json:"ai,omitempty"`
 
 	Editable bool                 `json:"editable"`         // TIDEMARK_SETTINGS_EDITABLE
 	Fields   map[string]fieldJSON `json:"fields,omitempty"` // by JSON name; absent without a settings manager
@@ -39,6 +42,13 @@ type fieldJSON struct {
 	Set    *bool   `json:"set,omitempty"`
 	Source string  `json:"source"` // env | stored | default
 	Env    string  `json:"env"`
+}
+
+type aiSettingsJSON struct {
+	Provider        string `json:"provider"`          // anthropic | openai | gemini
+	Model           string `json:"model"`             // effective: the provider's default when none is set
+	BaseURL         string `json:"baseUrl,omitempty"` // openai only
+	AutoMinReleases int    `json:"autoMinReleases"`   // 0 = only on demand
 }
 
 type githubJSON struct {
@@ -93,6 +103,17 @@ func (s *Server) settingsBody(ctx context.Context) settingsJSON {
 	}
 	if s.notify != nil && s.notify.Enabled() {
 		out.Notifications = toNotificationsJSON(s.notify.Status(ctx), out.Checks.NextRunAt)
+	}
+	if s.ai != nil {
+		if p, autoMin := s.ai.Status(); p != nil {
+			out.AI = &aiSettingsJSON{Provider: p.Name(), Model: p.Model(), AutoMinReleases: autoMin}
+			if p.Name() == "openai" {
+				out.AI.BaseURL = ai.OpenAIBaseURL
+				if s.settings != nil && s.settings.Runtime().AIBaseURL != "" {
+					out.AI.BaseURL = s.settings.Runtime().AIBaseURL
+				}
+			}
+		}
 	}
 	if s.changelogs != nil {
 		out.GitHub.Token = s.changelogs.HasToken()

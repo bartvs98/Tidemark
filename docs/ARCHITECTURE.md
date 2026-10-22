@@ -24,15 +24,15 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 │   └──┬──────────┬───────────┬────────────┬───────────┬──────┘               │
 │      │          │           │            │           │                       │
 │   docker     registry    changelog     ai         notify       updater       │
-│   (socket)   (OCI v2)    (GitHub/      (later,    (Telegram)   (later,       │
-│      │          │         GitLab)      opt-in)                 gated)        │
+│   (socket)   (OCI v2)    (GitHub/      (opt-in)   (Telegram)   (later,       │
+│      │          │         GitLab)                              gated)        │
 │      │          │           │                                                │
 │   ┌──▼──────────▼───────────▼─────── SQLite (/data/tidemark.db) ──────────┐ │
 │   └────────────────────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────┘
         │                     │                    │
    /var/run/docker.sock   registries          api.github.com, gitlab.com,
-   (via socket-proxy)     (Hub, GHCR, …)      icon CDN, Telegram; later AI
+   (via socket-proxy)     (Hub, GHCR, …)      icon CDN, Telegram, AI provider
 ```
 
 ## Tech stack
@@ -62,7 +62,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   config/                     TIDEMARK_* environment variables; the editable settings' keys, shared validation
                               (Normalize) and precedence (env > stored > default)
   settings/                   editable settings: stored values, validation of a change, applied live through
-                              appliers wired in main (schedule, GitHub token, icons, notifier)
+                              appliers wired in main (schedule, GitHub token, icons, notifier, AI provider)
   docker/                     Source interface: live Engine API client + snapshot file reader
   imageref/                   parse image references (registry, repository, tag, digest)
   icons/                      selfh.st icon index, container → icon matching, cached icon serving, built-in icons (builtin/, embedded)
@@ -74,7 +74,8 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
   changelog/                  GitHub / GitLab releases + CHANGELOG.md, ETag sync into the store, range selection
   analysis/                   breaking-change heuristics: per-line flags, section inheritance, verdict + reasons
   review/                     whether a stored review / snooze still applies (Active)
-  ai/                         (later) summary provider interface + Anthropic impl
+  ai/                         AI summaries: prompt + input cap, Provider interface (Anthropic via its SDK,
+                              OpenAI-compatible for openai and gemini), stored summaries, auto mode
   notify/                     new-update selection (sent once, again when the level rises or a snooze ends),
                               notifier interface + Telegram, digest schedule
   updater/                    (later) gated pull/recreate/rollback
@@ -110,9 +111,9 @@ One check run covers every container (when runs happen: [FEATURES §7](FEATURES.
    - For floating tags, the tag's manifest is `HEAD`ed to detect a new image under the same tag.
    - Containers with the same image and the same rules are checked once.
    - Channel tags (`resolve.Channel`) get `channel` in the API, which skips the verdict.
-4. **Changelog prefetch:** an after-check hook in `cmd/tidemark/main.go`, only for images with an update, capped at 1 min per image. It resolves the source repo and syncs its notes into the store (`changelog.Service.Sync` with the running and latest version; when it refreshes: [FEATURES §4](FEATURES.md#4-changelog-between-versions)). GitHub's first page is a conditional request (ETag), so an unchanged repo costs no quota. The run stores notes but doesn't select a range: the API picks running → latest on read. If nothing was prefetched, the detail endpoint syncs on demand.
+4. **Changelog prefetch:** an after-check hook in `cmd/tidemark/main.go`, only for images with an update (the hook is capped at 3 min per image; the sync inside it at 1 min). It resolves the source repo and syncs its notes into the store (`changelog.Service.Sync` with the running and latest version; when it refreshes: [FEATURES §4](FEATURES.md#4-changelog-between-versions)). GitHub's first page is a conditional request (ETag), so an unchanged repo costs no quota. The run stores notes but doesn't select a range: the API picks running → latest on read. If nothing was prefetched, the detail endpoint syncs on demand.
 5. **Analysis** isn't part of the run. The API computes flags and level from the stored notes on every read (`changelog.Service.Changes` is cached per repo until a sync stores something), so list and detail always agree.
-6. **AI** (later, if enabled): summary + verdict, cached per (repo, from, to).
+6. **AI summary** (auto mode only, [FEATURES §11](FEATURES.md#11-ai-summaries)): in the same after-check hook, after the sync, `ai.Service.Auto` with its own 2-min cap. It builds the request from the stored notes in range (`ai.RequestFrom`) and calls the provider only when the update has at least `TIDEMARK_AI_AUTO_MIN_RELEASES` releases and no current summary (none, or stale: `NotesHash` differs) and the last failure is over 6 h old. One call per key at a time (singleflight). The verdict is applied on read, like the analysis: `api.Server.applyAI` raises the level to it after `assess`, from memory, for the list, the detail page and notifications alike.
 7. **Persist:**
    - Upsert a result per container name. A failed check keeps the last good result (for the same image ref, image ID and rules) and only sets `error`, `error_kind` and `failed_at`; a later success clears them.
    - Record the run (trigger, start/end, images checked, error), and prune results of containers that are gone or now ignored.
@@ -136,7 +137,8 @@ history         id, container_name, image_id, running, prev_image_id, prev_runni
 notified        container_name + key (PK; the review key), level (as sent), notified_at
 notifications   id, sent_at, notifier (telegram), kind (updates|first|test), items (count), error
 settings        key (PK; e.g. schedule, github_token), value (canonical form, secrets in plain text)
-ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reasons_json   (later)
+ai_summaries    repo + from_version + to_version (PK), provider, model, changes_json, actions_json, verdict, reasons_json,
+                releases, omitted, notes_hash, created_at, error, failed_at
 ```
 
 - **Results are keyed by container name,** because Compose gives a recreated container a new ID. Each result records the image ref, image ID and rules fingerprint it was checked with. Once the container runs a different image (after `pull` + `up`) or its rules change, the stored result is ignored until the next check.
@@ -149,6 +151,7 @@ ai_summaries    repo, from_version, to_version, model, summary_md, verdict, reas
 - **Reviews, history and `notified`** are keyed by container name too, and none of them is pruned when a container goes away.
   - `reviews.version` is "read up to" (reviewed) or "until newer than" (snoozed by version); it's '' when snoozed by time, and `until` is set instead. It holds the update's `reviewKey`: the latest version, or a `sha256:…` build digest for a channel tag or an unknown latest. `review.Active` decides on read whether a review still applies.
   - `history.prev_image_id` is '' on a container's first row.
+- **`ai_summaries`:** versions are `ai.VersionKey` (numbers, pre-release and build; no prefix or variant), `from_version` is `?` when the running version is unknown. `created_at` is '' while no attempt has succeeded; a failed attempt sets `error` + `failed_at` and keeps an earlier summary. `notes_hash` covers the versions and every release's tag and body in range, before the cap. All rows are loaded into memory at start; none are pruned.
 - **Tag lists** are cached in memory and in `tag_cache` for 1 h, so restarts don't re-download repos with thousands of tags. Digests are only cached in memory, since HEAD requests are cheap. Concurrent requests for the same tag list or digest share one request.
 - **Registry failures:** a rate-limited tag list (the stored copy, or the error if there's none) is reused for 5 min, so other containers on that repo don't ask the refusing registry again in the same run. A 429 is never retried (go-containerregistry retries other server errors), and digest probing stops at the first rate-limit, timeout, network or registry error.
 
@@ -172,10 +175,12 @@ PATCH /api/settings                 change editable settings: {name: "value" | n
                                     500 stored but applying failed
 POST /api/notifications/test        send a test message; 204, 502 {error} when sending failed, 409 when notifications are off,
                                     501 without a notify service (tests)
+POST /api/containers/{name}/summary make (or remake) the AI summary from the stored notes; waits up to 2 min; 200 + the
+                                    detail's `ai` object, 404 unknown name, 409 AI off, 422 nothing to summarise (ignored,
+                                    no update or changelog, channel build, no releases in range), 502 {error} the provider
+                                    failed (stored too), 501 without an AI service
 GET  /api/icons/{ref}[?variant=light|dark]   app icon from the local cache (fetched from the CDN on first use); built-in ones (`tidemark`) from the binary
 
-later:
-POST /api/containers/{name}/summary   generate AI summary
 ```
 
 Response shapes (Go structs in `internal/api`, TypeScript types in `web/src/app/dashboard/containers.ts` and `detail/detail-types.ts`):
@@ -192,9 +197,10 @@ Response shapes (Go structs in `internal/api`, TypeScript types in `web/src/app/
     - `channel`: the tag, when it's a pre-release channel like `nightly`. `latest` is then the newest stable release and `level` stays `none`.
     - `tagDigest`: the floating tag's current registry digest, when fetched. `reviewKey`: what a review or "snooze until newer" is set against: `latest`, or `tagDigest` for a channel tag or an unknown latest; absent when neither exists.
     - Check state: `checkedAt` (last successful check; absent if none), `error` + `errorKind` + `failedAt` (the latest attempt failed; everything else is the kept result), `tagsFrom` (the tag list was reused from this time because the registry rate-limited it).
-    - Verdict: `level` and `reasons` (`[{text, tag?, line?}]`). Every flagged line is quoted, with its release `tag` and the raw `line`, which equals one of that release's `hits[].line` in the detail response, so the UI can jump to it. The version-jump reason is text only.
+    - Verdict: `level` and `reasons` (`[{text, tag?, line?, source?}]`); AI reasons come last with `source: "ai"` and no `line`. Every flagged line is quoted, with its release `tag` and the raw `line`, which equals one of that release's `hits[].line` in the detail response, so the UI can jump to it. The version-jump reason is text only.
     - Without any successful check, `update` is just `error` + `failedAt` with `source: "unknown"`, `class: "none"`, `level: "none"`.
-- **`GET /api/containers/{name}`** → `{container, image: {digests, labels}, changelog, history}`.
+- **`GET /api/containers/{name}`** → `{container, image: {digests, labels}, changelog, history, ai}`.
+  - `ai`: absent when AI is off, and for ignored containers, channel builds, updates without a checked result, a changelog or any release in range (unless a summary is stored). `{provider, model, autoMinReleases, releases (in range now), generating, summary?, error?, failedAt?}`; `summary` is `{changes, actions, verdict, reasons: [{text, tag?}], provider, model, releases (sent), omitted, createdAt, stale}`.
   - `history`: always an array, newest first: `{at, running, imageId, prevRunning, prevImageId}` (no `prevImageId` on the first entry).
   - `changelog`: absent for ignored containers and when no source repo is found. It holds:
     - `repo`: url, name, and how it was found (`label` | `config` | `image` | `registry` | `known` | `guess`).
@@ -202,9 +208,9 @@ Response shapes (Go structs in `internal/api`, TypeScript types in `web/src/app/
     - `releases` in range, newest first, each with a `level` and its flagged lines as `hits`: `{line, level, match?, section?}`. `match` is the words that set the level; `section` the flagged heading it inherits from, when that's higher.
     - `partial` (older releases not fetched), `error` (last sync failure), `fetchedAt`.
     - `links`: `compare`, `releases`, `running` (source tree at your version), `inList` (GitHub release list at your version).
-- **`GET /api/settings`** → `{version, source, github: {token (bool), rateLimit: {limit, remaining, resetAt} | rateLimitError}, checks: {schedule (absent when off), nextRunAt}, rules: {path, missing, error}, icons, notifications, editable, fields, warnings}`. The quota comes from GitHub's free `/rate_limit` endpoint, cached a minute and updated from the `X-RateLimit-*` headers of every GitHub API response. `rateLimitError` is set when GitHub can't be reached or rejects the token. `notifications` is absent when they're off, otherwise `{notifier: "telegram", level (`all` | `attention` | `breaking`), digest (absent = after each run), publicUrl, last: {at, kind (`updates` | `first` | `test`), items, error}, nextAt}`; `last` is the newest send attempt, absent before the first. `nextAt` is when Tidemark next looks for something to send: the next digest, or after each run the next scheduled check (absent without a schedule).
-  - `editable` (`TIDEMARK_SETTINGS_EDITABLE`), `fields` and `warnings` (stored values that were invalid and skipped; absent when none). `fields` has one entry per editable setting (`schedule`, `githubToken`, `icons`, `iconsUrl`, `telegramBotToken`, `telegramChatId`, `notifyLevel`, `notifyDigest`, `publicUrl`): `{value, source (`env` | `stored` | `default`), env (the env var's name)}`. Secret fields (the two tokens) have `secret: true` and `set` instead of `value`: a token is never returned (tested).
-- **`PATCH /api/settings`** takes a subset of those names; a string sets the value, `null` or `""` removes the stored one (back to the default). Each value goes through the same validation as its env var; a setting whose env var is set can't be changed (field error). Nothing is stored when any field fails. Valid changes are stored in `settings` and applied without a restart: the check cron is replaced (a running check keeps going), the GitHub token swapped (forgetting the old token's rate-limit state), a new icon service started when icons turn on or the URL changes, and the notifier rebuilt (a send in progress finishes with the old one).
+- **`GET /api/settings`** → `{version, source, github: {token (bool), rateLimit: {limit, remaining, resetAt} | rateLimitError}, checks: {schedule (absent when off), nextRunAt}, rules: {path, missing, error}, icons, notifications, editable, fields, warnings}`. The quota comes from GitHub's free `/rate_limit` endpoint, cached a minute and updated from the `X-RateLimit-*` headers of every GitHub API response. `rateLimitError` is set when GitHub can't be reached or rejects the token. `notifications` is absent when they're off, otherwise `{notifier: "telegram", level (`all` | `attention` | `breaking`), digest (absent = after each run), publicUrl, last: {at, kind (`updates` | `first` | `test`), items, error}, nextAt}`; `last` is the newest send attempt, absent before the first. `nextAt` is when Tidemark next looks for something to send: the next digest, or after each run the next scheduled check (absent without a schedule). `ai` is absent when AI summaries are off, otherwise `{provider, model (effective), baseUrl (openai only; the OpenAI URL when none is set), autoMinReleases}`.
+  - `editable` (`TIDEMARK_SETTINGS_EDITABLE`), `fields` and `warnings` (stored values that were invalid and skipped; absent when none). `fields` has one entry per editable setting (`schedule`, `githubToken`, `icons`, `iconsUrl`, `telegramBotToken`, `telegramChatId`, `notifyLevel`, `notifyDigest`, `publicUrl`, `aiProvider`, `aiApiKey`, `aiModel`, `aiBaseUrl`, `aiAutoMinReleases`): `{value, source (`env` | `stored` | `default`), env (the env var's name)}`. Secret fields (the two tokens and the AI key) have `secret: true` and `set` instead of `value`: a token is never returned (tested).
+- **`PATCH /api/settings`** takes a subset of those names; a string sets the value, `null` or `""` removes the stored one (back to the default). Each value goes through the same validation as its env var; a setting whose env var is set can't be changed (field error). Nothing is stored when any field fails. Valid changes are stored in `settings` and applied without a restart: the check cron is replaced (a running check keeps going), the GitHub token swapped (forgetting the old token's rate-limit state), a new icon service started when icons turn on or the URL changes, the notifier rebuilt (a send in progress finishes with the old one), and the AI provider rebuilt (a summary in progress finishes with the old one). The `openai` provider without a model is a field error on `aiModel`.
 - Unknown `/api/*` paths → 404 `{error}`. Icons → 404 when icons are off, the reference is neither built in nor in the selfh.st index, the variant doesn't exist, or the CDN fetch fails.
 - Everything else is the SPA: existing files are served directly (content-hashed assets with a one-year `immutable` cache), extensionless paths get `index.html` (client routes, `no-cache`), a missing file with an extension is a 404. A binary built without the frontend answers 503 with a page explaining how to build it.
 
@@ -226,18 +232,18 @@ What the pages show is in [FEATURES §1](FEATURES.md#1-dashboard) and [§6](FEAT
 - **Container detail** (`detail/`): header card with a compact `tm-tide-gauge` and `.tm-severity-frame`; Changes, Details and History tabs (`TM_TABS`); notes via `tm-markdown` in a `tm-clamp`.
   - A quoted reason jumps to its line: switch to Changes, open `details[data-release]`, `TmClamp.reveal` the `[data-flag~=i]` line, scroll, and ring it with `tm-flag-jumped` for 2 s.
   - Review actions sit on the tab row (`detail/review-actions/`: PUT/DELETE, then `reload()`).
-  - *Later:* AI summary panel, update button with gate status.
-- **Settings dialog** (`settings/settings-dialog.ts` + `.html`, a `tm-dialog size="lg" flush` with `.tm-tabs-vertical` pages: General, Checks, Notifications, GitHub; the page is kept between opens): fetches `/api/settings` each time it opens; the Notifications section's **Send test message** posts to `/api/notifications/test` and reloads it.
+  - **AI summary** (`detail/ai-summary/`): POSTs to `…/summary`, then reloads the detail (the level may rise); while `ai.generating` is true (an auto run) it reloads every 4 s.
+- **Settings dialog** (`settings/settings-dialog.ts` + `.html`, a `tm-dialog size="lg" flush` with `.tm-tabs-vertical` pages: General, Checks, Notifications, AI, GitHub; the page is kept between opens): fetches `/api/settings` each time it opens; the Notifications section's **Send test message** posts to `/api/notifications/test` and reloads it.
 - Dev: `ng serve` (bound to 127.0.0.1) with a proxy for `/api` → `localhost:8080`.
 
 ## Security
 
 - **Docker socket access is root-equivalent**, so Tidemark reaches Docker only through [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) with `CONTAINERS=1 IMAGES=1`, `POST=0` (setup: [README](../README.md#run-it-with-docker); mounting the socket `:ro` doesn't restrict the API). One-click updates ([parked](ROADMAP.md#ideas-parked)) would need `POST=1` and the matching create/start/stop endpoints, as a conscious opt-in (`TIDEMARK_ENABLE_UPDATES`, default off).
 - Container inspect is never called and only image `*_VERSION` variables are read (see Check pipeline).
-- Secrets (the GitHub and bot tokens) come from env vars or, when settings are editable, from the `settings` table (plain text, like the rest of the data dir, so protect the volume). They're write-only in the UI, never returned by the API and never logged (a settings change logs only the names of the keys). The GitHub token is only sent to api.github.com, the bot token only to api.telegram.org. The bot token is part of Telegram's URL, so send errors are stripped of the URL (and any echo of the token) before they're logged, stored in `notifications.error` or returned (tested).
+- Secrets (the GitHub and bot tokens, the AI API key) come from env vars or, when settings are editable, from the `settings` table (plain text, like the rest of the data dir, so protect the volume). They're write-only in the UI, never returned by the API and never logged (a settings change logs only the names of the keys). The GitHub token is only sent to api.github.com, the bot token only to api.telegram.org, the AI key only to the configured provider (the Anthropic SDK runs without its environment defaults, so no `ANTHROPIC_*` variable or credential file is picked up). Provider errors are reduced to a short message without the key before they're logged, stored or returned (tested). The bot token is part of Telegram's URL, so send errors are stripped of the URL (and any echo of the token) before they're logged, stored in `notifications.error` or returned (tested).
 - No auth in v1, so keep it LAN-only or behind your reverse proxy's auth: anyone who can reach it can start checks, mark updates reviewed or snoozed and send test messages (it never touches containers). That's why settings are read-only unless `TIDEMARK_SETTINGS_EDITABLE=true`: an editable chat ID would let anyone on the network redirect the notifications, and an editable bot token or GitHub token could be swapped for someone else's.
 - **Cross-site requests:** API writes (anything but GET/HEAD/OPTIONS under `/api/`) need the header `X-Tidemark: 1`, otherwise 403. A cross-site form or `fetch` can't set it without a CORS preflight, which the server never grants. The SPA adds it in an HTTP interceptor (`csrf-header.interceptor.ts`); scripts calling the API must send it too. Every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`, so other sites can't frame the UI.
-- Release notes are untrusted HTML/markdown, so they're sanitised with DOMPurify before rendering. Images in them never load (that would reveal the viewer's IP to whoever hosts them): each one becomes an "Image: alt" link to its URL. For the AI summary (later), they're passed as data, not instructions.
+- Release notes are untrusted HTML/markdown, so they're sanitised with DOMPurify before rendering. Images in them never load (that would reveal the viewer's IP to whoever hosts them): each one becomes an "Image: alt" link to its URL. For AI summaries they're sent as data in `<release>` delimiters (anything in a body that could close them is escaped), with a system prompt that says never to follow instructions inside them. The answer has to match a JSON schema, is validated and capped (items, length, reason tags must be ones that were sent) and is rendered as plain text, never markdown or HTML.
 - **App icons** are fetched by the server only (browsers never contact the CDN), cached under `$TIDEMARK_DATA_DIR/icons`, and only for references listed in the selfh.st index (no arbitrary URLs or paths); built-in icons are embedded and need no request. Served icons get `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and `X-Content-Type-Options: nosniff`, so a malicious icon can't run script on Tidemark's origin. Requests to the CDN do reveal which icons you use; `TIDEMARK_ICONS=off` avoids them.
 - Runs as non-root (uid 65532) in a distroless image.
 

@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import {
   ICON_NAMES,
   TM_TABS,
+  TmAiMarker,
   TmAppIcon,
   TmBadge,
   TmButton,
@@ -44,8 +45,9 @@ import { ContainerSummary, groupByStack, UpdateInfo } from '../dashboard/contain
 import { ContainerUpdate } from '../dashboard/container-update/container-update';
 import { ContainerVersion } from '../dashboard/container-version/container-version';
 import { ReviewActions } from '../detail/review-actions/review-actions';
+import { AiSummary } from '../detail/ai-summary/ai-summary';
 import { History } from '../detail/history/history';
-import { HistoryEntry } from '../detail/detail-types';
+import { AiState, HistoryEntry } from '../detail/detail-types';
 import { ContainerRuleProblems } from '../dashboard/rule-problems/rule-problems';
 
 /** A sample container from an image ref ("jellyfin/jellyfin:10.9.11", "ghcr.io/owner/app:v1"). */
@@ -111,6 +113,8 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
     TmLevel,
     TmMenu,
     ReviewActions,
+    AiSummary,
+    TmAiMarker,
     History,
     TmSection,
     TmField,
@@ -331,6 +335,41 @@ export class Styleguide {
       container: { ...this.snoozedUntil, review: undefined, update: { ...UPDATE, running: 'dev', class: 'digest', newImage: true } },
     },
   ];
+  /** The AI summary card in each state (the buttons call the API, so here a click only shows an error). */
+  private readonly aiBase: AiState = { provider: 'anthropic', model: 'claude-haiku-5-5', autoMinReleases: 5, releases: 4, generating: false };
+  private readonly aiSummary: NonNullable<AiState['summary']> = {
+    changes: [
+      'Adds a built-in backup job that runs nightly and keeps the last seven copies.',
+      'The web UI now remembers the selected library between visits.',
+      'Fixes a crash when a playlist contains an unreadable file.',
+    ],
+    actions: ['Rename the config key DB_URL to DATABASE_URL before starting v2.0.0.', 'Mount /backups if you want to keep the nightly copies.'],
+    verdict: 'breaking',
+    reasons: [{ text: 'The config key DB_URL was renamed to DATABASE_URL.', tag: 'v2.0.0' }, { text: 'The database is migrated on first start and cannot be rolled back.' }],
+    provider: 'anthropic',
+    model: 'claude-haiku-5-5',
+    releases: 4,
+    omitted: 0,
+    createdAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
+    stale: false,
+  };
+  protected readonly aiStates: { label: string; ai: AiState }[] = [
+    { label: 'Summary, with a breaking verdict', ai: { ...this.aiBase, summary: this.aiSummary } },
+    {
+      label: 'Summary, nothing to flag, some releases left out',
+      ai: { ...this.aiBase, summary: { ...this.aiSummary, verdict: 'none', reasons: [], actions: [], omitted: 3, releases: 20 } },
+    },
+    { label: 'Stale: the notes changed since', ai: { ...this.aiBase, summary: { ...this.aiSummary, verdict: 'attention', stale: true } } },
+    { label: 'No summary yet (automatic from 5 releases)', ai: this.aiBase },
+    { label: 'No summary yet, OpenAI-compatible, auto off', ai: { ...this.aiBase, provider: 'openai', model: 'llama3.1:8b', autoMinReleases: 0, releases: 1 } },
+    { label: 'Generating (an automatic run)', ai: { ...this.aiBase, generating: true } },
+    { label: 'Failed, no summary', ai: { ...this.aiBase, error: 'the API key was rejected', failedAt: '2026-10-22T08:00:00Z' } },
+    {
+      label: 'Failed, an earlier summary is kept',
+      ai: { ...this.aiBase, summary: { ...this.aiSummary, verdict: 'none', reasons: [] }, error: 'rate limited by Anthropic', failedAt: '2026-10-22T08:00:00Z' },
+    },
+  ];
+
   protected readonly historyEntries: HistoryEntry[] = [
     { at: '2026-10-12T07:00:00Z', running: '1.6.0', imageId: 'sha256:3f9a1c0d2b7e8a41', prevRunning: '1.4.2', prevImageId: 'sha256:9b21c4e07a55d013' },
     { at: '2026-10-01T07:00:00Z', imageId: 'sha256:9b21c4e07a55d013', prevImageId: 'sha256:51d0aa7c92e3b6f8' },

@@ -99,6 +99,9 @@ type Reason struct {
 	Text string `json:"text"`           // readable text; for a quote, the flagged line without the tag prefix, not truncated
 	Tag  string `json:"tag,omitempty"`  // quotes only: the release tag the line is from
 	Line string `json:"line,omitempty"` // quotes only: that line's Hit.Line exactly as in Result.Releases[i].Hits, so the UI can find it
+	// Source is "ai" for a reason from an AI summary's verdict (Tag may then be set, Line
+	// never); empty for the heuristics' own.
+	Source string `json:"source,omitempty"`
 }
 
 // Assess combines the version jump with the flags in each release's notes.

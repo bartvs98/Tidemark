@@ -25,6 +25,7 @@ type Appliers struct {
 	GitHubToken func(token string)
 	Icons       func(on bool, url string)
 	Notify      func(rt config.Runtime) error // uses Telegram(), TelegramBotToken/ChatID, NotifyLevel, NotifyDigest, PublicURL
+	AI          func(rt config.Runtime) error // uses AI(), AIProvider, AIAPIKey, AIModel, AIBaseURL, AIAutoMin
 }
 
 // ErrReadOnly is returned by Update unless TIDEMARK_SETTINGS_EDITABLE is on.
@@ -130,7 +131,7 @@ func (m *Manager) Warnings() []string {
 }
 
 // Update validates every key (config.Normalize; a key set by an env var can't be changed
-// here), checks the Telegram pair when the patch touches it, stores the patch, re-resolves
+// here), checks the Telegram pair and the openai model when the patch touches them, stores the patch, re-resolves
 // and calls every applier. Applier errors are joined and returned after storing.
 func (m *Manager) Update(ctx context.Context, p Patch) error {
 	if !m.editable {
@@ -142,7 +143,7 @@ func (m *Manager) Update(ctx context.Context, p Patch) error {
 	errs := FieldErrors{}
 	set := map[string]string{}
 	var remove []string
-	telegram := false
+	telegram, aiModel := false, false
 	for k, raw := range p {
 		f, ok := config.FieldByKey(k)
 		if !ok {
@@ -154,6 +155,7 @@ func (m *Manager) Update(ctx context.Context, p Patch) error {
 			continue
 		}
 		telegram = telegram || k == config.KeyTelegramBotToken || k == config.KeyTelegramChatID
+		aiModel = aiModel || k == config.KeyAIProvider || k == config.KeyAIModel
 		if raw == nil {
 			remove = append(remove, string(k))
 			continue
@@ -184,13 +186,19 @@ func (m *Manager) Update(ctx context.Context, p Patch) error {
 	}
 	// Only when the patch touches the pair, so an unrelated save isn't blocked by a half
 	// pair that was already there (e.g. the token in an env var, the chat ID not set yet).
-	if telegram {
+	// Likewise the openai provider, which has no default model: storing it without one
+	// would fail the AI applier at every start.
+	if telegram || aiModel {
 		rt, _, _, _ := config.Resolve(m.env, stored)
 		switch {
+		case !telegram:
 		case rt.TelegramBotToken != "" && rt.TelegramChatID == "":
 			errs["telegramChatId"] = "needed together with the bot token"
 		case rt.TelegramBotToken == "" && rt.TelegramChatID != "":
 			errs["telegramBotToken"] = "needed together with the chat ID"
+		}
+		if aiModel && rt.AIProvider == "openai" && rt.AIModel == "" {
+			errs["aiModel"] = "needed for the openai provider"
 		}
 		if len(errs) > 0 {
 			return errs
@@ -241,6 +249,11 @@ func (m *Manager) apply(rt config.Runtime) error {
 	if m.a.Notify != nil {
 		if err := m.a.Notify(rt); err != nil {
 			errs = append(errs, fmt.Errorf("notifications: %w", err))
+		}
+	}
+	if m.a.AI != nil {
+		if err := m.a.AI(rt); err != nil {
+			errs = append(errs, fmt.Errorf("AI summaries: %w", err))
 		}
 	}
 	return errors.Join(errs...)

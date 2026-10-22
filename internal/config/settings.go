@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -26,6 +27,11 @@ const (
 	KeyNotifyLevel      Key = "notify_level"
 	KeyNotifyDigest     Key = "notify_digest"
 	KeyPublicURL        Key = "public_url"
+	KeyAIProvider       Key = "ai_provider"
+	KeyAIAPIKey         Key = "ai_api_key"
+	KeyAIModel          Key = "ai_model"
+	KeyAIBaseURL        Key = "ai_base_url"
+	KeyAIAutoMin        Key = "ai_auto_min_releases"
 )
 
 // Field describes an editable setting.
@@ -48,6 +54,11 @@ var Fields = []Field{
 	{Key: KeyNotifyLevel, JSON: "notifyLevel", Env: "TIDEMARK_NOTIFY_LEVEL", Default: "all"},
 	{Key: KeyNotifyDigest, JSON: "notifyDigest", Env: "TIDEMARK_NOTIFY_DIGEST"},
 	{Key: KeyPublicURL, JSON: "publicUrl", Env: "TIDEMARK_PUBLIC_URL"},
+	{Key: KeyAIProvider, JSON: "aiProvider", Env: "TIDEMARK_AI_PROVIDER", Default: "off"},
+	{Key: KeyAIAPIKey, JSON: "aiApiKey", Env: "TIDEMARK_AI_API_KEY", Secret: true},
+	{Key: KeyAIModel, JSON: "aiModel", Env: "TIDEMARK_AI_MODEL"},
+	{Key: KeyAIBaseURL, JSON: "aiBaseUrl", Env: "TIDEMARK_AI_BASE_URL"},
+	{Key: KeyAIAutoMin, JSON: "aiAutoMinReleases", Env: "TIDEMARK_AI_AUTO_MIN_RELEASES", Default: "0"},
 }
 
 // FieldByJSON finds a field by its API name.
@@ -88,7 +99,7 @@ func Normalize(k Key, raw string) (string, error) {
 		return v, validCron(v)
 	case KeyNotifyDigest:
 		return v, validCron(v)
-	case KeyGitHubToken, KeyTelegramBotToken:
+	case KeyGitHubToken, KeyTelegramBotToken, KeyAIAPIKey:
 		if strings.ContainsFunc(v, unicode.IsSpace) {
 			return "", errors.New("must not contain spaces")
 		}
@@ -98,7 +109,7 @@ func Normalize(k Key, raw string) (string, error) {
 			return "off", nil
 		}
 		return "on", nil
-	case KeyIconsURL, KeyPublicURL:
+	case KeyIconsURL, KeyPublicURL, KeyAIBaseURL: // http too: a local Ollama or LM Studio
 		u, err := url.Parse(v)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return "", errors.New("not an absolute http(s) URL")
@@ -116,6 +127,27 @@ func Normalize(k Key, raw string) (string, error) {
 			return lvl, nil
 		}
 		return "", fmt.Errorf("unknown level %q (use all, attention or breaking)", lvl)
+	case KeyAIProvider:
+		p := strings.ToLower(v)
+		switch p {
+		case "off", "anthropic", "openai", "gemini":
+			return p, nil
+		}
+		return "", fmt.Errorf("unknown provider %q (use off, anthropic, openai or gemini)", p)
+	case KeyAIModel:
+		if strings.ContainsFunc(v, unicode.IsSpace) {
+			return "", errors.New("must not contain spaces")
+		}
+		if len(v) > 200 {
+			return "", errors.New("too long (at most 200 characters)")
+		}
+		return v, nil
+	case KeyAIAutoMin:
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 || n > 500 {
+			return "", errors.New("must be a whole number from 0 to 500")
+		}
+		return strconv.Itoa(n), nil
 	}
 	return "", fmt.Errorf("unknown setting %q", k)
 }
@@ -139,6 +171,17 @@ type Runtime struct {
 	NotifyLevel      analysis.Level // None = all
 	NotifyDigest     string         // "" = after each check run
 	PublicURL        string
+	AIProvider       string // anthropic | openai | gemini; "" = off
+	AIAPIKey         string
+	AIModel          string // "" = the provider's default
+	AIBaseURL        string // openai only; "" = OpenAI itself
+	AIAutoMin        int    // summarise updates with at least this many releases after a check; 0 = off
+}
+
+// AI reports whether AI summaries are on: a provider and its API key are set. The openai
+// provider with a base URL needs no key (local servers like Ollama don't ask for one).
+func (r Runtime) AI() bool {
+	return r.AIProvider != "" && (r.AIAPIKey != "" || (r.AIProvider == "openai" && r.AIBaseURL != ""))
 }
 
 // Telegram reports whether both bot token and chat ID are set (notifications on).
@@ -156,7 +199,8 @@ const (
 // Resolve merges env (wins), stored, then defaults. Values in env must already be normalized
 // (Load does that). An invalid stored value is skipped (falls back to the default) and
 // reported in the returned warnings; it never fails. A half Telegram pair (one of token/chat
-// ID effective) leaves notifications off and adds a warning.
+// ID effective) leaves notifications off and adds a warning, as do an AI provider without
+// its key and an AI base URL the provider doesn't use.
 // values holds the effective canonical string per key, secrets included: callers must not
 // expose them.
 func Resolve(env, stored map[Key]string) (rt Runtime, sources map[Key]Source, values map[Key]string, warnings []string) {
@@ -188,16 +232,29 @@ func Resolve(env, stored map[Key]string) (rt Runtime, sources map[Key]Source, va
 		TelegramChatID:   values[KeyTelegramChatID],
 		NotifyDigest:     values[KeyNotifyDigest],
 		PublicURL:        values[KeyPublicURL],
+		AIAPIKey:         values[KeyAIAPIKey],
+		AIModel:          values[KeyAIModel],
+		AIBaseURL:        values[KeyAIBaseURL],
 	}
 	if rt.Schedule == "off" {
 		rt.Schedule = ""
 	}
+	if p := values[KeyAIProvider]; p != "off" {
+		rt.AIProvider = p
+	}
+	rt.AIAutoMin, _ = strconv.Atoi(values[KeyAIAutoMin])
 	_ = rt.NotifyLevel.UnmarshalText([]byte(values[KeyNotifyLevel])) // "all" stays None
 	switch {
 	case rt.TelegramBotToken != "" && rt.TelegramChatID == "":
 		warnings = append(warnings, "Telegram notifications are off: the bot token is set but the chat ID isn't")
 	case rt.TelegramBotToken == "" && rt.TelegramChatID != "":
 		warnings = append(warnings, "Telegram notifications are off: the chat ID is set but the bot token isn't")
+	}
+	if rt.AIProvider != "" && !rt.AI() {
+		warnings = append(warnings, "AI summaries are off: the provider is set but the API key isn't")
+	}
+	if rt.AIBaseURL != "" && rt.AIProvider != "openai" {
+		warnings = append(warnings, "the AI base URL is only used with the openai provider")
 	}
 	return rt, sources, values, warnings
 }

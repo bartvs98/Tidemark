@@ -3,6 +3,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"embed"
@@ -599,4 +600,81 @@ func (s *Store) SaveSettings(ctx context.Context, set map[string]string, remove 
 		}
 	}
 	return tx.Commit()
+}
+
+// ── AI summaries ─────────────────────────────────────────
+
+// AISummary is the stored AI summary of a repo's notes between two versions, plus the
+// last failed attempt.
+type AISummary struct {
+	Repo, From, To, Provider, Model string
+	Changes, Actions                []string
+	Verdict                         string // none | attention | breaking
+	Reasons                         []AIReason
+	Releases, Omitted               int
+	NotesHash                       string
+	CreatedAt                       time.Time // zero = never succeeded
+	Error                           string
+	FailedAt                        time.Time
+}
+
+type AIReason struct {
+	Text string `json:"text"`
+	Tag  string `json:"tag,omitempty"`
+}
+
+// AISummaries returns every stored summary.
+func (s *Store) AISummaries(ctx context.Context) ([]AISummary, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT repo, from_version, to_version, provider, model, changes_json, actions_json, verdict,
+			reasons_json, releases, omitted, notes_hash, created_at, error, failed_at
+		FROM ai_summaries ORDER BY repo, from_version, to_version`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AISummary
+	for rows.Next() {
+		var a AISummary
+		var changes, actions, reasons, created, failed string
+		if err := rows.Scan(&a.Repo, &a.From, &a.To, &a.Provider, &a.Model, &changes, &actions, &a.Verdict,
+			&reasons, &a.Releases, &a.Omitted, &a.NotesHash, &created, &a.Error, &failed); err != nil {
+			return nil, err
+		}
+		if err := errors.Join(json.Unmarshal([]byte(changes), &a.Changes), json.Unmarshal([]byte(actions), &a.Actions),
+			json.Unmarshal([]byte(reasons), &a.Reasons)); err != nil {
+			return nil, fmt.Errorf("store: ai summary %s %s→%s: %w", a.Repo, a.From, a.To, err)
+		}
+		a.CreatedAt, a.FailedAt = parseTS(created), parseTS(failed)
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// PutAISummary stores a summary, replacing the row with the same repo and versions.
+func (s *Store) PutAISummary(ctx context.Context, a AISummary) error {
+	changes, _ := json.Marshal(nonNil(a.Changes))
+	actions, _ := json.Marshal(nonNil(a.Actions))
+	reasons, _ := json.Marshal(nonNil(a.Reasons))
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO ai_summaries (repo, from_version, to_version, provider, model, changes_json, actions_json,
+			verdict, reasons_json, releases, omitted, notes_hash, created_at, error, failed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (repo, from_version, to_version) DO UPDATE SET provider = excluded.provider,
+			model = excluded.model, changes_json = excluded.changes_json, actions_json = excluded.actions_json,
+			verdict = excluded.verdict, reasons_json = excluded.reasons_json, releases = excluded.releases,
+			omitted = excluded.omitted, notes_hash = excluded.notes_hash, created_at = excluded.created_at,
+			error = excluded.error, failed_at = excluded.failed_at`,
+		a.Repo, a.From, a.To, a.Provider, a.Model, string(changes), string(actions),
+		cmp.Or(a.Verdict, "none"), string(reasons), a.Releases, a.Omitted, a.NotesHash,
+		tsOrEmpty(a.CreatedAt), a.Error, tsOrEmpty(a.FailedAt))
+	return err
+}
+
+// nonNil makes a nil slice marshal as [] rather than null.
+func nonNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
 }

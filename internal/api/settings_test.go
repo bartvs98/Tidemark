@@ -11,6 +11,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/bartvs98/tidemark/internal/ai"
 	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/config"
@@ -83,6 +84,8 @@ const (
 	storedBotToken    = "999:STORED-secret-bot"
 	patchedGitHubTok  = "ghp_PATCHED-secret"
 	patchedBotToken   = "777:PATCHED-secret-bot"
+	storedAIKey       = "sk-ant-STORED-secret-key"
+	patchedAIKey      = "sk-PATCHED-secret-key"
 	storedChatID      = "-100555"
 	invalidStoredCron = "every so often"
 )
@@ -95,7 +98,7 @@ type settingsFixture struct {
 }
 
 // newSettingsFixture serves settings with a manager: the GitHub token comes from an env
-// var, the Telegram pair and an invalid schedule are stored.
+// var, the Telegram pair, AI (anthropic + key) and an invalid schedule are stored.
 func newSettingsFixture(t *testing.T, editable bool) settingsFixture {
 	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -106,25 +109,39 @@ func newSettingsFixture(t *testing.T, editable bool) settingsFixture {
 	t.Cleanup(func() { db.Close() })
 	if err := db.SaveSettings(t.Context(), map[string]string{
 		"telegram_bot_token": storedBotToken, "telegram_chat_id": storedChatID, "schedule": invalidStoredCron,
+		"ai_provider": "anthropic", "ai_api_key": storedAIKey, "ai_auto_min_releases": "4",
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	src := docker.NewSnapshot("../docker/testdata/snapshot.json")
 	checks := check.New(src, tagsRegistry{}, db, log)
 	env := map[config.Key]string{config.KeyGitHubToken: envGitHubToken}
+	aiSvc := ai.New(db, log)
 	m := settings.New(db, env, editable, settings.Appliers{
 		Schedule: func(spec string) error { return checks.SetSchedule(t.Context(), spec) },
+		AI: func(rt config.Runtime) error {
+			if !rt.AI() {
+				aiSvc.Configure(nil, 0)
+				return nil
+			}
+			p, err := ai.NewProvider(rt.AIProvider, rt.AIAPIKey, rt.AIModel, rt.AIBaseURL)
+			if err != nil {
+				return err
+			}
+			aiSvc.Configure(p, rt.AIAutoMin)
+			return nil
+		},
 	}, log)
 	if err := m.Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	srv := New(Deps{Version: "t", Log: log, Source: src, Checks: checks, Store: db, Settings: m})
+	srv := New(Deps{Version: "t", Log: log, Source: src, Checks: checks, Store: db, Settings: m, AI: aiSvc})
 	return settingsFixture{h: srv.Handler(fstest.MapFS{}), db: db, checks: checks, m: m}
 }
 
 func noSecrets(t *testing.T, body string) {
 	t.Helper()
-	for _, secret := range []string{envGitHubToken, storedBotToken, patchedGitHubTok, patchedBotToken} {
+	for _, secret := range []string{envGitHubToken, storedBotToken, patchedGitHubTok, patchedBotToken, storedAIKey, patchedAIKey} {
 		if strings.Contains(body, secret) {
 			t.Errorf("body contains %q: %s", secret, body)
 		}
@@ -140,6 +157,7 @@ func TestSettingsFields(t *testing.T) {
 		Fields   map[string]json.RawMessage `json:"fields"`
 		Warnings []string                   `json:"warnings"`
 		Checks   scheduleJSON               `json:"checks"`
+		AI       *aiSettingsJSON            `json:"ai"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -148,12 +166,16 @@ func TestSettingsFields(t *testing.T) {
 		t.Fatalf("body = %s", rec.Body)
 	}
 	want := map[string]string{
-		"schedule":         `{"value":"0 */6 * * *","source":"default","env":"TIDEMARK_SCHEDULE"}`,
-		"githubToken":      `{"secret":true,"set":true,"source":"env","env":"TIDEMARK_GITHUB_TOKEN"}`,
-		"telegramBotToken": `{"secret":true,"set":true,"source":"stored","env":"TIDEMARK_TELEGRAM_BOT_TOKEN"}`,
-		"telegramChatId":   `{"value":"-100555","source":"stored","env":"TIDEMARK_TELEGRAM_CHAT_ID"}`,
-		"notifyDigest":     `{"value":"","source":"default","env":"TIDEMARK_NOTIFY_DIGEST"}`,
-		"icons":            `{"value":"on","source":"default","env":"TIDEMARK_ICONS"}`,
+		"schedule":          `{"value":"0 */6 * * *","source":"default","env":"TIDEMARK_SCHEDULE"}`,
+		"githubToken":       `{"secret":true,"set":true,"source":"env","env":"TIDEMARK_GITHUB_TOKEN"}`,
+		"telegramBotToken":  `{"secret":true,"set":true,"source":"stored","env":"TIDEMARK_TELEGRAM_BOT_TOKEN"}`,
+		"telegramChatId":    `{"value":"-100555","source":"stored","env":"TIDEMARK_TELEGRAM_CHAT_ID"}`,
+		"notifyDigest":      `{"value":"","source":"default","env":"TIDEMARK_NOTIFY_DIGEST"}`,
+		"icons":             `{"value":"on","source":"default","env":"TIDEMARK_ICONS"}`,
+		"aiProvider":        `{"value":"anthropic","source":"stored","env":"TIDEMARK_AI_PROVIDER"}`,
+		"aiApiKey":          `{"secret":true,"set":true,"source":"stored","env":"TIDEMARK_AI_API_KEY"}`,
+		"aiModel":           `{"value":"","source":"default","env":"TIDEMARK_AI_MODEL"}`,
+		"aiAutoMinReleases": `{"value":"4","source":"stored","env":"TIDEMARK_AI_AUTO_MIN_RELEASES"}`,
 	}
 	for name, w := range want {
 		if got := string(body.Fields[name]); got != w {
@@ -165,6 +187,9 @@ func TestSettingsFields(t *testing.T) {
 	}
 	if body.Checks.Schedule != "0 */6 * * *" {
 		t.Errorf("checks = %+v", body.Checks)
+	}
+	if body.AI == nil || *body.AI != (aiSettingsJSON{Provider: "anthropic", Model: ai.DefaultAnthropicModel, AutoMinReleases: 4}) {
+		t.Errorf("ai = %+v", body.AI)
 	}
 }
 
@@ -242,7 +267,8 @@ func TestPatchSettings(t *testing.T) {
 	noSecrets(t, rec.Body.String())
 
 	rec = send(t, f.h, http.MethodPatch, "/api/settings",
-		`{"schedule":"@daily","telegramBotToken":"`+patchedBotToken+`","notifyLevel":"Attention","publicUrl":""}`)
+		`{"schedule":"@daily","telegramBotToken":"`+patchedBotToken+`","notifyLevel":"Attention","publicUrl":"",`+
+			`"aiProvider":"OpenAI","aiApiKey":"`+patchedAIKey+`","aiModel":"gpt-test","aiBaseUrl":"http://ollama.lan:11434/v1/"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("got %d %s", rec.Code, rec.Body)
 	}
@@ -255,12 +281,21 @@ func TestPatchSettings(t *testing.T) {
 		*body.Fields["notifyLevel"].Value != "attention" || !*body.Fields["telegramBotToken"].Set || body.Warnings != nil {
 		t.Errorf("body = %s", rec.Body)
 	}
+	if body.AI == nil || *body.AI != (aiSettingsJSON{Provider: "openai", Model: "gpt-test", BaseURL: "http://ollama.lan:11434/v1", AutoMinReleases: 4}) {
+		t.Errorf("ai = %+v", body.AI)
+	}
 	if body.Checks.Schedule != "@daily" || f.checks.Schedule() != "@daily" {
 		t.Errorf("schedule not applied: %+v, %q", body.Checks, f.checks.Schedule())
 	}
 	got, _ := f.db.Settings(t.Context())
-	if got["telegram_bot_token"] != patchedBotToken || got["schedule"] != "@daily" {
+	if got["telegram_bot_token"] != patchedBotToken || got["schedule"] != "@daily" || got["ai_api_key"] != patchedAIKey {
 		t.Errorf("stored = %v", got)
+	}
+
+	// Provider off: no ai block.
+	rec = send(t, f.h, http.MethodPatch, "/api/settings", `{"aiProvider":"off"}`)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"ai":`) {
+		t.Errorf("ai off: %d %s", rec.Code, rec.Body)
 	}
 
 	// Clear the schedule: back to the default.

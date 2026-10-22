@@ -135,6 +135,15 @@ func TestNormalize(t *testing.T) {
 		{KeyNotifyLevel, "all", "all"},
 		{KeyNotifyDigest, "0 9 * * 1", "0 9 * * 1"},
 		{KeyPublicURL, "http://tidemark.lan:8080/", "http://tidemark.lan:8080"},
+		{KeyAIProvider, "Anthropic", "anthropic"},
+		{KeyAIProvider, "OFF", "off"},
+		{KeyAIProvider, "gemini", "gemini"},
+		{KeyAIAPIKey, "sk-ant-abc", "sk-ant-abc"},
+		{KeyAIModel, "llama3.2:3b", "llama3.2:3b"},
+		{KeyAIBaseURL, "http://ollama:11434/v1/", "http://ollama:11434/v1"},
+		{KeyAIAutoMin, "0", "0"},
+		{KeyAIAutoMin, "007", "7"},
+		{KeyAIAutoMin, "500", "500"},
 	}
 	for _, tt := range ok {
 		got, err := Normalize(tt.key, tt.raw)
@@ -158,6 +167,14 @@ func TestNormalize(t *testing.T) {
 		{KeyTelegramChatID, "12a", "must be a number (a user or group ID) or @channelname"},
 		{KeyTelegramChatID, "@abc", "must be a number"},
 		{KeyNotifyLevel, "loud", `unknown level "loud" (use all, attention or breaking)`},
+		{KeyAIProvider, "Claude", `unknown provider "claude" (use off, anthropic, openai or gemini)`},
+		{KeyAIAPIKey, "sk a", "must not contain spaces"},
+		{KeyAIModel, "gpt 5", "must not contain spaces"},
+		{KeyAIModel, strings.Repeat("m", 201), "too long"},
+		{KeyAIBaseURL, "ollama:11434", "not an absolute http(s) URL"},
+		{KeyAIAutoMin, "501", "must be a whole number from 0 to 500"},
+		{KeyAIAutoMin, "-1", "must be a whole number"},
+		{KeyAIAutoMin, "3.5", "must be a whole number"},
 		{Key("nope"), "x", "unknown setting"},
 	}
 	for _, tt := range bad {
@@ -172,7 +189,7 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestFields(t *testing.T) {
-	if len(Fields) != 9 {
+	if len(Fields) != 14 {
 		t.Fatalf("%d fields", len(Fields))
 	}
 	for _, f := range Fields {
@@ -233,5 +250,32 @@ func TestResolveHalfTelegramPair(t *testing.T) {
 	rt, _, _, warnings = Resolve(map[Key]string{KeyTelegramBotToken: "123:abc"}, map[Key]string{KeyTelegramChatID: "42"})
 	if !rt.Telegram() || len(warnings) != 0 {
 		t.Errorf("telegram %v, warnings %q", rt.Telegram(), warnings)
+	}
+}
+
+func TestResolveAI(t *testing.T) {
+	rt, _, _, warnings := Resolve(nil, nil)
+	if rt.AIProvider != "" || rt.AI() || rt.AIAutoMin != 0 || len(warnings) != 0 {
+		t.Errorf("default: %+v, warnings %q", rt, warnings)
+	}
+	rt, _, _, warnings = Resolve(map[Key]string{KeyAIProvider: "anthropic"}, map[Key]string{KeyAIAPIKey: "sk-x", KeyAIAutoMin: "5"})
+	if !rt.AI() || rt.AIProvider != "anthropic" || rt.AIAPIKey != "sk-x" || rt.AIAutoMin != 5 || len(warnings) != 0 {
+		t.Errorf("anthropic: %+v, warnings %q", rt, warnings)
+	}
+	rt, _, _, warnings = Resolve(nil, map[Key]string{KeyAIProvider: "gemini"})
+	if rt.AI() || len(warnings) != 1 || warnings[0] != "AI summaries are off: the provider is set but the API key isn't" {
+		t.Errorf("no key: %v, warnings %q", rt.AI(), warnings)
+	}
+	// A local OpenAI-compatible server needs no key.
+	rt, _, _, warnings = Resolve(nil, map[Key]string{KeyAIProvider: "openai", KeyAIBaseURL: "http://ollama:11434/v1"})
+	if !rt.AI() || len(warnings) != 0 {
+		t.Errorf("ollama: %v, warnings %q", rt.AI(), warnings)
+	}
+	rt, _, _, warnings = Resolve(nil, map[Key]string{KeyAIProvider: "anthropic", KeyAIAPIKey: "sk-x", KeyAIBaseURL: "http://x.lan"})
+	if !rt.AI() || len(warnings) != 1 || warnings[0] != "the AI base URL is only used with the openai provider" {
+		t.Errorf("base url: %v, warnings %q", rt.AI(), warnings)
+	}
+	if strings.Contains(strings.Join(warnings, " "), "sk-x") {
+		t.Error("warning shows the key")
 	}
 }

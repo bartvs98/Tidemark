@@ -278,6 +278,26 @@
     </div>
   </section>
 
+  <!-- ── AI summary ─────────────────────────────────────── -->
+  <section>
+    <h2 class="mb-1 text-xl font-semibold">AI summary</h2>
+    <p class="mb-4 text-fg-muted">
+      <span class="font-mono text-sm">tm-ai-summary</span> on the detail page, below the verdict callout and only while AI is on. Everything the
+      model wrote is <strong>plain text</strong>. The neutral <span class="font-mono text-sm">tm-ai-marker</span> <tm-ai-marker /> says it was
+      written by a model; it has no colour, since colour means risk. The AI's verdict can only raise the level, never lower it, and its
+      reasons carry the marker in the "Read before updating" callout and "AI: " in the dashboard tooltip. The buttons call the API, so
+      here a click only shows an error.
+    </p>
+    <div class="grid gap-6 lg:grid-cols-2" data-testid="ai-summary-states">
+      @for (s of aiStates; track s.label) {
+        <div>
+          <h3 class="mb-2 text-sm font-medium text-fg-muted">{{ s.label }}</h3>
+          <tm-ai-summary [name]="'styleguide'" [ai]="s.ai" />
+        </div>
+      }
+    </div>
+  </section>
+
   <!-- ── Tooltips ───────────────────────────────────────── -->
   <section>
     <h2 class="mb-1 text-xl font-semibold">Tooltips</h2>

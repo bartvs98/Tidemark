@@ -10,13 +10,14 @@
 - **Release notes in between,** from GitHub or GitLab releases (or `CHANGELOG.md`), with compare links.
 - **Breaking-change flags.** Release notes are scanned for things like "BREAKING", "action required" and removed options. Each update gets a risk level (none / attention / breaking) with the reasons, and the lines that triggered it are highlighted.
 - **Reviewed, snoozed, history.** Mark an update as read up to its latest version, or snooze it for a while or until a newer version; a History tab lists the image changes Tidemark has seen per container.
+- **AI summaries (opt-in, your own key):** a short "what changed / what you need to do" for the releases in between, with a verdict that can only raise the risk level. Anthropic, Gemini, or any OpenAI-compatible endpoint, including a local Ollama.
 - **Telegram notifications** for new updates only, breaking ones first, with an optional daily digest or a breaking-only mode.
 - **Per-container rules** via labels or a config file: ignore, pin to `1.4.x`, no majors, include pre-releases, custom tag pattern, source repo override.
 - **Read-only and private.** Tidemark never changes your containers. It talks to Docker through a read-only socket proxy and never reads container environment variables.
 
 ![The Tidemark dashboard in dark mode](docs/brand/screenshot.png)
 
-Status: **in daily use on a home server.** Checking, changelogs, breaking-change highlighting, rules, reviewing and snoozing, update history and Telegram notifications are done. Next on the [roadmap](docs/ROADMAP.md): AI changelog summaries and stats. Only public images are supported.
+Status: **in daily use on a home server.** Checking, changelogs, breaking-change highlighting, rules, reviewing and snoozing, update history, Telegram notifications and AI summaries are done. Next on the [roadmap](docs/ROADMAP.md): stats. Only public images are supported.
 
 ## Run it with Docker
 
@@ -58,6 +59,7 @@ Recommended: create a [GitHub fine-grained token](https://github.com/settings/pe
 | Container registries (Docker Hub, GHCR, Quay, lscr.io, …) | Tag lists and manifest digests, anonymously; `HEAD` where possible, which doesn't count towards Docker Hub's pull limit |
 | GitHub / GitLab | Release notes and `CHANGELOG.md` for containers with an update; GitHub's remaining API quota when you open Settings (that lookup doesn't count against it) |
 | api.telegram.org | Only with notifications on: the messages, sent with your bot token |
+| Your AI provider (api.anthropic.com, Google, or the base URL you set) | Only with [AI summaries](#ai-summaries) on: the release notes of the summaries you ask for, or of updates over your auto threshold, sent with your API key |
 | cdn.jsdelivr.net | App icons from [selfh.st/icons](https://selfh.st/icons/) (`TIDEMARK_ICONS=off` to disable, or `TIDEMARK_ICONS_URL` for a mirror) |
 
 Nothing else: no telemetry, no accounts.
@@ -81,11 +83,16 @@ Everything can be set by environment variables. The settings marked ✎ can also
 | `TIDEMARK_NOTIFY_LEVEL` ✎ | `all` | Lowest level that's sent: `all`, `attention` or `breaking` |
 | `TIDEMARK_NOTIFY_DIGEST` ✎ | — | Cron spec for one digest message, e.g. `0 9 * * *` (`CRON_TZ=` works as for the schedule, `off` doesn't); without it a message goes out after each check run that finds something new |
 | `TIDEMARK_PUBLIC_URL` ✎ | — | Where you open Tidemark, e.g. `https://tidemark.example.lan`; used for links in messages |
+| `TIDEMARK_AI_PROVIDER` ✎ | `off` | Turns on [AI summaries](#ai-summaries): `anthropic`, `gemini` or `openai` (any OpenAI-compatible endpoint) |
+| `TIDEMARK_AI_API_KEY` ✎ | — | Your API key for that provider; optional for a local server. Only sent to the provider |
+| `TIDEMARK_AI_MODEL` ✎ | provider default | `claude-haiku-5-5` for anthropic, `gemini-flash-latest` for gemini; required for `openai` |
+| `TIDEMARK_AI_BASE_URL` ✎ | `https://api.openai.com/v1` | `openai` only: the endpoint, e.g. `http://ollama:11434/v1` or `https://openrouter.ai/api/v1` |
+| `TIDEMARK_AI_AUTO_MIN_RELEASES` ✎ | `0` | Summarise automatically after a check when an update spans at least this many releases; `0` = only when you click |
 | `TIDEMARK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `TIDEMARK_SETTINGS_EDITABLE` | `false` | `true` lets the Settings dialog change the ✎ settings. Off by default because Tidemark has no login: anyone who can open it could then redirect your notifications. Saved values, tokens included, are stored in the database in the data dir |
 | `TIDEMARK_DOCKER_SNAPSHOT` | — | Read containers from a `scripts/snapshot.sh` file instead of Docker (development, see [Snapshots](#without-docker-snapshots)) |
 
-An invalid value in any of these variables stops startup (the dialog checks its fields the same way), and so does setting only one of the Telegram variables, unless settings are editable and the other one is saved in the dialog. `off` (schedule, icons) is case-insensitive. Registry requests are anonymous, so a private or missing image shows "not found, or private".
+An invalid value in any of these variables stops startup (the dialog checks its fields the same way), and so does setting only one of the Telegram variables, unless settings are editable and the other one is saved in the dialog, or `TIDEMARK_AI_PROVIDER=openai` without `TIDEMARK_AI_MODEL`. `off` (schedule, icons) is case-insensitive. Registry requests are anonymous, so a private or missing image shows "not found, or private".
 
 ### Per-container rules
 
@@ -138,6 +145,22 @@ Tidemark can send a Telegram message when a check finds new updates. Each update
 ```
 
 Restart (env vars only), open Settings and use **Send test message**. The first check run after that sends one message with every update that's pending now.
+
+### AI summaries
+
+Tidemark can have a model summarise the release notes between your version and the latest one: what changed, what you need to do, and a verdict. The verdict can only raise an update's level (an AI "none" never hides a breaking flag), and the level counts everywhere, notifications included. How it decides and what's stored: [Features → AI summaries](docs/FEATURES.md#11-ai-summaries).
+
+Bring your own key. With `TIDEMARK_SETTINGS_EDITABLE=true` set it up under **Settings → AI**, or with env vars:
+
+```yaml
+    environment:
+      TIDEMARK_AI_PROVIDER: anthropic                 # or gemini, or openai
+      TIDEMARK_AI_API_KEY: ${AI_API_KEY:-}
+      # TIDEMARK_AI_MODEL: claude-haiku-5-5           # the default for anthropic
+      # TIDEMARK_AI_AUTO_MIN_RELEASES: 5              # also summarise big jumps after each check
+```
+
+For a local model, use `TIDEMARK_AI_PROVIDER: openai` with `TIDEMARK_AI_BASE_URL: http://ollama:11434/v1` and a `TIDEMARK_AI_MODEL` that supports structured (JSON schema) output; no key needed. Nothing is sent until you click **Summarise** on a container's page, unless you set an auto threshold. A summary is stored per version range, so each range costs one call; at most about 120,000 characters of notes go out per summary.
 
 ## Development
 

@@ -276,13 +276,16 @@ func timeOrNil(t time.Time) *time.Time {
 }
 
 // assessUpdate sets the update's level from the version jump and the release notes that
-// are already stored (the check run prefetches them). It never fetches. Latest is already
-// within any pin or major hold, so held-back releases don't count.
+// are already stored (the check run prefetches them), raised by a stored AI verdict. It
+// never fetches. Latest is already within any pin or major hold, so held-back releases
+// don't count.
 func (s *Server) assessUpdate(ctx context.Context, u *updateJSON, c docker.Container, ref imageref.Ref, rs rules.Rules) {
 	running, latest := parseVersion(u.Running), parseVersion(u.Latest)
 	var ch changelog.Changes
+	var repo source.Repo
+	found := false
 	if s.changelogs != nil && ref.Repository != "" {
-		if repo, _, ok := source.Resolve(c, ref, rs); ok {
+		if repo, _, found = source.Resolve(c, ref, rs); found {
 			var err error
 			if ch, err = s.changelogs.Changes(ctx, repo, running, latest); err != nil {
 				s.log.Debug("stored release notes unavailable", "repo", repo.Key(), "err", err)
@@ -291,6 +294,9 @@ func (s *Server) assessUpdate(ctx context.Context, u *updateJSON, c docker.Conta
 	}
 	res := assess(u.Class, running, latest, ch)
 	u.Level, u.Reasons = res.Level, res.Reasons
+	if found {
+		s.applyAI(u, repo, running, latest)
+	}
 }
 
 func assess(class string, running, latest *version.Version, ch changelog.Changes) analysis.Result {

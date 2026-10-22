@@ -12,6 +12,40 @@ export interface ContainerDetailData {
   changelog?: Changelog;
   /** Image changes detected per check, newest first; the last entry (no `prevImageId`) is when tracking started. */
   history: HistoryEntry[];
+  /** The AI summary state; absent when AI is off or there is nothing to summarise (internal/api/detail.go). */
+  ai?: AiState;
+}
+
+export type AiProvider = 'anthropic' | 'openai' | 'gemini';
+
+/** The AI summary of this update and what a new one would cover; also the answer to POST /api/containers/{name}/summary. */
+export interface AiState {
+  provider: AiProvider;
+  model: string;
+  /** 0 = automatic summaries are off. */
+  autoMinReleases: number;
+  /** Releases in range now: what a summary would cover. */
+  releases: number;
+  generating: boolean;
+  summary?: AiSummaryData;
+  /** The last attempt failed (a kept summary may still be there). */
+  error?: string;
+  failedAt?: string;
+}
+
+export interface AiSummaryData {
+  /** All model-written text is plain text: never render it as HTML or markdown. */
+  changes: string[];
+  actions: string[];
+  verdict: 'none' | 'attention' | 'breaking';
+  reasons: { text: string; tag?: string }[];
+  provider: string;
+  model: string;
+  releases: number;
+  omitted: number;
+  createdAt: string;
+  /** The release notes in range changed since this summary was made. */
+  stale: boolean;
 }
 
 /** One detected change of the container's image (internal/store history). */

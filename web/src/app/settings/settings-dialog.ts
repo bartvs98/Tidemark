@@ -30,7 +30,12 @@ export type SettingKey =
   | 'telegramChatId'
   | 'notifyLevel'
   | 'notifyDigest'
-  | 'publicUrl';
+  | 'publicUrl'
+  | 'aiProvider'
+  | 'aiApiKey'
+  | 'aiModel'
+  | 'aiBaseUrl'
+  | 'aiAutoMinReleases';
 
 /** One editable setting: its effective value (never for secrets: only `set`), where it comes from and its env var. */
 export interface SettingField {
@@ -70,13 +75,15 @@ export interface Settings {
   };
   /** TIDEMARK_SETTINGS_EDITABLE: the fields can be changed here. */
   editable: boolean;
+  /** Absent when AI summaries are off. `model` is the effective one, `baseUrl` is set for the openai provider only. */
+  ai?: { provider: 'anthropic' | 'openai' | 'gemini'; model: string; baseUrl?: string; autoMinReleases: number };
   /** Absent when the server has no settings manager (then nothing is editable). */
   fields?: Record<SettingKey, SettingField>;
   /** Stored values that were ignored, a half Telegram pair… */
   warnings?: string[];
 }
 
-export type SettingsPage = 'general' | 'checks' | 'notifications' | 'github';
+export type SettingsPage = 'general' | 'checks' | 'notifications' | 'ai' | 'github';
 
 export const NOTIFY_LEVELS = {
   all: 'All updates',
@@ -84,11 +91,22 @@ export const NOTIFY_LEVELS = {
   breaking: 'Breaking only',
 } as const;
 
+export const AI_PROVIDERS = {
+  off: 'Off',
+  anthropic: 'Anthropic',
+  openai: 'OpenAI-compatible',
+  gemini: 'Gemini',
+} as const;
+
+/** What the model field shows when empty: the provider's default (the server's `ai.DefaultAnthropicModel`, …). */
+const AI_DEFAULT_MODEL: Record<string, string> = { anthropic: 'claude-haiku-5-5', gemini: 'gemini-flash-latest', openai: 'required' };
+
 /** The editable settings on each page; each page saves only its own. */
 const PAGE_KEYS: Record<SettingsPage, readonly SettingKey[]> = {
   general: ['icons', 'iconsUrl'],
   checks: ['schedule'],
   notifications: ['telegramBotToken', 'telegramChatId', 'notifyLevel', 'notifyDigest', 'publicUrl'],
+  ai: ['aiProvider', 'aiApiKey', 'aiModel', 'aiBaseUrl', 'aiAutoMinReleases'],
   github: ['githubToken'],
 };
 const PAGES = Object.keys(PAGE_KEYS) as SettingsPage[];
@@ -101,8 +119,8 @@ type Patch = Partial<Record<SettingKey, string | null>>;
 /**
  * The settings dialog behind the header's gear button. It shows how Tidemark is configured on
  * pages behind side tabs (a tab row on phones): General (version, container source, icons,
- * styleguide link), Checks, Notifications (a block per provider, with its test button) and
- * GitHub (token, quota). Settings are fetched each time it opens; the page stays where it was.
+ * styleguide link), Checks, Notifications (a block per provider, with its test button), AI
+ * (provider, key, model, auto threshold) and GitHub (token, quota). Settings are fetched each time it opens; the page stays where it was.
  *
  * Read-only unless the server says `editable` (TIDEMARK_SETTINGS_EDITABLE=true): then each page
  * shows a form for its settings and a Save / Discard bar once it has changes. Save sends only
@@ -150,6 +168,8 @@ export class SettingsDialog {
 
   protected readonly levels = NOTIFY_LEVELS;
   protected readonly levelOptions: SelectOption[] = Object.entries(NOTIFY_LEVELS).map(([value, label]) => ({ value, label }));
+  protected readonly aiProviders = AI_PROVIDERS;
+  protected readonly aiProviderOptions: SelectOption[] = Object.entries(AI_PROVIDERS).map(([value, label]) => ({ value, label }));
   protected readonly testing = signal(false);
 
   /** The editable fields, or null when the settings are read-only. */
@@ -276,6 +296,15 @@ export class SettingsDialog {
     }
     return out;
   }
+
+  /** The provider being edited (the pending edit, else what's in effect); "off" when none. */
+  protected readonly aiProvider = computed(() => this.value('aiProvider') || 'off');
+  protected readonly aiModelPlaceholder = computed(() => AI_DEFAULT_MODEL[this.aiProvider()] ?? '');
+  /** The auto threshold as edited, 0 when unset or not a number. */
+  protected readonly aiAuto = computed(() => {
+    if (!this.fields()) return (this.settings.hasValue() && this.settings.value().ai?.autoMinReleases) || 0;
+    return Number.parseInt(this.value('aiAutoMinReleases'), 10) || 0;
+  });
 
   /** What the last attempt sent, e.g. "3 updates" or "test message". */
   protected sentWhat(last: NonNullable<NonNullable<Settings['notifications']>['last']>): string {

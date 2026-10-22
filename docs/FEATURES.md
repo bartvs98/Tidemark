@@ -122,14 +122,15 @@ Rules that keep it honest (tuned on ~900 real releases):
 - Code blocks and HTML comments are ignored.
 - **It says why.** Each flagged line records the words that set its level, or the heading it inherits from. In the notes those words get a dotted underline, and hovering the line says "Attention · matched “is removed”" or "Breaking · under “⚠ BREAKING CHANGES”".
 
-The level is computed from the stored notes on every request, so the dashboard and the detail page always agree. Without stored notes (e.g. rate limited) only the version jump counts.
+The level is computed from the stored notes on every request, so the dashboard and the detail page always agree. Without stored notes (e.g. rate limited) only the version jump counts. With AI summaries on, the AI verdict can raise the level, never lower it ([§11](#11-ai-summaries)).
 
 ## 6. Container detail page
 
 `/containers/<name>`.
 
 - **Header:** version change and badges, a compact tide gauge with "N releases behind" ("N+" when the list may be cut off), and for breaking or attention a slowly circling border in the level's colour.
-- **Verdict callout:** quotes every flagged line in full, breaking first. Each quote's release tag jumps to that line in the notes.
+- **Verdict callout:** quotes every flagged line in full, breaking first. Each quote's release tag jumps to that line in the notes. Reasons from an AI summary follow, marked "AI" (no jump: they aren't quotes).
+- **Summary card** (with AI summaries on, below the callout): the AI summary of the notes in range, or a button to make one ([§11](#11-ai-summaries)).
 - **Links:**
   - **Compare** (`…/compare/v1.4.2...v1.6.0`) using the repo's own tag names, only when both versions have a matching tag.
   - **"`<running>` in releases"** (GitHub): the releases page that holds your version, scrolled to it, so you see it next to everything newer.
@@ -149,8 +150,8 @@ The level is computed from the stored notes on every request, so the dashboard a
   - A failed check still counts as checked, so it doesn't force a check at startup.
   - Failures are per container and per stage: when GitHub is rate limited, the version info still shows and only the notes are stale.
 - **Rate-limited tag lists** fall back to the stored list, so the check still succeeds (the detail page says "Tag list from <time>"). That registry isn't asked again for the repo for 5 min, and a rate limit is never retried straight away.
-- **Settings dialog** (gear in the header): read-only unless `TIDEMARK_SETTINGS_EDITABLE=true` (no login, so editing is opt-in). Pages (General, Checks, Notifications, GitHub) behind side tabs, a tab row on phones. It shows whether a GitHub token is set (never the token), GitHub's remaining quota, the schedule and next run, the rules file and whether it loaded, the container source, whether icons are on, the notification settings with a test button ([§10](#10-notifications)), a link to the styleguide, and the version.
-  - **Editable settings:** the schedule, the GitHub token, icons on/off and their URL, and everything for Telegram (bot token, chat ID, level, digest, links). Each page saves on its own (Save / Discard appear once something changed); an invalid value shows its error under the field and nothing on the page is saved. Changes apply without a restart.
+- **Settings dialog** (gear in the header): read-only unless `TIDEMARK_SETTINGS_EDITABLE=true` (no login, so editing is opt-in). Pages (General, Checks, Notifications, AI, GitHub) behind side tabs, a tab row on phones. It shows whether a GitHub token is set (never the token), GitHub's remaining quota, the schedule and next run, the rules file and whether it loaded, the container source, whether icons are on, the notification settings with a test button ([§10](#10-notifications)), the AI provider, model and auto threshold ([§11](#11-ai-summaries)), a link to the styleguide, and the version.
+  - **Editable settings:** the schedule, the GitHub token, icons on/off and their URL, everything for Telegram (bot token, chat ID, level, digest, links) and everything for AI summaries (provider, API key, model, base URL, auto threshold) on the AI page. Saving the `openai` provider without a model is refused (it has no default). Each page saves on its own (Save / Discard appear once something changed); an invalid value shows its error under the field and nothing on the page is saved. Changes apply without a restart.
   - **Precedence:** an env var wins and its field is locked ("Set by `TIDEMARK_SCHEDULE`"); otherwise the saved value, then the default. A saved value that's no longer valid is skipped (default used) and shown as a warning on the General page. Startup-only settings (listen address, data dir, Docker host, snapshot, log level, rules file) stay env-only; the rules file is still edited by hand.
   - **Tokens are write-only:** the dialog shows whether one is set, with Replace and Clear, but never the token itself.
   - The quota is updated from every GitHub response, so it's current right after a check. Without a token it's per IP address, shared with other tools on the server, and the dialog says so.
@@ -196,6 +197,21 @@ A Telegram message when a check finds new updates. Off until a bot token and cha
   - `TIDEMARK_NOTIFY_DIGEST` (a cron spec) sends one message at that time instead of after each run, with everything new since the last message, judged on the latest check results.
 - **A failed send** is retried at the next run (or digest): nothing is marked as sent.
 - **Settings dialog:** whether notifications are on, the level, after each check or digest, the link base, the last message (or why it failed), when the next one can go out (the next digest, or the next scheduled check; only if something is new), and a **Send test message** button (it uses the saved settings, so it waits until unsaved changes are saved). When settings are editable, all of these can be changed there ([§7](#7-checks-failures-and-settings)).
+
+## 11. AI summaries
+
+Opt-in: off until a provider is configured, by env vars or on the settings dialog's AI page ([README → AI summaries](../README.md#ai-summaries)). Nothing is sent to a model while it's off. Code: `internal/ai`.
+
+- **Providers:** `anthropic` (default model `claude-haiku-5-5`), `gemini` (default `gemini-flash-latest`) and `openai`: any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, LM Studio) by its base URL, with a model you name. A local server needs no API key.
+- **What it writes:** a few short items on what changed, what you need to do before or after updating (left out when nothing), and a verdict (none / attention / breaking) with its reasons. All of it is shown as plain text.
+- **The verdict only raises.** The level everywhere (dashboard, filters, detail page, notifications) is the higher of the heuristic level ([§5](#5-breaking-change-highlighting)) and the AI verdict; an AI "none" never quiets a heuristic "breaking". A raise is sent as "level raised" like any other ([§10](#10-notifications)). AI reasons follow the quoted lines, marked "AI". Verdicts only count while AI is on.
+- **When it runs:**
+  - **On demand:** "Summarise N releases" on the detail page (it says which provider and model the notes go to), and "Regenerate" on an existing summary.
+  - **Automatically** with `TIDEMARK_AI_AUTO_MIN_RELEASES` set: right after a check, for updates with at least that many releases in range, so the verdict is there before the notification goes out. A failed automatic attempt isn't retried for 6 h.
+- **One summary per range:** stored per repo and version range (running → latest), shared by containers on the same image, and kept across restarts. Changing the model doesn't throw summaries away. When the notes in range change afterwards (say the latest release's notes arrived later), the card says so: the summary and its verdict still apply, Regenerate makes a new one, and auto mode does that by itself.
+- **Long ranges:** at most 120,000 characters of notes are sent (each release cut at 20,000). Over that, breaking releases go first, then attention ones, then the rest, newest first; the card says how many were left out.
+- **Failures** (key rejected, rate limited, model not found, the model declined, …) show on the card with Retry; a summary from before stays.
+- **Safety:** release notes go to the model as data in delimiters, with an instruction never to follow what's inside them; the answer must match a fixed JSON schema and is checked and capped before it's stored.
 
 ## Out of scope (for now)
 
