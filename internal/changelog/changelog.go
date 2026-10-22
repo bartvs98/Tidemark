@@ -3,8 +3,9 @@
 //
 // Sources, per repository: GitHub/GitLab releases, or, for repos without releases,
 // the sections of CHANGELOG.md (or CHANGES.md). Notes are refreshed at most every
-// freshFor; GitHub requests are conditional (ETag), and "304 Not Modified" answers
-// don't count against GitHub's rate limit (60 requests/hour without a token).
+// freshFor, or every latestRetry while they don't have the latest version yet; GitHub
+// requests are conditional (ETag), and "304 Not Modified" answers don't count against
+// GitHub's rate limit (60 requests/hour without a token).
 package changelog
 
 import (
@@ -34,6 +35,7 @@ const (
 	KindNone      = "none"
 
 	freshFor     = 6 * time.Hour
+	latestRetry  = time.Hour // as long as registry tag lists are cached
 	perPage      = 100
 	maxPages     = 5
 	maxBodyBytes = 32 << 20
@@ -94,7 +96,10 @@ func New(st *store.Store, githubToken string, log *slog.Logger, opts ...Option) 
 
 // Sync makes sure the repo's notes are stored and fresh. need is the oldest version
 // that should be covered (the running version); with nil only the newest are needed.
-func (s *Service) Sync(ctx context.Context, repo source.Repo, need *version.Version) error {
+// latest is the newest version the registry has (nil if unknown): notes without it are
+// fetched again after latestRetry instead of freshFor, so a new release gets its notes
+// soon after its image appears.
+func (s *Service) Sync(ctx context.Context, repo source.Repo, need, latest *version.Version) error {
 	key := repo.Key()
 	unlock := s.lock(key)
 	defer unlock()
@@ -103,7 +108,8 @@ func (s *Service) Sync(ctx context.Context, repo source.Repo, need *version.Vers
 	if err != nil {
 		return err
 	}
-	if known && time.Since(st.FetchedAt) < freshFor && s.covered(ctx, key, st, need) {
+	if age := time.Since(st.FetchedAt); known && age < freshFor && s.covered(ctx, key, st, need) &&
+		(age < latestRetry || s.hasLatest(ctx, key, st, latest)) {
 		return nil
 	}
 	defer s.forget(key) // anything below may store new notes or state
@@ -185,6 +191,31 @@ func (s *Service) covered(ctx context.Context, key string, st store.RepoState, n
 		}
 	}
 	return len(rels) >= maxPages*perPage
+}
+
+// hasLatest: the stored notes have the latest version or a newer one, or there's nothing
+// to look for. Builds and numeric suffixes don't count ("4.0.12-ls266" is the image of
+// release "v4.0.12"). A repo without notes keeps the plain freshFor: asking it more
+// often would cost API quota for notes that most likely still don't exist.
+func (s *Service) hasLatest(ctx context.Context, key string, st store.RepoState, latest *version.Version) bool {
+	if latest == nil || st.Kind == KindNone {
+		return true
+	}
+	rels, err := s.store.Releases(ctx, key)
+	if err != nil {
+		return false
+	}
+	want := *latest
+	want.Build, want.Suffix = 0, nil
+	for _, r := range rels {
+		if v, ok := parseTag(r.Tag); ok {
+			v.Build, v.Suffix = 0, nil
+			if version.Compare(v, want) >= 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Service) syncChangelogFile(ctx context.Context, repo source.Repo, st *store.RepoState) error {

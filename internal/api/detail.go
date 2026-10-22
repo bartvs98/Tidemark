@@ -102,7 +102,7 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	// Usually prefetched by the check run; otherwise fetch now, but don't hang the page.
 	ctx, cancel := context.WithTimeout(r.Context(), detailSyncTimeout)
-	if err := s.changelogs.Sync(ctx, repo, running); err != nil {
+	if err := s.changelogs.Sync(ctx, repo, running, latest); err != nil {
 		s.log.Debug("changelog sync failed", "repo", repo.Key(), "err", err)
 	}
 	cancel()
