@@ -109,6 +109,50 @@ describe('ContainerDetail', () => {
     expect(li.querySelector('.font-mono')?.textContent).toBe('2026.10.0');
   });
 
+  describe('AI summary', () => {
+    const AI = { provider: 'anthropic', model: 'claude-haiku-5-5', autoMinReleases: 0, releases: 2, generating: false } as const;
+
+    it('puts the summary card below the verdict callout and above the links, only when the server sends ai', async () => {
+      const el = await render('homeassistant', (req) => req.flush(detail({ ai: AI })));
+      const card = el.querySelector('[data-testid="ai-summary"]')!;
+      expect(card).not.toBeNull();
+      expect(el.querySelector('[data-testid="reasons"]')!.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(card.compareDocumentPosition(el.querySelector('[data-testid="links"]')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('has no summary card when AI is off', async () => {
+      const el = await render('homeassistant', (req) => req.flush(detail()));
+      expect(el.querySelector('[data-testid="ai-summary"]')).toBeNull();
+    });
+
+    it('reloads the detail after a summary was made, since the level may rise', async () => {
+      const el = await render('homeassistant', (req) => req.flush(detail({ ai: AI })));
+      (el.querySelector('[data-testid="ai-generate"]') as HTMLButtonElement).click();
+      await TestBed.inject(ApplicationRef).whenStable();
+      http.expectOne('/api/containers/homeassistant/summary').flush({ ...AI });
+      await new Promise((r) => setTimeout(r));
+      TestBed.inject(ApplicationRef).tick();
+      http.expectOne('/api/containers/homeassistant').flush(detail({ ai: AI }));
+      await TestBed.inject(ApplicationRef).whenStable();
+    });
+
+    it('marks AI reasons, with no jump button even though a heuristic quote has one', async () => {
+      const d = detail({ ai: AI });
+      d.container.update!.reasons = [
+        { text: 'removed X', tag: '2026.10.0', line: '- removed X' },
+        { text: 'The config key was renamed.', tag: '2026.10.0', source: 'ai' },
+        { text: 'No way back.', source: 'ai' },
+      ];
+      const el = await render('homeassistant', (req) => req.flush(d));
+      const items = [...el.querySelectorAll('[data-testid="reasons"] [data-testid="reason"]')];
+      expect(items.map((li) => li.querySelector('[data-testid="ai-marker"]') !== null)).toEqual([false, true, true]);
+      expect(items[0].querySelector('[data-testid="reason-jump"]')).not.toBeNull();
+      expect(items[1].querySelector('button')).toBeNull();
+      expect(items[1].querySelector('.font-mono')?.textContent).toBe('2026.10.0');
+      expect(items[2].querySelector('button')).toBeNull();
+    });
+  });
+
   it('jumps from a quoted reason to its line: Changes tab, release opened, scrolled, focused, highlighted', async () => {
     const original = Element.prototype.scrollIntoView;
     const scrollIntoView = vi.fn();

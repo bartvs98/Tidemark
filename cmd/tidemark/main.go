@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bartvs98/tidemark/internal/ai"
 	"github.com/bartvs98/tidemark/internal/api"
 	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/check"
@@ -41,6 +42,12 @@ var version = "dev"
 // startupCheckAge: at startup, check only if the last check finished longer ago than this
 // (or a container has no valid result).
 const startupCheckAge = time.Hour
+
+// Caps for the after-check hook's two parts (check.afterCheckTimeout caps the whole hook).
+const (
+	prefetchTimeout = time.Minute
+	autoAITimeout   = 2 * time.Minute
+)
 
 func main() {
 	cfg, err := config.Load()
@@ -85,8 +92,15 @@ func run(cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 
+	// AI changelog summaries: off until settings configure a provider.
+	aiSvc := ai.New(db, log)
+	if err := aiSvc.Load(ctx); err != nil {
+		return err
+	}
+
 	// Prefetch release notes for containers with an update, so the detail page is instant
-	// and later steps can scan them for breaking changes. The token comes from settings.
+	// and the notes can be scanned for breaking changes, then summarise them when automatic
+	// AI summaries are on. The token comes from settings.
 	changelogs := changelog.New(db, "", log)
 	checks.SetAfterCheck(func(ctx context.Context, c docker.Container, rs rules.Rules, r resolve.Result) {
 		if r.Class == tmversion.None {
@@ -107,22 +121,53 @@ func run(cfg config.Config, log *slog.Logger) error {
 		if v, ok := tmversion.Parse(r.Latest); ok {
 			latest = &v
 		}
-		if err := changelogs.Sync(ctx, repo, need, latest); err != nil {
+		syncCtx, cancel := context.WithTimeout(ctx, prefetchTimeout)
+		err = changelogs.Sync(syncCtx, repo, need, latest)
+		cancel()
+		if err != nil {
 			log.Debug("changelog prefetch failed", "repo", repo.Key(), "err", err)
 		}
+
+		// A channel build isn't compared with stable releases, so their notes say nothing about it.
+		if p, autoMin := aiSvc.Status(); p == nil || autoMin == 0 || resolve.Channel(ref.Tag) != "" {
+			return
+		}
+		k, ok := ai.KeyFor(repo.Key(), need, latest)
+		if !ok {
+			return
+		}
+		ch, err := changelogs.Changes(ctx, repo, need, latest)
+		if err != nil {
+			log.Debug("stored release notes unavailable", "repo", repo.Key(), "err", err)
+			return
+		}
+		aiCtx, cancel := context.WithTimeout(ctx, autoAITimeout)
+		defer cancel()
+		aiSvc.Auto(aiCtx, k, ai.RequestFrom(ref.Familiar(), repo.Path, r.Running, r.Latest, ch))
 	})
 
 	// Notifications: one Telegram message per check run with the new updates, or a digest.
 	// The service always exists; settings turn it on and off.
+	// After a run: delete the stored AI summaries no container needs any more (AI on or
+	// off), then notify. apiSrv is set below, before the first run.
 	notifier := notify.New(db, notify.Options{Log: log})
-	checks.SetAfterRun(func(ctx context.Context, _ string) { notifier.AfterRun(ctx) })
+	var apiSrv *api.Server
+	checks.SetAfterRun(func(ctx context.Context, _ string) {
+		if keys, err := apiSrv.AIKeys(ctx); err != nil {
+			log.Debug("AI summary cleanup skipped", "err", err)
+		} else if n, err := aiSvc.Prune(ctx, keys); err != nil {
+			log.Warn("AI summary cleanup failed", "err", err)
+		} else if n > 0 {
+			log.Info("AI summaries cleaned up", "deleted", n)
+		}
+		notifier.AfterRun(ctx)
+	})
 
 	// Editable settings (env var > stored > default) are pushed into the services by Start
 	// and after every change in the settings dialog. The manager runs appliers one at a
 	// time, so their state needs no lock. Icons go to the API server, built below.
-	var apiSrv *api.Server
 	setIcons := func(svc *icons.Service) { apiSrv.SetIcons(svc) }
-	settingsMgr := settings.New(db, cfg.Env, cfg.Editable, appliers(ctx, cfg, log, checks, changelogs, notifier, setIcons), log)
+	settingsMgr := settings.New(db, cfg.Env, cfg.Editable, appliers(ctx, cfg, log, checks, changelogs, notifier, aiSvc, setIcons), log)
 
 	// The API server is built before the startup check so the first run's hook has its source.
 	apiSrv = api.New(api.Deps{
@@ -134,6 +179,7 @@ func run(cfg config.Config, log *slog.Logger) error {
 		Store:      db,
 		Notify:     notifier,
 		Settings:   settingsMgr,
+		AI:         aiSvc,
 		ConfigFile: cfg.ConfigFile,
 		Background: ctx,
 	})
@@ -194,11 +240,12 @@ func run(cfg config.Config, log *slog.Logger) error {
 // appliers connect the settings manager to the running services. Each one only acts
 // when its part of the settings changed, and logs the new state (never a secret).
 func appliers(ctx context.Context, cfg config.Config, log *slog.Logger, checks *check.Service,
-	changelogs *changelog.Service, notifier *notify.Service, setIcons func(*icons.Service)) settings.Appliers {
+	changelogs *changelog.Service, notifier *notify.Service, aiSvc *ai.Service, setIcons func(*icons.Service)) settings.Appliers {
 	var (
 		iconsURL    string             // URL of the running icon service, "" when off
 		stopIcons   context.CancelFunc // stops its index refresh
 		notifySetup *config.Runtime    // last notification settings applied
+		aiSetup     *config.Runtime    // last AI settings applied
 	)
 	return settings.Appliers{
 		Schedule: func(spec string) error {
@@ -259,6 +306,28 @@ func appliers(ctx context.Context, cfg config.Config, log *slog.Logger, checks *
 			} else {
 				log.Info("notifications", "notifier", n.Name(), "level", rt.NotifyLevel.String(), "digest", rt.NotifyDigest)
 			}
+			return nil
+		},
+		AI: func(rt config.Runtime) error {
+			if aiSetup != nil && rt.AI() == aiSetup.AI() && rt.AIProvider == aiSetup.AIProvider && rt.AIAPIKey == aiSetup.AIAPIKey &&
+				rt.AIModel == aiSetup.AIModel && rt.AIBaseURL == aiSetup.AIBaseURL && rt.AIAutoMin == aiSetup.AIAutoMin {
+				return nil
+			}
+			if !rt.AI() {
+				aiSvc.Configure(nil, 0)
+				aiSetup = &rt
+				log.Info("AI summaries", "on", false)
+				return nil
+			}
+			p, err := ai.NewProvider(rt.AIProvider, rt.AIAPIKey, rt.AIModel, rt.AIBaseURL)
+			if err != nil {
+				aiSvc.Configure(nil, 0) // not the previous provider: the settings say otherwise now
+				aiSetup = nil
+				return err
+			}
+			aiSvc.Configure(p, rt.AIAutoMin)
+			aiSetup = &rt
+			log.Info("AI summaries", "provider", p.Name(), "model", p.Model(), "auto_min_releases", rt.AIAutoMin)
 			return nil
 		},
 	}

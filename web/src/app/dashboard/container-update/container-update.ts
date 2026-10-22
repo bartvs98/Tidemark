@@ -56,7 +56,7 @@ export class ContainerUpdate {
     let quotes = 0;
     const lines = (this.result()?.reasons ?? [])
       .filter((r) => !r.line || ++quotes <= TOOLTIP_QUOTES)
-      .map((r) => clip(r.tag ? `${r.tag}: ${r.text}` : r.text));
+      .map((r) => clip((r.source === 'ai' ? 'AI: ' : '') + (r.tag ? `${r.tag}: ${r.text}` : r.text)));
     const more = quotes - TOOLTIP_QUOTES;
     if (more > 0) lines.push(`and ${more} more flagged ${more === 1 ? 'line' : 'lines'}`);
     return lines.join('\n') || null;

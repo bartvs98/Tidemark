@@ -225,6 +225,32 @@ func (s *Server) toContainerJSON(ctx context.Context, c docker.Container, review
 }
 
 func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref.Ref, rs rules.Rules) *updateJSON {
+	u := s.checkedUpdate(c, ref, rs)
+	if judged(u) {
+		s.assessUpdate(ctx, u, c, ref, rs)
+	}
+	return u
+}
+
+// judged reports whether the update's level comes from its release notes (and an AI
+// verdict): a checked result with an update that isn't a channel build (stable notes say
+// nothing about a channel build).
+func judged(u *updateJSON) bool {
+	return u != nil && u.CheckedAt != nil && u.Class != string(version.None) && u.Channel == ""
+}
+
+// notesRepo is the repo whose release notes judge c's update; ok is false without one.
+func (s *Server) notesRepo(c docker.Container, ref imageref.Ref, rs rules.Rules) (source.Repo, bool) {
+	if s.changelogs == nil || ref.Repository == "" {
+		return source.Repo{}, false
+	}
+	repo, _, ok := source.Resolve(c, ref, rs)
+	return repo, ok
+}
+
+// checkedUpdate is c's update from the check results, before it is assessed; nil when
+// checks are off, c is ignored or it has no result yet.
+func (s *Server) checkedUpdate(c docker.Container, ref imageref.Ref, rs rules.Rules) *updateJSON {
 	if s.checks == nil || rs.Ignore {
 		return nil
 	}
@@ -252,10 +278,6 @@ func (s *Server) updateFor(ctx context.Context, c docker.Container, ref imageref
 		TagsFrom:      timeOrNil(r.TagsFrom),
 	}
 	u.ReviewKey = reviewKey(u)
-	// A channel build isn't compared with stable releases, so their notes say nothing about it.
-	if !e.CheckedAt.IsZero() && r.Class != version.None && u.Channel == "" {
-		s.assessUpdate(ctx, u, c, ref, rs)
-	}
 	return u
 }
 
@@ -276,21 +298,24 @@ func timeOrNil(t time.Time) *time.Time {
 }
 
 // assessUpdate sets the update's level from the version jump and the release notes that
-// are already stored (the check run prefetches them). It never fetches. Latest is already
-// within any pin or major hold, so held-back releases don't count.
+// are already stored (the check run prefetches them), raised by a stored AI verdict. It
+// never fetches. Latest is already within any pin or major hold, so held-back releases
+// don't count.
 func (s *Server) assessUpdate(ctx context.Context, u *updateJSON, c docker.Container, ref imageref.Ref, rs rules.Rules) {
 	running, latest := parseVersion(u.Running), parseVersion(u.Latest)
 	var ch changelog.Changes
-	if s.changelogs != nil && ref.Repository != "" {
-		if repo, _, ok := source.Resolve(c, ref, rs); ok {
-			var err error
-			if ch, err = s.changelogs.Changes(ctx, repo, running, latest); err != nil {
-				s.log.Debug("stored release notes unavailable", "repo", repo.Key(), "err", err)
-			}
+	repo, found := s.notesRepo(c, ref, rs)
+	if found {
+		var err error
+		if ch, err = s.changelogs.Changes(ctx, repo, running, latest); err != nil {
+			s.log.Debug("stored release notes unavailable", "repo", repo.Key(), "err", err)
 		}
 	}
 	res := assess(u.Class, running, latest, ch)
 	u.Level, u.Reasons = res.Level, res.Reasons
+	if found {
+		s.applyAI(u, repo, running, latest)
+	}
 }
 
 func assess(class string, running, latest *version.Version, ch changelog.Changes) analysis.Result {

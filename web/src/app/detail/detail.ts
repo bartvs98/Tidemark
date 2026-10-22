@@ -3,7 +3,7 @@ import { DatePipe, Location } from '@angular/common';
 import { HttpErrorResponse, httpResource } from '@angular/common/http';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
-import { TM_TABS, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmClamp, TmEmptyState, TmIcon, TmLevel, TmTideGauge, TmTooltip } from '../ui';
+import { TM_TABS, TmAiMarker, TmAppIcon, TmBadge, TmButton, TmCallout, TmCard, TmClamp, TmEmptyState, TmIcon, TmLevel, TmTideGauge, TmTooltip } from '../ui';
 import { TmMarkdown } from '../ui/markdown/markdown';
 import { hasResult, hasUpdate, imageName, isIgnored, Reason, ruleOrigin } from '../dashboard/containers';
 import { ContainerUpdate } from '../dashboard/container-update/container-update';
@@ -15,6 +15,7 @@ import { describeRules } from './rules';
 import { History } from './history/history';
 import { DetailSkeleton } from './detail-skeleton/detail-skeleton';
 import { ReviewActions } from './review-actions/review-actions';
+import { AiSummary } from './ai-summary/ai-summary';
 
 const HOW: Record<string, string> = {
   label: 'from the tidemark.repo label',
@@ -53,6 +54,8 @@ const SOURCE: Record<string, string> = {
     History,
     DetailSkeleton,
     ReviewActions,
+    AiSummary,
+    TmAiMarker,
     TmAppIcon,
     TmBadge,
     TmButton,

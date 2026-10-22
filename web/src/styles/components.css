@@ -119,18 +119,37 @@
     font-weight: 600;
     line-height: 1.3;
   }
-  .tm-prose h1 { font-size: var(--text-lg); }
-  .tm-prose h2 { font-size: var(--text-lg); }
-  .tm-prose h3 { font-size: var(--text-base); }
-  .tm-prose h4 { font-size: var(--text-base); color: var(--color-fg-muted); }
-  .tm-prose > :first-child { margin-top: 0; }
+  .tm-prose h1 {
+    font-size: var(--text-lg);
+  }
+  .tm-prose h2 {
+    font-size: var(--text-lg);
+  }
+  .tm-prose h3 {
+    font-size: var(--text-base);
+  }
+  .tm-prose h4 {
+    font-size: var(--text-base);
+    color: var(--color-fg-muted);
+  }
+  .tm-prose > :first-child {
+    margin-top: 0;
+  }
   .tm-prose :is(ul, ol) {
     padding-left: 1.25rem;
   }
-  .tm-prose ul { list-style: disc; }
-  .tm-prose ol { list-style: decimal; }
-  .tm-prose li + li { margin-top: 0.25em; }
-  .tm-prose li > :is(ul, ol) { margin-top: 0.25em; }
+  .tm-prose ul {
+    list-style: disc;
+  }
+  .tm-prose ol {
+    list-style: decimal;
+  }
+  .tm-prose li + li {
+    margin-top: 0.25em;
+  }
+  .tm-prose li > :is(ul, ol) {
+    margin-top: 0.25em;
+  }
   .tm-prose a {
     color: var(--color-accent-text);
     text-decoration: underline;
@@ -151,17 +170,37 @@
     border-radius: var(--radius-md);
     background: var(--color-canvas);
   }
-  .tm-prose pre code { padding: 0; background: none; }
+  .tm-prose pre code {
+    padding: 0;
+    background: none;
+  }
   .tm-prose blockquote {
     padding-left: 0.75rem;
     border-left: 3px solid var(--color-line-strong);
     color: var(--color-fg-muted);
   }
-  .tm-prose img { max-width: 100%; height: auto; border-radius: var(--radius-sm); }
-  .tm-prose hr { border: 0; border-top: 1px solid var(--color-line); }
-  .tm-prose table { display: block; overflow-x: auto; border-collapse: collapse; }
-  .tm-prose :is(th, td) { padding: 0.35rem 0.6rem; border: 1px solid var(--color-line); }
-  .tm-prose details > summary { cursor: pointer; color: var(--color-fg-muted); }
+  .tm-prose img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+  }
+  .tm-prose hr {
+    border: 0;
+    border-top: 1px solid var(--color-line);
+  }
+  .tm-prose table {
+    display: block;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+  .tm-prose :is(th, td) {
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--color-line);
+  }
+  .tm-prose details > summary {
+    cursor: pointer;
+    color: var(--color-fg-muted);
+  }
   /* Lines the breaking-change analysis flagged (internal/analysis), like a highlighter.
      Two offset shadows pad the background sideways without shifting the text; not up and down,
      so stacked flagged list items keep their gap instead of overlapping (the dark soft colours
@@ -226,7 +265,9 @@
     color: var(--color-fg-muted);
     cursor: pointer;
     user-select: none;
-    transition: color 120ms, border-color 120ms;
+    transition:
+      color 120ms,
+      border-color 120ms;
   }
   .tm-tabs [role='tab']:hover {
     color: var(--color-fg);
@@ -491,6 +532,77 @@
   @media (prefers-reduced-motion: reduce) {
     .tm-severity-frame::before {
       display: none;
+    }
+  }
+}
+
+/* ── AI sheen ────────────────────────────────────────── */
+/* A card-shaped element (border + border-radius) whose inner edge carries one soft light sweep
+   travelling around it (6 s a loop; 2.5 s with data-generating), neutral into brand teal. Unlike
+   .tm-severity-frame it is one arc, quicker, and never uses a risk colour: it only says "a model
+   wrote this". With reduced motion the arc stands still. The ring sits inside the box, since
+   cards clip their overflow. Used for tm-ai-summary. */
+@property --tm-sheen-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 200deg;
+}
+@layer components {
+  .tm-ai-sheen {
+    position: relative;
+    /* A faint teal glow from the top left, behind the content: reads as "AI" before you
+       notice the border. background-image only, so the card keeps its background colour. */
+    background-image: radial-gradient(
+      ellipse 70% 120% at 0% 0%,
+      color-mix(in oklab, var(--color-accent) 9%, transparent),
+      transparent 70%
+    );
+  }
+  .tm-ai-sheen::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    padding: 1.5px;
+    border-radius: inherit;
+    pointer-events: none;
+    /* Two layers on the ring: a bright arc that travels, over a static teal-to-grey ring
+       that's always there (and is all that's left under reduced motion). */
+    background-image:
+      conic-gradient(
+        from var(--tm-sheen-angle),
+        transparent 0deg,
+        color-mix(in oklab, var(--color-accent) 60%, transparent) 30deg,
+        var(--color-accent-hover) 70deg,
+        color-mix(in oklab, var(--color-accent) 60%, transparent) 110deg,
+        transparent 140deg,
+        transparent 360deg
+      ),
+      conic-gradient(
+        from 200deg,
+        color-mix(in oklab, var(--color-accent) 55%, transparent),
+        color-mix(in oklab, var(--color-fg-subtle) 35%, transparent) 50%,
+        color-mix(in oklab, var(--color-accent) 55%, transparent)
+      );
+    -webkit-mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+    -webkit-mask-clip: content-box, border-box;
+    -webkit-mask-composite: xor;
+    mask-image: linear-gradient(#000 0 0), linear-gradient(#000 0 0);
+    mask-clip: content-box, border-box;
+    mask-composite: exclude;
+    animation: tm-sheen-turn 6s linear infinite;
+  }
+  .tm-ai-sheen[data-generating]::before {
+    animation-duration: 2.5s;
+  }
+  @keyframes tm-sheen-turn {
+    to {
+      --tm-sheen-angle: 560deg;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tm-ai-sheen::before,
+    .tm-ai-sheen[data-generating]::before {
+      animation: none;
     }
   }
 }

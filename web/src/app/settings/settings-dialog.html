@@ -4,6 +4,7 @@
       <div ngTab value="general">General</div>
       <div ngTab value="checks">Checks</div>
       <div ngTab value="notifications">Notifications</div>
+      <div ngTab value="ai">AI</div>
       <div ngTab value="github">GitHub</div>
     </div>
 
@@ -227,6 +228,133 @@
             }
           </section>
           <ng-container [ngTemplateOutlet]="saveBar" [ngTemplateOutletContext]="{ $implicit: 'notifications' }" />
+        </form>
+      } @else {
+        <ng-container [ngTemplateOutlet]="pending" />
+      }
+    </div>
+
+    <!-- ── AI summaries ────────────────────────────────── -->
+    <div ngTabPanel value="ai">
+      @if (settings.hasValue()) {
+        @let s = settings.value();
+        <form (submit)="$event.preventDefault(); save('ai')">
+          @if (fields(); as f) {
+            <dl>
+              <div class="tm-setting">
+                <dt>Status</dt>
+                <dd data-testid="settings-ai-status">
+                  @if (s.ai) {
+                    <span class="inline-flex items-center gap-1.5"><tm-icon name="check" />On</span>
+                  } @else if (aiProvider() !== 'off') {
+                    <span class="text-fg-muted">Off, needs an API key</span>
+                  } @else {
+                    <span class="text-fg-muted">Off</span>
+                  }
+                </dd>
+              </div>
+              @if (s.ai?.usage; as u) {
+                <div class="tm-setting">
+                  <dt>This month</dt>
+                  <dd data-testid="settings-ai-usage">{{ usageLine(u) }}</dd>
+                </div>
+              }
+            </dl>
+            <div class="border-t border-line">
+              <div class="tm-setting">
+                <tm-field class="col-span-2" label="Provider" hint="Who writes the summaries." [error]="errors().aiProvider" [locked]="locked('aiProvider')">
+                  <tm-select data-testid="setting-aiProvider" [options]="aiProviderOptions" [value]="aiProvider()" [disabled]="!!locked('aiProvider')" (valueChange)="edit('aiProvider', $event)" />
+                </tm-field>
+              </div>
+              @if (aiProvider() !== 'off') {
+                <div class="tm-setting">
+                  <tm-secret-setting
+                    class="col-span-2"
+                    label="API key"
+                    [hint]="aiProvider() === 'openai' ? 'Optional for a local server such as Ollama.' : 'Stored here, never shown again.'"
+                    data-testid="setting-aiApiKey"
+                    [field]="f.aiApiKey"
+                    [error]="errors().aiApiKey"
+                    [value]="edits().aiApiKey"
+                    (valueChange)="edit('aiApiKey', $event)"
+                  />
+                </div>
+                <div class="tm-setting">
+                  <tm-field class="col-span-2" label="Model" hint="Empty: the provider's default." [error]="errors().aiModel" [locked]="locked('aiModel')">
+                    <input tmInput mono data-testid="setting-aiModel" [placeholder]="aiModelPlaceholder()" [value]="value('aiModel')" [disabled]="!!locked('aiModel')" (input)="edit('aiModel', $any($event.target).value)" />
+                  </tm-field>
+                </div>
+                @if (aiProvider() === 'openai') {
+                  <div class="tm-setting">
+                    <tm-field class="col-span-2" label="Base URL" hint="e.g. http://ollama:11434/v1 for Ollama. Empty: OpenAI." [error]="errors().aiBaseUrl" [locked]="locked('aiBaseUrl')">
+                      <input tmInput mono type="url" placeholder="https://api.openai.com/v1" data-testid="setting-aiBaseUrl" [value]="value('aiBaseUrl')" [disabled]="!!locked('aiBaseUrl')" (input)="edit('aiBaseUrl', $any($event.target).value)" />
+                    </tm-field>
+                  </div>
+                }
+                <div class="tm-setting">
+                  <tm-field class="col-span-2" label="Summarise automatically from" hint="Releases behind. 0 = only on demand." [error]="errors().aiAutoMinReleases" [locked]="locked('aiAutoMinReleases')">
+                    <input tmInput mono type="number" min="0" max="500" data-testid="setting-aiAutoMinReleases" [value]="value('aiAutoMinReleases')" [disabled]="!!locked('aiAutoMinReleases')" (input)="edit('aiAutoMinReleases', $any($event.target).value)" />
+                  </tm-field>
+                </div>
+              }
+            </div>
+          } @else {
+            <dl data-testid="settings-ai">
+              <div class="tm-setting">
+                <dt>Status</dt>
+                <dd>
+                  @if (s.ai) {
+                    <span class="inline-flex items-center gap-1.5"><tm-icon name="check" />On</span>
+                  } @else {
+                    <span class="text-fg-muted" data-testid="settings-ai-off">Off</span>
+                  }
+                </dd>
+              </div>
+              @if (s.ai; as ai) {
+                <div class="tm-setting">
+                  <dt>Provider</dt>
+                  <dd>{{ aiProviders[ai.provider] }}</dd>
+                </div>
+                <div class="tm-setting">
+                  <dt>Model</dt>
+                  <dd class="font-mono break-all">{{ ai.model }}</dd>
+                </div>
+                @if (ai.baseUrl) {
+                  <div class="tm-setting">
+                    <dt>Base URL</dt>
+                    <dd class="font-mono break-all">{{ ai.baseUrl }}</dd>
+                  </div>
+                }
+                <div class="tm-setting">
+                  <dt>Automatic</dt>
+                  <dd>
+                    @if (ai.autoMinReleases > 0) {
+                      From {{ ai.autoMinReleases }} releases behind
+                    } @else {
+                      <span class="text-fg-muted">Only on demand</span>
+                    }
+                  </dd>
+                </div>
+              }
+              @if (s.ai?.usage; as u) {
+                <div class="tm-setting">
+                  <dt>This month</dt>
+                  <dd data-testid="settings-ai-usage">{{ usageLine(u) }}</dd>
+                </div>
+              }
+            </dl>
+            @if (!s.ai) {
+              <p class="mt-3 text-sm text-fg-muted">
+                Set <span class="font-mono text-xs">TIDEMARK_AI_PROVIDER</span> and
+                <span class="font-mono text-xs">TIDEMARK_AI_API_KEY</span> to get a short summary of what changed and what to do.
+              </p>
+            }
+          }
+          <p class="mt-3 text-sm text-fg-muted" data-testid="settings-ai-note">
+            Release notes are sent to the provider only for the summaries you ask for@if (aiAuto() > 0) {
+              , or automatically for updates with {{ aiAuto() }}+ releases}.
+          </p>
+          <ng-container [ngTemplateOutlet]="saveBar" [ngTemplateOutletContext]="{ $implicit: 'ai' }" />
         </form>
       } @else {
         <ng-container [ngTemplateOutlet]="pending" />

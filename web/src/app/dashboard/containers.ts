@@ -77,6 +77,8 @@ export interface Reason {
   tag?: string;
   /** Quotes only: equals one `hits[i].line` of that release in the detail changelog. */
   line?: string;
+  /** "ai" for a reason written by the AI summary (no `line`); heuristic reasons leave it out. */
+  source?: 'ai';
 }
 
 /** Rule names as used in labels (`tidemark.<key>`) and the config file. */

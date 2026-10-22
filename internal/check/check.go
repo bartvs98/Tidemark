@@ -23,9 +23,9 @@ import (
 const (
 	workers          = 6
 	containerTimeout = 2 * time.Minute
-	// afterCheckTimeout caps the AfterCheck hook (release-note prefetch), so a slow
-	// forge can't hold a worker for the rest of the run.
-	afterCheckTimeout = time.Minute
+	// afterCheckTimeout caps the AfterCheck hook (release-note prefetch, then an automatic
+	// AI summary), so a slow forge or provider can't hold a worker for the rest of the run.
+	afterCheckTimeout = 3 * time.Minute
 )
 
 // Triggers say what started a run.

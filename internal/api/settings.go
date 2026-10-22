@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/bartvs98/tidemark/internal/ai"
 	"github.com/bartvs98/tidemark/internal/config"
 	"github.com/bartvs98/tidemark/internal/settings"
 )
@@ -25,6 +26,8 @@ type settingsJSON struct {
 	Icons   bool         `json:"icons"`
 	// Notifications is absent when notifications are off. It never holds the bot token or chat ID.
 	Notifications *notificationsJSON `json:"notifications,omitempty"`
+	// AI is absent when AI summaries are off. It never holds the API key.
+	AI *aiSettingsJSON `json:"ai,omitempty"`
 
 	Editable bool                 `json:"editable"`         // TIDEMARK_SETTINGS_EDITABLE
 	Fields   map[string]fieldJSON `json:"fields,omitempty"` // by JSON name; absent without a settings manager
@@ -39,6 +42,24 @@ type fieldJSON struct {
 	Set    *bool   `json:"set,omitempty"`
 	Source string  `json:"source"` // env | stored | default
 	Env    string  `json:"env"`
+}
+
+type aiSettingsJSON struct {
+	Provider        string `json:"provider"`          // anthropic | openai | gemini
+	Model           string `json:"model"`             // effective: the provider's default when none is set
+	BaseURL         string `json:"baseUrl,omitempty"` // openai only
+	AutoMinReleases int    `json:"autoMinReleases"`   // 0 = only on demand
+	// Usage is this month's provider calls; absent when it couldn't be read.
+	Usage *aiUsageJSON `json:"usage,omitempty"`
+}
+
+type aiUsageJSON struct {
+	Since        time.Time `json:"since"` // start of the current month, server local time
+	Calls        int       `json:"calls"`
+	Failed       int       `json:"failed"`
+	Extended     int       `json:"extended"` // calls that extended an earlier summary
+	InputTokens  int       `json:"inputTokens"`
+	OutputTokens int       `json:"outputTokens"`
 }
 
 type githubJSON struct {
@@ -93,6 +114,25 @@ func (s *Server) settingsBody(ctx context.Context) settingsJSON {
 	}
 	if s.notify != nil && s.notify.Enabled() {
 		out.Notifications = toNotificationsJSON(s.notify.Status(ctx), out.Checks.NextRunAt)
+	}
+	if s.ai != nil {
+		if p, autoMin := s.ai.Status(); p != nil {
+			out.AI = &aiSettingsJSON{Provider: p.Name(), Model: p.Model(), AutoMinReleases: autoMin}
+			if p.Name() == "openai" {
+				out.AI.BaseURL = ai.OpenAIBaseURL
+				if s.settings != nil && s.settings.Runtime().AIBaseURL != "" {
+					out.AI.BaseURL = s.settings.Runtime().AIBaseURL
+				}
+			}
+			now := time.Now()
+			since := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+			if u, err := s.ai.Usage(ctx, since); err != nil {
+				s.log.Warn("reading AI usage failed", "err", err)
+			} else {
+				out.AI.Usage = &aiUsageJSON{Since: since, Calls: u.Calls, Failed: u.Failed, Extended: u.Extended,
+					InputTokens: u.InputTokens, OutputTokens: u.OutputTokens}
+			}
+		}
 	}
 	if s.changelogs != nil {
 		out.GitHub.Token = s.changelogs.HasToken()

@@ -394,3 +394,95 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Errorf("settings = %v, %v", got, err)
 	}
 }
+
+func TestAISummariesRoundTrip(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	if got, err := s.AISummaries(ctx); err != nil || len(got) != 0 {
+		t.Fatalf("empty: %v %v", got, err)
+	}
+	at := time.Date(2026, 10, 1, 12, 0, 0, 123, time.UTC)
+	a := AISummary{Repo: "github.com/a/b", From: "1.0.0", To: "1.2.0", Provider: "anthropic", Model: "m",
+		Changes: []string{"c1", "c2"}, Actions: []string{"a1"}, Verdict: "breaking",
+		Reasons: []AIReason{{Text: "r", Tag: "v1.2.0"}, {Text: "r2"}}, Releases: 2, Omitted: 1,
+		NotesHash: "h", CreatedAt: at, InputTokens: 1200, OutputTokens: 340, Duration: 4200 * time.Millisecond,
+		Latest: "v1.2.0", ExtendedFrom: "v1.1.0", Covered: 3, CoveredHash: "ch"}
+	if err := s.PutAISummary(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	// Only a failure so far for another key: no summary fields, nil slices stored as [].
+	f := AISummary{Repo: "github.com/a/b", From: "?", To: "2.0", Error: "rate limited", FailedAt: at}
+	if err := s.PutAISummary(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.AISummaries(ctx)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got %v %v", got, err)
+	}
+	if fmt.Sprintf("%+v", got[0]) != fmt.Sprintf("%+v", a) {
+		t.Errorf("summary:\n got %+v\nwant %+v", got[1], a)
+	}
+	g := got[1]
+	if g.Verdict != "none" || !g.CreatedAt.IsZero() || g.Error != "rate limited" || !g.FailedAt.Equal(at) || g.Changes == nil || len(g.Changes) != 0 {
+		t.Errorf("failure row: %+v", g)
+	}
+
+	// Upsert by key.
+	a.Changes, a.Error, a.FailedAt = []string{"new"}, "", time.Time{}
+	if err := s.PutAISummary(ctx, a); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.AISummaries(ctx)
+	if len(got) != 2 || !slices.Equal(got[0].Changes, []string{"new"}) {
+		t.Errorf("upsert: %+v", got)
+	}
+}
+
+func TestDeleteAISummaries(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	for _, to := range []string{"1", "2", "3"} {
+		if err := s.PutAISummary(ctx, AISummary{Repo: "r", From: "0", To: to, CreatedAt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := s.DeleteAISummaries(ctx, func(repo, from, to string) bool { return repo == "r" && from == "0" && to == "2" })
+	if err != nil || n != 2 {
+		t.Fatalf("deleted %d, %v", n, err)
+	}
+	got, _ := s.AISummaries(ctx)
+	if len(got) != 1 || got[0].To != "2" {
+		t.Errorf("left: %+v", got)
+	}
+	if n, err := s.DeleteAISummaries(ctx, func(string, string, string) bool { return true }); err != nil || n != 0 {
+		t.Errorf("keep all: %d %v", n, err)
+	}
+}
+
+func TestAICallsUsage(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	month := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	if u, err := s.AIUsageSince(ctx, month); err != nil || u != (AIUsage{}) {
+		t.Fatalf("empty: %+v %v", u, err)
+	}
+	for _, c := range []AICall{
+		{At: month.Add(-time.Nanosecond), InputTokens: 999, OutputTokens: 999}, // last month
+		{At: month, Provider: "anthropic", Model: "m", Trigger: "manual", Repo: "r", From: "1", To: "2",
+			Releases: 3, InputTokens: 1000, OutputTokens: 100, Duration: time.Second},
+		{At: month.Add(1500 * time.Millisecond), Trigger: "auto", InputTokens: 20, Error: "rate limited"},
+		{At: month.Add(time.Hour).In(time.FixedZone("x", 2*3600)), Trigger: "auto", Mode: "extended", OutputTokens: 5},
+	} {
+		if err := s.AddAICall(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	u, err := s.AIUsageSince(ctx, month)
+	if err != nil || u != (AIUsage{Calls: 3, Failed: 1, Extended: 1, InputTokens: 1020, OutputTokens: 105}) {
+		t.Errorf("usage = %+v, %v", u, err)
+	}
+	// Sub-second precision orders correctly against a whole-second bound.
+	if u, _ := s.AIUsageSince(ctx, month.Add(time.Second)); u.Calls != 2 {
+		t.Errorf("since +1s: %+v", u)
+	}
+}

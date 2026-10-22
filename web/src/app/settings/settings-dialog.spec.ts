@@ -78,7 +78,7 @@ describe('SettingsDialog', () => {
 
     const el = fixture.nativeElement as HTMLElement;
     const tabs = [...el.querySelectorAll<HTMLElement>('[role="tab"]')];
-    expect(tabs.map((t) => t.textContent?.trim())).toEqual(['General', 'Checks', 'Notifications', 'GitHub']);
+    expect(tabs.map((t) => t.textContent?.trim())).toEqual(['General', 'Checks', 'Notifications', 'AI', 'GitHub']);
     const visible = () => el.querySelector('[role="tabpanel"]:not([inert])') as HTMLElement;
     expect(visible().querySelector('[data-testid="settings-version"]')).not.toBeNull();
 
@@ -256,9 +256,14 @@ describe('SettingsDialog', () => {
       notifyLevel: { value: 'all', source: 'default', env: 'TIDEMARK_NOTIFY_LEVEL' },
       notifyDigest: { value: '', source: 'default', env: 'TIDEMARK_NOTIFY_DIGEST' },
       publicUrl: { value: 'https://tidemark.example.lan', source: 'stored', env: 'TIDEMARK_PUBLIC_URL' },
+      aiProvider: { value: 'off', source: 'default', env: 'TIDEMARK_AI_PROVIDER' },
+      aiApiKey: { secret: true, set: false, source: 'default', env: 'TIDEMARK_AI_API_KEY' },
+      aiModel: { value: '', source: 'default', env: 'TIDEMARK_AI_MODEL' },
+      aiBaseUrl: { value: '', source: 'default', env: 'TIDEMARK_AI_BASE_URL' },
+      aiAutoMinReleases: { value: '0', source: 'default', env: 'TIDEMARK_AI_AUTO_MIN_RELEASES' },
     };
     const EDITABLE: Settings = { ...SETTINGS, editable: true, fields: FIELDS };
-    const PAGES = ['general', 'checks', 'notifications', 'github'];
+    const PAGES = ['general', 'checks', 'notifications', 'ai', 'github'];
 
     let fixture: Awaited<ReturnType<typeof render>>;
     let el: HTMLElement;
@@ -359,6 +364,102 @@ describe('SettingsDialog', () => {
       await goTo('checks');
       expect(input('schedule').value).toBe('@daily');
       expect(saveBar()).not.toBeNull();
+    });
+
+    describe('AI page', () => {
+      const ON: Settings['ai'] = { provider: 'openai', model: 'llama3.1:8b', baseUrl: 'http://ollama:11434/v1', autoMinReleases: 5, usage: { since: '2026-10-01T00:00:00+02:00', calls: 14, failed: 2, inputTokens: 182000, outputTokens: 9100 } };
+      const withAi = (fields: Partial<Record<SettingKey, SettingField>>, ai?: Settings['ai']): Settings => ({
+        ...EDITABLE,
+        ai,
+        fields: { ...FIELDS, ...fields },
+      });
+
+      it('is off by default: only the provider is asked for, then the rest follows the provider', async () => {
+        await open();
+        await goTo('ai');
+        expect(panel().querySelector('[data-testid="settings-ai-status"]')?.textContent).toContain('Off');
+        expect(panel().querySelector('tm-select')).not.toBeNull();
+        expect(input('aiModel')).toBeNull();
+        expect(panel().querySelector('[data-testid="setting-aiApiKey"]')).toBeNull();
+        expect(panel().textContent).toContain('only for the summaries you ask for.');
+
+        const edit = (key: string, v: string) => (fixture.componentInstance as unknown as { edit(k: string, v: string): void }).edit(key, v);
+        edit('aiProvider', 'anthropic');
+        await fixture.whenStable();
+        expect(input('aiModel').placeholder).toBe('claude-haiku-5-5');
+        expect(panel().querySelector('[data-testid="setting-aiApiKey"]')?.textContent).toContain('Not set');
+        expect(input('aiBaseUrl')).toBeNull(); // only for the OpenAI-compatible provider
+        expect(panel().textContent).toContain('Off, needs an API key');
+
+        edit('aiProvider', 'gemini');
+        await fixture.whenStable();
+        expect(input('aiModel').placeholder).toBe('gemini-flash-latest');
+
+        edit('aiProvider', 'openai');
+        await fixture.whenStable();
+        expect(input('aiModel').placeholder).toBe('required');
+        expect(input('aiBaseUrl')).not.toBeNull();
+        expect(panel().textContent).toContain('http://ollama:11434/v1');
+      });
+
+      it('shows the values, locks env fields and mentions the automatic summaries', async () => {
+        await open(
+          withAi(
+            {
+              aiProvider: { value: 'openai', source: 'stored', env: 'TIDEMARK_AI_PROVIDER' },
+              aiModel: { value: 'llama3.1:8b', source: 'env', env: 'TIDEMARK_AI_MODEL' },
+              aiBaseUrl: { value: 'http://ollama:11434/v1', source: 'stored', env: 'TIDEMARK_AI_BASE_URL' },
+              aiAutoMinReleases: { value: '5', source: 'stored', env: 'TIDEMARK_AI_AUTO_MIN_RELEASES' },
+            },
+            ON,
+          ),
+        );
+        await goTo('ai');
+        expect(panel().querySelector('[data-testid="settings-ai-status"]')?.textContent).toContain('On');
+        expect(input('aiModel').value).toBe('llama3.1:8b');
+        expect(input('aiModel').disabled).toBe(true);
+        expect(panel().textContent).toMatch(/Set by\s*TIDEMARK_AI_MODEL/);
+        expect(input('aiBaseUrl').value).toBe('http://ollama:11434/v1');
+        expect(input('aiAutoMinReleases').value).toBe('5');
+        expect(panel().querySelector('[data-testid="settings-ai-note"]')?.textContent).toContain('automatically for updates with 5+ releases');
+      });
+
+      it('never prefills the key and saves only the changed keys', async () => {
+        await open(withAi({ aiProvider: { value: 'anthropic', source: 'stored', env: 'TIDEMARK_AI_PROVIDER' }, aiApiKey: { secret: true, set: true, source: 'stored', env: 'TIDEMARK_AI_API_KEY' } }, { provider: 'anthropic', model: 'claude-haiku-5-5', autoMinReleases: 0 }));
+        await goTo('ai');
+        expect(panel().querySelector('[data-testid="setting-aiApiKey"]')?.textContent).toContain('Set');
+        expect(panel().querySelector('input[type="password"]')).toBeNull();
+        await type(input('aiAutoMinReleases'), '3');
+        await click(button('Replace'));
+        await type(panel().querySelector('tm-password-input input') as HTMLInputElement, 'sk-new');
+        await click(button('Save'));
+        const req = http.expectOne('/api/settings');
+        expect(req.request.method).toBe('PATCH');
+        expect(req.request.body).toEqual({ aiApiKey: 'sk-new', aiAutoMinReleases: '3' });
+        req.flush(EDITABLE);
+        await settle();
+      });
+
+      it('is read-only without the editable flag: the state, and how to turn it on', async () => {
+        await open({ ...SETTINGS, ai: ON });
+        await goTo('ai');
+        expect(panel().querySelector('input, tm-select, tm-secret-setting')).toBeNull();
+        const text = panel().querySelector('[data-testid="settings-ai"]')!.textContent!;
+        expect(text).toContain('OpenAI-compatible');
+        expect(text).toContain('llama3.1:8b');
+        expect(text).toContain('http://ollama:11434/v1');
+        expect(text).toContain('From 5 releases behind');
+        expect(panel().querySelector('[data-testid="settings-ai-usage"]')?.textContent).toBe('14 summaries · 182k tokens in · 9.1k out · 2 failed');
+        expect(panel().querySelector('[data-testid="settings-ai-note"]')?.textContent).toContain('5+ releases');
+
+        TestBed.resetTestingModule();
+        TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])] });
+        http = TestBed.inject(HttpTestingController);
+        await open(SETTINGS);
+        await goTo('ai');
+        expect(panel().querySelector('[data-testid="settings-ai-off"]')).not.toBeNull();
+        expect(panel().textContent).toContain('TIDEMARK_AI_PROVIDER');
+      });
     });
 
     it('clears a secret on Save, with an undo', async () => {

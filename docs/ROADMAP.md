@@ -41,22 +41,19 @@ From the owner's notes after the MVP. One PR each; the release comes last so v1.
 - [x] **9a. Settings pages**: the settings dialog got pages behind side tabs (a tab row on phones): General, Checks, Notifications (one block per provider) and GitHub. New in the design system: `tm-dialog` `size="lg"` + `flush`, and `.tm-tabs-vertical`.
 - [x] **9b. Form pieces**: `input[tmInput]`, `tm-password-input`, `tm-select` (a listbox on Angular Aria), `tm-switch` and `tm-field` (label, hint, error, locked), all Signal Forms controls, on `/styleguide` and in [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md#forms).
 - [x] **9c. Settings editable in the UI**: opt-in with `TIDEMARK_SETTINGS_EDITABLE=true`. Schedule, GitHub token, icons and all Telegram settings save per page and apply without a restart; an env var wins and locks its field, tokens are write-only, and env vars and the dialog share one validation ([FEATURES §7](FEATURES.md#7-checks-failures-and-settings)). The rules file stays hand-edited (parked below).
-- [ ] **10. AI changelog summary** (opt-in)
-  - Bring your own API key (`TIDEMARK_AI_PROVIDER` / `_API_KEY` / `_MODEL`; Anthropic by default, provider behind an interface). Nothing is sent unless enabled.
-  - On demand (button) or automatically for updates with ≥ N releases in between: summarise all release notes between running and latest into a short "what changed / what you need to do" list.
-  - The model also returns a structured verdict (`none | attention | breaking`) with reasons. **This verdict can only raise the heuristic level, never lower it.**
-  - Summaries are cached per (repo, from, to).
+- [x] **10. AI changelog summary**: opt-in summaries of the notes in range (what changed, what to do) with a verdict that can only raise the level, everywhere; a newer release extends the stored summary instead of starting over. Anthropic (Haiku 5.5), Gemini or any OpenAI-compatible endpoint (Ollama too); on demand from the detail page or automatically for updates with ≥ N releases; one stored summary per (repo, from, to); an AI settings page ([FEATURES §11](FEATURES.md#11-ai-summaries)). New in the design system: `tm-ai-marker` and the summary card.
 - [ ] **11. Stats** (later; brainstorm first, builds on step 8's history). Ideas so far:
   - _Behind:_ how long each container has been behind (age of the running version vs. the latest), updates per container and stack over time, an up-to-date ratio over time (the tide as a history chart).
   - _Upstream:_ release cadence per image/repo, breaking vs. calm releases per repo, biggest version jumps.
   - _Check health:_ failures per container and reason, check durations, registry and GitHub requests, GitHub quota used.
+  - _AI usage:_ summaries and tokens per month, provider and model, on demand vs. automatic, failures, slowest calls (every call is recorded in `ai_calls` since step 10; the settings dialog shows this month's totals).
   - _Lifetime (for fun):_ containers ever tracked, updates applied (running version changed), breaking changes caught, release notes read, check runs, longest-behind container ever, fastest update after a release, longest fully-up-to-date streak, mean time to update, Tidemark's own uptime.
 
 ## Ideas parked
 
 - **Gated one-click update** (was step 11; parked because a useful version would also have to update the compose file, which is out of scope for now): pull the new image and recreate the container with identical config, **only when every gate passes**:
   1. The update class is patch or minor (no major, no `0.x` minor bump).
-  2. The heuristic level is `none` **and** the AI verdict (if enabled) is `none`.
+  2. The level is `none` (heuristics and, if enabled, the AI verdict).
   3. The container isn't ignored or held by a rule, and the update isn't snoozed.
   4. The container uses a **floating tag** (`latest`, `1`, `1.4`), so that a pull plus a recreate actually picks up the new version. For a pinned tag (`1.4.2`) in a Compose file, a recreate via the API would be undone by the next `docker compose up`, so for those the UI shows the line to change in the compose file instead of a button.
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/bartvs98/tidemark/internal/ai"
 	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/check"
 	"github.com/bartvs98/tidemark/internal/docker"
@@ -41,6 +42,10 @@ type Deps struct {
 	// without per-field state (tests).
 	Settings *settings.Manager
 
+	// AI keeps AI changelog summaries; its verdicts raise update levels while a provider is
+	// configured. nil means off (the summary endpoint answers 501).
+	AI *ai.Service
+
 	// Context for background work started by requests (check runs); it outlives the request.
 	Background context.Context
 }
@@ -55,6 +60,7 @@ type Server struct {
 	store      *store.Store
 	notify     *notify.Service
 	settings   *settings.Manager
+	ai         *ai.Service
 	configFile string
 	background context.Context
 }
@@ -64,7 +70,7 @@ func New(d Deps) *Server {
 	if bg == nil {
 		bg = context.Background()
 	}
-	s := &Server{version: d.Version, log: d.Log, source: d.Source, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, notify: d.Notify, settings: d.Settings, configFile: d.ConfigFile, background: bg}
+	s := &Server{version: d.Version, log: d.Log, source: d.Source, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, notify: d.Notify, settings: d.Settings, ai: d.AI, configFile: d.ConfigFile, background: bg}
 	s.icons.Store(d.Icons)
 	return s
 }
@@ -80,6 +86,7 @@ func (s *Server) Handler(spa fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/containers/{name}", s.containerDetail)
 	mux.HandleFunc("PUT /api/containers/{name}/review", s.putReview)
 	mux.HandleFunc("DELETE /api/containers/{name}/review", s.deleteReview)
+	mux.HandleFunc("POST /api/containers/{name}/summary", s.postSummary)
 	mux.HandleFunc("GET /api/icons/{ref}", s.icon)
 	mux.HandleFunc("POST /api/checks", s.startCheck)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
