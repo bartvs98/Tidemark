@@ -4,7 +4,13 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { AI_POLL_MS, AiSummary } from './ai-summary';
 import { AiState } from '../detail-types';
 
-const BASE: AiState = { provider: 'anthropic', model: 'claude-haiku-5-5', autoMinReleases: 0, releases: 3, generating: false };
+const BASE: AiState = {
+  provider: 'anthropic',
+  model: 'claude-haiku-5-5',
+  autoMinReleases: 0,
+  releases: 3,
+  generating: false,
+};
 const SUMMARY: NonNullable<AiState['summary']> = {
   changes: ['Adds a backup job.', 'Fixes a crash <b>on start</b>.'],
   actions: ['Rename DB_URL to DATABASE_URL.'],
@@ -26,7 +32,9 @@ describe('AiSummary', () => {
   let http: HttpTestingController;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
     http = TestBed.inject(HttpTestingController);
   });
 
@@ -58,7 +66,10 @@ describe('AiSummary', () => {
     expect(q('ai-actions')?.textContent).toContain('What you need to do');
     expect(q('ai-verdict')?.textContent).toContain('Breaking');
     const reasons = [...el.querySelectorAll('[data-testid="ai-reason"]')];
-    expect(reasons.map((r) => r.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['v2.0.0 DB_URL was renamed.', 'No rollback.']);
+    expect(reasons.map((r) => r.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      'v2.0.0 DB_URL was renamed.',
+      'No rollback.',
+    ]);
     expect(reasons[0].querySelector('.font-mono')?.textContent).toBe('v2.0.0');
     expect(q('ai-meta')?.querySelector('.font-mono')?.textContent).toBe('claude-haiku-5-5');
     expect(q('ai-meta')?.textContent).toContain('3 releases');
@@ -70,7 +81,10 @@ describe('AiSummary', () => {
   });
 
   it('leaves out the actions when empty, says nothing-to-flag for verdict none and counts what was left out', async () => {
-    const { q } = await render({ ...BASE, summary: { ...SUMMARY, actions: [], verdict: 'none', reasons: [], omitted: 4, releases: 20 } });
+    const { q } = await render({
+      ...BASE,
+      summary: { ...SUMMARY, actions: [], verdict: 'none', reasons: [], omitted: 4, releases: 20 },
+    });
     expect(q('ai-actions')).toBeNull();
     expect(q('ai-verdict')?.textContent).toContain('Nothing to flag');
     expect(q('ai-omitted')?.textContent).toContain('4 left out');
@@ -87,8 +101,12 @@ describe('AiSummary', () => {
     const { el, q } = await render({ ...BASE, autoMinReleases: 5 });
     expect(el.querySelector('h3')).toBeNull(); // the compact card
     expect(q('ai-generate')?.textContent?.trim()).toBe('Summarise 3 releases');
-    expect(q('ai-empty')?.textContent).toContain('Sends the release notes to Anthropic (claude-haiku-5-5).');
-    expect(q('ai-empty')?.textContent).toContain('Updates with 5+ releases are summarised after each check.');
+    expect(q('ai-empty')?.textContent).toContain(
+      'Sends the release notes to Anthropic (claude-haiku-5-5).',
+    );
+    expect(q('ai-empty')?.textContent).toContain(
+      'Updates with 5+ releases are summarised after each check.',
+    );
     expect(q('ai-changes')).toBeNull();
   });
 
@@ -123,6 +141,7 @@ describe('AiSummary', () => {
     expect(q('ai-generating')).not.toBeNull(); // busy while the request runs
     const req = http.expectOne(URL);
     expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({}); // the server may extend an earlier summary
     req.flush({ ...BASE, summary: SUMMARY });
     await new Promise((r) => setTimeout(r));
     await fixture.whenStable();
@@ -130,20 +149,33 @@ describe('AiSummary', () => {
     expect(changed).toHaveBeenCalledTimes(1);
   });
 
-  it('regenerates a kept summary with the same POST', async () => {
+  it('regenerates a kept summary in full', async () => {
     const { fixture, q } = await render({ ...BASE, summary: SUMMARY });
     q('ai-regenerate')!.click();
     await fixture.whenStable();
     const req = http.expectOne(URL);
     expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ mode: 'full' });
     req.flush({ ...BASE, summary: { ...SUMMARY, changes: ['Newer.'] } });
     await new Promise((r) => setTimeout(r));
     await fixture.whenStable();
     expect(q('ai-changes')?.textContent).toContain('Newer.');
   });
 
+  it('says which version an extended summary was built on', async () => {
+    const { q } = await render({ ...BASE, summary: { ...SUMMARY, extendedFrom: '3.1.0' } });
+    expect(q('ai-extended')?.textContent).toContain('extended from 3.1.0');
+    const { q: q2 } = await render({ ...BASE, summary: SUMMARY });
+    expect(q2('ai-extended')).toBeNull();
+  });
+
   it('shows the stored error with Retry, and a kept summary stays', async () => {
-    const { q } = await render({ ...BASE, summary: SUMMARY, error: 'rate limited by Anthropic', failedAt: '2026-10-22T08:00:00Z' });
+    const { q } = await render({
+      ...BASE,
+      summary: SUMMARY,
+      error: 'rate limited by Anthropic',
+      failedAt: '2026-10-22T08:00:00Z',
+    });
     expect(q('ai-error')?.textContent).toContain("Couldn't summarise");
     expect(q('ai-error')?.textContent).toContain('rate limited by Anthropic');
     expect(q('ai-retry')).not.toBeNull();
@@ -154,7 +186,9 @@ describe('AiSummary', () => {
     const { fixture, q, changed } = await render({ ...BASE, error: 'old' });
     q('ai-retry')!.click();
     await fixture.whenStable();
-    http.expectOne(URL).flush({ error: 'the API key was rejected' }, { status: 502, statusText: 'Bad Gateway' });
+    http
+      .expectOne(URL)
+      .flush({ error: 'the API key was rejected' }, { status: 502, statusText: 'Bad Gateway' });
     await new Promise((r) => setTimeout(r));
     await fixture.whenStable();
     expect(q('ai-error')?.textContent).toContain('the API key was rejected');
@@ -188,12 +222,20 @@ describe('AiSummary', () => {
   });
 
   it('leaves out the stats that are unknown', async () => {
-    const a = await render({ ...BASE, summary: { ...SUMMARY, inputTokens: 900, outputTokens: 0, durationMs: 0 } });
+    const a = await render({
+      ...BASE,
+      summary: { ...SUMMARY, inputTokens: 900, outputTokens: 0, durationMs: 0 },
+    });
     expect(a.q('ai-stats')?.textContent?.trim()).toBe('· 900 tokens in');
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
     http = TestBed.inject(HttpTestingController);
-    const b = await render({ ...BASE, summary: { ...SUMMARY, inputTokens: 0, outputTokens: 0, durationMs: 0 } });
+    const b = await render({
+      ...BASE,
+      summary: { ...SUMMARY, inputTokens: 0, outputTokens: 0, durationMs: 0 },
+    });
     expect(b.q('ai-stats')).toBeNull();
   });
 

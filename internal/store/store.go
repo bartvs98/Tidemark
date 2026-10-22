@@ -616,6 +616,10 @@ type AISummary struct {
 	CreatedAt                       time.Time // zero = never succeeded
 	InputTokens, OutputTokens       int       // of the call that made the summary
 	Duration                        time.Duration
+	Latest                          string // the latest version as displayed when made
+	ExtendedFrom                    string // the base's Latest; "" = a full summary
+	Covered                         int    // releases in range when made, sent or not
+	CoveredHash                     string // over the covered releases' tags + bodies
 	Error                           string
 	FailedAt                        time.Time
 }
@@ -630,7 +634,7 @@ func (s *Store) AISummaries(ctx context.Context) ([]AISummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT repo, from_version, to_version, provider, model, changes_json, actions_json, verdict,
 			reasons_json, releases, omitted, notes_hash, created_at, error, failed_at,
-			input_tokens, output_tokens, duration_ms
+			input_tokens, output_tokens, duration_ms, latest, extended_from, covered, covered_hash
 		FROM ai_summaries ORDER BY repo, from_version, to_version`)
 	if err != nil {
 		return nil, err
@@ -643,7 +647,7 @@ func (s *Store) AISummaries(ctx context.Context) ([]AISummary, error) {
 		var ms int64
 		if err := rows.Scan(&a.Repo, &a.From, &a.To, &a.Provider, &a.Model, &changes, &actions, &a.Verdict,
 			&reasons, &a.Releases, &a.Omitted, &a.NotesHash, &created, &a.Error, &failed,
-			&a.InputTokens, &a.OutputTokens, &ms); err != nil {
+			&a.InputTokens, &a.OutputTokens, &ms, &a.Latest, &a.ExtendedFrom, &a.Covered, &a.CoveredHash); err != nil {
 			return nil, err
 		}
 		if err := errors.Join(json.Unmarshal([]byte(changes), &a.Changes), json.Unmarshal([]byte(actions), &a.Actions),
@@ -665,17 +669,19 @@ func (s *Store) PutAISummary(ctx context.Context, a AISummary) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO ai_summaries (repo, from_version, to_version, provider, model, changes_json, actions_json,
 			verdict, reasons_json, releases, omitted, notes_hash, created_at, error, failed_at,
-			input_tokens, output_tokens, duration_ms)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			input_tokens, output_tokens, duration_ms, latest, extended_from, covered, covered_hash)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (repo, from_version, to_version) DO UPDATE SET provider = excluded.provider,
 			model = excluded.model, changes_json = excluded.changes_json, actions_json = excluded.actions_json,
 			verdict = excluded.verdict, reasons_json = excluded.reasons_json, releases = excluded.releases,
 			omitted = excluded.omitted, notes_hash = excluded.notes_hash, created_at = excluded.created_at,
 			error = excluded.error, failed_at = excluded.failed_at, input_tokens = excluded.input_tokens,
-			output_tokens = excluded.output_tokens, duration_ms = excluded.duration_ms`,
+			output_tokens = excluded.output_tokens, duration_ms = excluded.duration_ms, latest = excluded.latest,
+			extended_from = excluded.extended_from, covered = excluded.covered, covered_hash = excluded.covered_hash`,
 		a.Repo, a.From, a.To, a.Provider, a.Model, string(changes), string(actions),
 		cmp.Or(a.Verdict, "none"), string(reasons), a.Releases, a.Omitted, a.NotesHash,
-		tsOrEmpty(a.CreatedAt), a.Error, tsOrEmpty(a.FailedAt), a.InputTokens, a.OutputTokens, a.Duration.Milliseconds())
+		tsOrEmpty(a.CreatedAt), a.Error, tsOrEmpty(a.FailedAt), a.InputTokens, a.OutputTokens, a.Duration.Milliseconds(),
+		a.Latest, a.ExtendedFrom, a.Covered, a.CoveredHash)
 	return err
 }
 
@@ -721,14 +727,16 @@ func (s *Store) DeleteAISummaries(ctx context.Context, keep func(repo, from, to 
 type AICall struct {
 	At                                  time.Time // start of the call
 	Provider, Model, Trigger            string    // trigger: manual | auto
+	Mode                                string    // full | extended ("" = full)
 	Repo, From, To                      string
 	Releases, InputTokens, OutputTokens int // releases sent
 	Duration                            time.Duration
 	Error                               string // "" = success
 }
 
-// AIUsage sums AI calls: Calls counts all, Failed the ones with an error.
-type AIUsage struct{ Calls, Failed, InputTokens, OutputTokens int }
+// AIUsage sums AI calls: Calls counts all, Failed the ones with an error, Extended the
+// ones that extended an earlier summary (failed or not).
+type AIUsage struct{ Calls, Failed, Extended, InputTokens, OutputTokens int }
 
 // tsSortable is a fixed-width UTC timestamp, so text comparison orders it (ai_calls.at).
 func tsSortable(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000000000Z") }
@@ -736,10 +744,10 @@ func tsSortable(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05
 // AddAICall records one provider call.
 func (s *Store) AddAICall(ctx context.Context, c AICall) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO ai_calls (at, provider, model, trigger, repo, from_version, to_version, releases,
+		INSERT INTO ai_calls (at, provider, model, trigger, mode, repo, from_version, to_version, releases,
 			input_tokens, output_tokens, duration_ms, error)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		tsSortable(c.At), c.Provider, c.Model, c.Trigger, c.Repo, c.From, c.To, c.Releases,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		tsSortable(c.At), c.Provider, c.Model, c.Trigger, cmp.Or(c.Mode, "full"), c.Repo, c.From, c.To, c.Releases,
 		c.InputTokens, c.OutputTokens, c.Duration.Milliseconds(), c.Error)
 	return err
 }
@@ -748,8 +756,9 @@ func (s *Store) AddAICall(ctx context.Context, c AICall) error {
 func (s *Store) AIUsageSince(ctx context.Context, t time.Time) (AIUsage, error) {
 	var u AIUsage
 	err := s.db.QueryRowContext(ctx, `
-		SELECT COUNT(*), COALESCE(SUM(error != ''), 0), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
-		FROM ai_calls WHERE at >= ?`, tsSortable(t)).Scan(&u.Calls, &u.Failed, &u.InputTokens, &u.OutputTokens)
+		SELECT COUNT(*), COALESCE(SUM(error != ''), 0), COALESCE(SUM(mode = 'extended'), 0),
+			COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+		FROM ai_calls WHERE at >= ?`, tsSortable(t)).Scan(&u.Calls, &u.Failed, &u.Extended, &u.InputTokens, &u.OutputTokens)
 	return u, err
 }
 

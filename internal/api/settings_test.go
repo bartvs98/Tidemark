@@ -206,7 +206,7 @@ func TestSettingsFields(t *testing.T) {
 	if u := *body.AI.Usage; !u.Since.Equal(month) || u.Calls != 2 || u.Failed != 1 || u.InputTokens != 1250 || u.OutputTokens != 300 {
 		t.Errorf("usage = %+v, want since %v", u, month)
 	}
-	if !strings.Contains(rec.Body.String(), `"usage":{"since":"`+month.Format(time.RFC3339)+`","calls":2,"failed":1,"inputTokens":1250,"outputTokens":300}`) {
+	if !strings.Contains(rec.Body.String(), `"usage":{"since":"`+month.Format(time.RFC3339)+`","calls":2,"failed":1,"extended":0,"inputTokens":1250,"outputTokens":300}`) {
 		t.Errorf("usage JSON: %s", rec.Body)
 	}
 	if a := withoutUsage(*body.AI); a != (aiSettingsJSON{Provider: "anthropic", Model: ai.DefaultAnthropicModel, AutoMinReleases: 4}) {

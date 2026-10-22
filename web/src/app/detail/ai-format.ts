@@ -21,17 +21,35 @@ export function formatDuration(ms: number): string {
 export function callStats(inputTokens: number, outputTokens: number, durationMs: number): string {
   const parts: string[] = [];
   if (inputTokens > 0) parts.push(`${formatTokens(inputTokens)} tokens in`);
-  if (outputTokens > 0) parts.push(inputTokens > 0 ? `${formatTokens(outputTokens)} out` : `${formatTokens(outputTokens)} tokens out`);
+  if (outputTokens > 0)
+    parts.push(
+      inputTokens > 0
+        ? `${formatTokens(outputTokens)} out`
+        : `${formatTokens(outputTokens)} tokens out`,
+    );
   if (durationMs > 0) parts.push(formatDuration(durationMs));
   return parts.join(' · ');
 }
 
-/** The month's usage line: "14 summaries · 182k tokens in · 9.1k out · 2 failed". */
-export function usageLine(u: { calls: number; failed: number; inputTokens: number; outputTokens: number }): string {
+/** The month's usage line: "14 summaries (9 extended) · 182k tokens in · 9.1k out · 2 failed". */
+export function usageLine(u: {
+  calls: number;
+  failed: number;
+  extended?: number;
+  inputTokens: number;
+  outputTokens: number;
+}): string {
   if (u.calls === 0) return 'No summaries yet this month';
-  const parts = [`${u.calls} ${u.calls === 1 ? 'summary' : 'summaries'}`];
+  const parts = [
+    `${u.calls} ${u.calls === 1 ? 'summary' : 'summaries'}${u.extended ? ` (${u.extended} extended)` : ''}`,
+  ];
   if (u.inputTokens > 0) parts.push(`${formatTokens(u.inputTokens)} tokens in`);
-  if (u.outputTokens > 0) parts.push(u.inputTokens > 0 ? `${formatTokens(u.outputTokens)} out` : `${formatTokens(u.outputTokens)} tokens out`);
+  if (u.outputTokens > 0)
+    parts.push(
+      u.inputTokens > 0
+        ? `${formatTokens(u.outputTokens)} out`
+        : `${formatTokens(u.outputTokens)} tokens out`,
+    );
   if (u.failed > 0) parts.push(`${u.failed} failed`);
   return parts.join(' · ');
 }

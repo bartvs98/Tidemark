@@ -46,6 +46,8 @@ export interface AiSummaryData {
   createdAt: string;
   /** The release notes in range changed since this summary was made. */
   stale: boolean;
+  /** Made by extending the summary up to this version with only the newer releases; absent for a full one. */
+  extendedFrom?: string;
   /** Tokens and time of the call that made it; 0 when unknown. */
   inputTokens: number;
   outputTokens: number;

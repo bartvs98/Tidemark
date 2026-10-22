@@ -24,6 +24,13 @@ const (
 	triggerAuto   = "auto"
 )
 
+// Modes of a provider call: a full summary of the range, or an extension of an earlier
+// summary with only the newer releases' notes.
+const (
+	modeFull     = "full"
+	modeExtended = "extended"
+)
+
 // Service keeps every stored summary in memory (Lookup is called per container on every
 // list request) and generates new ones, one provider call per key at a time.
 type Service struct {
@@ -90,14 +97,16 @@ func (s *Service) Generating(k Key) bool {
 }
 
 // Generate always calls the provider (one call per key at a time; a concurrent caller
-// waits for and shares the running one). Stores success (clears error) or failure (keeps
-// an earlier summary, sets Error/FailedAt) and records the call as manual. Returns
-// ErrOff / ErrNoNotes without a call.
-func (s *Service) Generate(ctx context.Context, k Key, r Request) (Entry, error) {
-	return s.generateAs(ctx, k, r, triggerManual)
+// waits for and shares the running one). With full false it extends an earlier summary of
+// the same repo and running version when one covers the oldest part of the range unchanged
+// (see base), and makes a full summary otherwise; full true always makes a full one.
+// Stores success (clears error) or failure (keeps an earlier summary, sets Error/FailedAt)
+// and records the call as manual. Returns ErrOff / ErrNoNotes without a call.
+func (s *Service) Generate(ctx context.Context, k Key, r Request, full bool) (Entry, error) {
+	return s.generateAs(ctx, k, r, triggerManual, full)
 }
 
-func (s *Service) generateAs(ctx context.Context, k Key, r Request, trigger string) (Entry, error) {
+func (s *Service) generateAs(ctx context.Context, k Key, r Request, trigger string, full bool) (Entry, error) {
 	p, _ := s.Status()
 	if p == nil {
 		return Entry{}, ErrOff
@@ -108,20 +117,37 @@ func (s *Service) generateAs(ctx context.Context, k Key, r Request, trigger stri
 	v, err, _ := s.flight.Do(k.Repo+"\x00"+k.From+"\x00"+k.To, func() (any, error) {
 		s.setGenerating(k, true)
 		defer s.setGenerating(k, false)
-		return s.generate(ctx, p, k, r, trigger)
+		return s.generate(ctx, p, k, r, trigger, full)
 	})
 	e, _ := v.(Entry)
 	return e, err
 }
 
-func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, trigger string) (Entry, error) {
-	prompt, sel := buildPrompt(r)
+func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, trigger string, full bool) (Entry, error) {
+	var base *Summary
+	var prompt Prompt
+	var sel selection
+	mode := modeFull
+	if !full {
+		s.mu.Lock()
+		b, fresh := s.base(k, r)
+		s.mu.Unlock()
+		if b != nil {
+			if pr, sl, ok := buildExtendPrompt(r, b, fresh); ok {
+				base, prompt, sel, mode = b, pr, sl, modeExtended
+			}
+		}
+	}
+	if base == nil {
+		prompt, sel = buildPrompt(r)
+	}
+
 	start := s.now()
 	raw, usage, err := p.Complete(ctx, prompt)
 	took := s.now().Sub(start)
 	var sum *Summary
 	if err == nil {
-		sum, err = summaryFrom(raw, sel)
+		sum, err = summaryFrom(raw, sel, base)
 	}
 
 	s.mu.Lock()
@@ -131,6 +157,7 @@ func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, tr
 	} else {
 		sum.Provider, sum.Model = p.Name(), p.Model()
 		sum.NotesHash, sum.CreatedAt = NotesHash(r), s.now()
+		sum.Latest, sum.Covered, sum.CoveredHash = r.Latest, len(r.Releases), CoveredHash(r.Releases)
 		sum.InputTokens, sum.OutputTokens, sum.Duration = usage.InputTokens, usage.OutputTokens, took
 		e = Entry{Summary: sum}
 	}
@@ -142,7 +169,7 @@ func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, tr
 	if serr := s.st.PutAISummary(sctx, entryToStore(k, e)); serr != nil {
 		s.log.Error("store AI summary", "repo", k.Repo, "err", serr)
 	}
-	call := store.AICall{At: start, Provider: p.Name(), Model: p.Model(), Trigger: trigger,
+	call := store.AICall{At: start, Provider: p.Name(), Model: p.Model(), Trigger: trigger, Mode: mode,
 		Repo: k.Repo, From: k.From, To: k.To, Releases: len(sel.sent),
 		InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, Duration: took}
 	if err != nil {
@@ -157,14 +184,49 @@ func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, tr
 	return e, nil
 }
 
-// Auto is for the after-check hook: generates when on, autoMin > 0, len(r.Releases) >= autoMin,
-// and there's no summary or it's stale (NotesHash differs), and the last failure for the key is
-// older than 6 h. Logs failures, never returns them.
+// base finds the stored summary k's range can extend: another key with the same repo and
+// running version whose summary left nothing out (Omitted 0) and whose covered releases
+// are exactly the oldest part of r's range, unchanged (CoveredHash), with at least one
+// newer release on top. Of several, the one covering the most releases (then the newest).
+// fresh is the newer releases, newest first. Call with s.mu held.
+func (s *Service) base(k Key, r Request) (base *Summary, fresh []Notes) {
+	for k2, e := range s.entries {
+		b := e.Summary
+		if k2 == k || k2.Repo != k.Repo || k2.From != k.From || !extendable(b) || b.Covered >= len(r.Releases) {
+			continue
+		}
+		if base != nil && (b.Covered < base.Covered || b.Covered == base.Covered && !b.CreatedAt.After(base.CreatedAt)) {
+			continue
+		}
+		if b.CoveredHash != CoveredHash(r.Releases[len(r.Releases)-b.Covered:]) {
+			continue
+		}
+		base = b
+	}
+	if base == nil {
+		return nil, nil
+	}
+	return base, r.Releases[:len(r.Releases)-base.Covered]
+}
+
+// extendable: a summary that could be the base of an extension.
+func extendable(b *Summary) bool {
+	return b != nil && b.Omitted == 0 && b.Covered > 0 && b.CoveredHash != ""
+}
+
+// Auto is for the after-check hook: generates (extending when possible) when on,
+// autoMin > 0, len(r.Releases) >= autoMin, the newest release in range has notes (they
+// usually follow the tag within the hour, and the hourly sync picks them up), there's no
+// summary or it's stale (NotesHash differs), and the last failure for the key is older
+// than 6 h. Logs failures, never returns them.
 func (s *Service) Auto(ctx context.Context, k Key, r Request) {
 	s.mu.Lock()
 	p, autoMin, e, busy := s.provider, s.autoMin, s.entries[k], s.generating[k]
 	s.mu.Unlock()
 	if p == nil || autoMin <= 0 || len(r.Releases) < autoMin || busy || !hasNotes(r) {
+		return
+	}
+	if strings.TrimSpace(r.Releases[0].Body) == "" {
 		return
 	}
 	if e.Summary != nil && e.Summary.NotesHash == NotesHash(r) {
@@ -173,11 +235,13 @@ func (s *Service) Auto(ctx context.Context, k Key, r Request) {
 	if !e.FailedAt.IsZero() && s.now().Sub(e.FailedAt) < autoBackoff {
 		return
 	}
-	if _, err := s.generateAs(ctx, k, r, triggerAuto); err != nil {
+	got, err := s.generateAs(ctx, k, r, triggerAuto, false)
+	if err != nil {
 		s.log.Warn("AI summary failed", "repo", k.Repo, "from", k.From, "to", k.To, "provider", p.Name(), "err", err)
 		return
 	}
-	s.log.Info("AI summary generated", "repo", k.Repo, "from", k.From, "to", k.To, "releases", len(r.Releases))
+	s.log.Info("AI summary generated", "repo", k.Repo, "from", k.From, "to", k.To, "releases", len(r.Releases),
+		"extended_from", got.Summary.ExtendedFrom)
 }
 
 // Usage sums the provider calls since t.
@@ -185,14 +249,33 @@ func (s *Service) Usage(ctx context.Context, since time.Time) (store.AIUsage, er
 	return s.st.AIUsageSince(ctx, since)
 }
 
-// Prune deletes stored summaries (memory + store) whose key isn't in keep. Skips keys
-// that are generating right now. Returns how many went.
+// Prune deletes stored summaries (memory + store) whose key isn't in keep, except, for
+// each kept key, the summary a newer range of the same repo and running version would
+// extend: of the other keys with that repo and From, the extendable one covering the most
+// releases (then the newest). Skips keys that are generating right now. Returns how many went.
 func (s *Service) Prune(ctx context.Context, keep map[Key]bool) (int, error) {
 	// Held throughout, so memory and store change together and no generation starts
 	// writing a key (generate stores under its generating flag) while it's deleted.
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	kept := func(k Key) bool { return keep[k] || s.generating[k] }
+	bases := map[Key]bool{}
+	for need := range keep {
+		var best *Summary
+		var bestKey Key
+		for k, e := range s.entries {
+			b := e.Summary
+			if k.Repo != need.Repo || k.From != need.From || k.To == need.To || !extendable(b) {
+				continue
+			}
+			if best == nil || b.Covered > best.Covered || b.Covered == best.Covered && b.CreatedAt.After(best.CreatedAt) {
+				best, bestKey = b, k
+			}
+		}
+		if best != nil {
+			bases[bestKey] = true
+		}
+	}
+	kept := func(k Key) bool { return keep[k] || bases[k] || s.generating[k] }
 	n, err := s.st.DeleteAISummaries(ctx, func(repo, from, to string) bool { return kept(Key{repo, from, to}) })
 	if err != nil {
 		return 0, err
@@ -225,13 +308,30 @@ func hasNotes(r Request) bool {
 	return false
 }
 
-func summaryFrom(raw []byte, sel selection) (*Summary, error) {
-	changes, actions, verdict, reasons, err := parseOutput(raw, sel.sent)
+// summaryFrom parses the model's answer into a summary. For an extension (base non-nil)
+// reasons may also name the base reasons' tags, the base's verdict is a floor, and the
+// summary counts the base's releases too.
+func summaryFrom(raw []byte, sel selection, base *Summary) (*Summary, error) {
+	tags := tagsOf(sel.sent)
+	if base != nil {
+		for _, r := range base.Reasons {
+			if r.Tag != "" {
+				tags[r.Tag] = true
+			}
+		}
+	}
+	changes, actions, verdict, reasons, err := parseOutput(raw, tags)
 	if err != nil {
 		return nil, err
 	}
-	return &Summary{Changes: changes, Actions: actions, Verdict: verdict, Reasons: reasons,
-		Releases: len(sel.sent), Omitted: sel.omitted}, nil
+	sum := &Summary{Changes: changes, Actions: actions, Verdict: verdict, Reasons: reasons,
+		Releases: len(sel.sent), Omitted: sel.omitted}
+	if base != nil {
+		sum.Verdict, sum.Reasons = applyFloor(verdict, reasons, base)
+		sum.Releases += base.Releases
+		sum.ExtendedFrom = base.Latest
+	}
+	return sum, nil
 }
 
 // shortError keeps a stored error message to one short line.
@@ -252,7 +352,8 @@ func entryFromStore(a store.AISummary) Entry {
 	_ = lvl.UnmarshalText([]byte(a.Verdict)) // unknown: none
 	sum := &Summary{Changes: a.Changes, Actions: a.Actions, Verdict: lvl, Provider: a.Provider, Model: a.Model,
 		Releases: a.Releases, Omitted: a.Omitted, NotesHash: a.NotesHash, CreatedAt: a.CreatedAt,
-		InputTokens: a.InputTokens, OutputTokens: a.OutputTokens, Duration: a.Duration}
+		InputTokens: a.InputTokens, OutputTokens: a.OutputTokens, Duration: a.Duration,
+		Latest: a.Latest, ExtendedFrom: a.ExtendedFrom, Covered: a.Covered, CoveredHash: a.CoveredHash}
 	for _, r := range a.Reasons {
 		sum.Reasons = append(sum.Reasons, Reason{Text: r.Text, Tag: r.Tag})
 	}
@@ -267,6 +368,7 @@ func entryToStore(k Key, e Entry) store.AISummary {
 		a.Verdict, a.Releases, a.Omitted = sum.Verdict.String(), sum.Releases, sum.Omitted
 		a.NotesHash, a.CreatedAt = sum.NotesHash, sum.CreatedAt
 		a.InputTokens, a.OutputTokens, a.Duration = sum.InputTokens, sum.OutputTokens, sum.Duration
+		a.Latest, a.ExtendedFrom, a.Covered, a.CoveredHash = sum.Latest, sum.ExtendedFrom, sum.Covered, sum.CoveredHash
 		for _, r := range sum.Reasons {
 			a.Reasons = append(a.Reasons, store.AIReason{Text: r.Text, Tag: r.Tag})
 		}

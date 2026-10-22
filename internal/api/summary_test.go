@@ -272,12 +272,12 @@ func TestAIKeysAndPrune(t *testing.T) {
 	// A summary for every key, plus one nothing needs: each key's summary shows on the list.
 	notes := ai.Request{Latest: "x", Releases: []ai.Notes{{Tag: "v", Body: "notes"}}}
 	for k := range keys {
-		if _, err := f.svc.Generate(t.Context(), k, notes); err != nil {
+		if _, err := f.svc.Generate(t.Context(), k, notes, false); err != nil {
 			t.Fatal(err)
 		}
 	}
 	orphan := ai.Key{Repo: jellyfin.Repo, From: "1.0.0", To: "2.0.0"}
-	if _, err := f.svc.Generate(t.Context(), orphan, notes); err != nil {
+	if _, err := f.svc.Generate(t.Context(), orphan, notes, false); err != nil {
 		t.Fatal(err)
 	}
 	applied := func() int {
@@ -313,5 +313,62 @@ func TestAIKeysAndPrune(t *testing.T) {
 	broken := New(Deps{Log: f.srv.log, Source: docker.NewSnapshot("missing.json"), AI: f.svc})
 	if _, err := broken.AIKeys(t.Context()); err == nil {
 		t.Error("AIKeys without Docker: no error")
+	}
+}
+
+// The POST body picks the mode: empty or {} extends an earlier summary when possible,
+// {"mode":"full"} (Regenerate) always summarises the whole range.
+func TestSummaryModes(t *testing.T) {
+	f := newSummaryFixture(t, "fixes")
+	f.detail(t) // stores the notes
+	f.p.answer(`{"changes":["x"],"actions":[],"verdict":"none","reasons":[]}`, nil)
+
+	for _, body := range []string{`{"mode":"nope"}`, `{"mode":1}`, `[]`, `nonsense`, `{"mod":"full"}`} {
+		if rec := send(t, f.h, http.MethodPost, "/api/containers/jellyfin/summary", body); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s", body, rec.Code, rec.Body)
+		}
+	}
+	if f.p.calls != 0 {
+		t.Fatalf("provider called %d times for bad bodies", f.p.calls)
+	}
+
+	if rec := send(t, f.h, http.MethodPost, "/api/containers/jellyfin/summary", `{"mode":"full"}`); rec.Code != http.StatusOK ||
+		strings.Contains(rec.Body.String(), "extendedFrom") {
+		t.Fatalf("full POST = %d: %s", rec.Code, rec.Body)
+	}
+	rows, _ := f.db.AISummaries(t.Context())
+	if len(rows) != 1 {
+		t.Fatalf("stored = %+v", rows)
+	}
+	// An earlier summary up to 10.10.0, with the notes as stored: the next one extends it.
+	base := ai.Key{Repo: rows[0].Repo, From: rows[0].From, To: "10.10.0"}
+	f.p.answer(`{"changes":["big"],"actions":[],"verdict":"attention","reasons":[{"text":"db migration","tag":"v10.10.0"}]}`, nil)
+	if _, err := f.svc.Generate(t.Context(), base, ai.Request{Latest: "10.10.0",
+		Releases: []ai.Notes{{Tag: "v10.10.0", Body: "big one"}}}, true); err != nil {
+		t.Fatal(err)
+	}
+
+	f.p.answer(`{"changes":["fixes"],"actions":[],"verdict":"none","reasons":[]}`, nil)
+	for _, body := range []string{"", "{}"} {
+		rec := send(t, f.h, http.MethodPost, "/api/containers/jellyfin/summary", body)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"extendedFrom":"10.10.0"`) {
+			t.Errorf("%q POST = %d: %s", body, rec.Code, rec.Body)
+		}
+	}
+	d := f.detail(t)
+	if d.AI == nil || d.AI.Summary == nil || d.AI.Summary.ExtendedFrom != "10.10.0" || d.AI.Summary.Verdict != analysis.Attention ||
+		d.AI.Summary.Releases != 2 || d.AI.Summary.Stale {
+		t.Errorf("detail ai = %+v", d.AI)
+	}
+	if u := d.Container.Update; u.Level != analysis.Attention || len(aiReasons(u.Reasons)) != 1 {
+		t.Errorf("update = %+v", u)
+	}
+
+	if rec := send(t, f.h, http.MethodPost, "/api/containers/jellyfin/summary", `{"mode":"full"}`); rec.Code != http.StatusOK ||
+		strings.Contains(rec.Body.String(), "extendedFrom") {
+		t.Errorf("regenerate = %d: %s", rec.Code, rec.Body)
+	}
+	if u, _ := f.svc.Usage(t.Context(), time.Time{}); u.Calls != 5 || u.Extended != 2 {
+		t.Errorf("usage = %+v", u)
 	}
 }

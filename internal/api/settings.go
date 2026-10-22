@@ -57,6 +57,7 @@ type aiUsageJSON struct {
 	Since        time.Time `json:"since"` // start of the current month, server local time
 	Calls        int       `json:"calls"`
 	Failed       int       `json:"failed"`
+	Extended     int       `json:"extended"` // calls that extended an earlier summary
 	InputTokens  int       `json:"inputTokens"`
 	OutputTokens int       `json:"outputTokens"`
 }
@@ -128,7 +129,7 @@ func (s *Server) settingsBody(ctx context.Context) settingsJSON {
 			if u, err := s.ai.Usage(ctx, since); err != nil {
 				s.log.Warn("reading AI usage failed", "err", err)
 			} else {
-				out.AI.Usage = &aiUsageJSON{Since: since, Calls: u.Calls, Failed: u.Failed,
+				out.AI.Usage = &aiUsageJSON{Since: since, Calls: u.Calls, Failed: u.Failed, Extended: u.Extended,
 					InputTokens: u.InputTokens, OutputTokens: u.OutputTokens}
 			}
 		}

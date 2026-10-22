@@ -63,10 +63,18 @@ type Summary struct {
 	Reasons   []Reason // ≤ 5; empty when Verdict is None
 	Provider  string   // anthropic | openai | gemini
 	Model     string
-	Releases  int // releases sent
+	Releases  int // releases sent (for an extension: the base's plus the new ones)
 	Omitted   int // releases in range left out (input cap)
 	NotesHash string
 	CreatedAt time.Time
+	// Latest is the latest version as displayed in the request; ExtendedFrom the direct
+	// base's Latest when this summary extended an earlier one ("" for a full summary).
+	Latest, ExtendedFrom string
+	// Covered is how many releases were in range when it was made (sent or not), and
+	// CoveredHash their CoveredHash: a newer range whose oldest Covered releases hash the
+	// same can extend this summary.
+	Covered     int
+	CoveredHash string
 	// The call that produced it, as the provider reported it (0 when unknown).
 	InputTokens, OutputTokens int
 	Duration                  time.Duration
@@ -117,15 +125,28 @@ func RequestFrom(image, repo, running, latest string, ch changelog.Changes) Requ
 // NotesHash hashes running, latest and every release's tag + body (before the cap), so a
 // stored summary can be compared with the notes now.
 func NotesHash(r Request) string {
-	h := sha256.New()
-	field := func(s string) { // length-prefixed, so fields can't run into each other
-		h.Write([]byte(strconv.Itoa(len(s)) + ":" + s))
-	}
-	field(r.Running)
-	field(r.Latest)
+	fields := []string{r.Running, r.Latest}
 	for _, n := range r.Releases {
-		field(n.Tag)
-		field(n.Body)
+		fields = append(fields, n.Tag, n.Body)
+	}
+	return hashFields(fields)
+}
+
+// CoveredHash hashes the tag + body of each release in rels (as given, newest first) and
+// nothing else, so the oldest part of a newer range (rels[len(rels)-n:]) hashes the same
+// as the whole range did when it was the newest.
+func CoveredHash(rels []Notes) string {
+	fields := make([]string, 0, 2*len(rels))
+	for _, n := range rels {
+		fields = append(fields, n.Tag, n.Body)
+	}
+	return hashFields(fields)
+}
+
+func hashFields(fields []string) string {
+	h := sha256.New()
+	for _, s := range fields { // length-prefixed, so fields can't run into each other
+		h.Write([]byte(strconv.Itoa(len(s)) + ":" + s))
 	}
 	return hex.EncodeToString(h.Sum(nil))[:32]
 }

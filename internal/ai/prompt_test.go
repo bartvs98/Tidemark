@@ -158,7 +158,7 @@ func TestParseOutput(t *testing.T) {
 		"actions":[" "],
 		"verdict":"Breaking",
 		"reasons":[{"text":"r1","tag":"v1.2.0"},{"text":"r2","tag":"v9"},{"text":" ","tag":""},{"text":"r3","tag":""},{"text":"r4","tag":""},{"text":"r5","tag":""},{"text":"r6","tag":""}]}`
-	changes, actions, verdict, reasons, err := parseOutput(json.RawMessage(raw), sent)
+	changes, actions, verdict, reasons, err := parseOutput(json.RawMessage(raw), tagsOf(sent))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,12 +172,12 @@ func TestParseOutput(t *testing.T) {
 		t.Errorf("reasons %+v", reasons)
 	}
 
-	_, _, v, reasons, err := parseOutput(json.RawMessage(`{"changes":["x"],"actions":[],"verdict":"none","reasons":[{"text":"y","tag":""}]}`), sent)
+	_, _, v, reasons, err := parseOutput(json.RawMessage(`{"changes":["x"],"actions":[],"verdict":"none","reasons":[{"text":"y","tag":""}]}`), tagsOf(sent))
 	if err != nil || v != analysis.None || reasons != nil {
 		t.Errorf("none: %v %v %v", v, reasons, err)
 	}
 	for _, bad := range []string{`{"changes":[],"actions":[],"verdict":"maybe","reasons":[]}`, `not json`, `{"changes":[],"actions":[],"reasons":[]}`} {
-		if _, _, _, _, err := parseOutput(json.RawMessage(bad), sent); err == nil {
+		if _, _, _, _, err := parseOutput(json.RawMessage(bad), tagsOf(sent)); err == nil {
 			t.Errorf("%s: want error", bad)
 		}
 	}

@@ -26,12 +26,17 @@ type fakeProvider struct {
 	usage   Usage
 	release chan struct{} // when set, Complete waits for it
 	onCall  func()        // when set, runs during the call (e.g. advances the clock)
+	mu      sync.Mutex
+	last    Prompt // the last prompt sent
 }
 
 func (f *fakeProvider) Name() string  { return "anthropic" }
 func (f *fakeProvider) Model() string { return "m1" }
 func (f *fakeProvider) Complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error) {
 	f.calls.Add(1)
+	f.mu.Lock()
+	f.last = p
+	f.mu.Unlock()
 	if f.release != nil {
 		<-f.release
 	}
@@ -74,19 +79,19 @@ var (
 func TestGenerateStoresAndLoads(t *testing.T) {
 	s, st, now := newService(t)
 	ctx := context.Background()
-	if _, err := s.Generate(ctx, key, req); !errors.Is(err, ErrOff) {
+	if _, err := s.Generate(ctx, key, req, false); !errors.Is(err, ErrOff) {
 		t.Errorf("off: %v", err)
 	}
 	f := &fakeProvider{answer: good}
 	s.Configure(f, 0)
-	if _, err := s.Generate(ctx, key, Request{Latest: "1", Releases: []Notes{{Tag: "v1", Body: " "}}}); !errors.Is(err, ErrNoNotes) {
+	if _, err := s.Generate(ctx, key, Request{Latest: "1", Releases: []Notes{{Tag: "v1", Body: " "}}}, false); !errors.Is(err, ErrNoNotes) {
 		t.Errorf("no notes: %v", err)
 	}
 	if f.calls.Load() != 0 {
 		t.Fatal("provider called without notes")
 	}
 
-	e, err := s.Generate(ctx, key, req)
+	e, err := s.Generate(ctx, key, req, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +108,7 @@ func TestGenerateStoresAndLoads(t *testing.T) {
 	// A failure keeps the summary and records the error; it survives a reload.
 	*now = now.Add(time.Hour)
 	f.err = errors.New("rate limited by anthropic")
-	e, err = s.Generate(ctx, key, req)
+	e, err = s.Generate(ctx, key, req, false)
 	if err == nil || err.Error() != "rate limited by anthropic" || e.Summary == nil || e.Error != err.Error() || !e.FailedAt.Equal(*now) {
 		t.Errorf("failure: %+v %v", e, err)
 	}
@@ -119,14 +124,14 @@ func TestGenerateStoresAndLoads(t *testing.T) {
 
 	// Success clears the error.
 	f.err = nil
-	e, _ = s.Generate(ctx, key, req)
+	e, _ = s.Generate(ctx, key, req, false)
 	if e.Error != "" || !e.FailedAt.IsZero() {
 		t.Errorf("error not cleared: %+v", e)
 	}
 
 	// An invalid answer is a failure.
 	f.answer = `{"changes":[],"actions":[],"verdict":"maybe","reasons":[]}`
-	if _, err := s.Generate(ctx, Key{"r", "1", "2"}, req); err == nil {
+	if _, err := s.Generate(ctx, Key{"r", "1", "2"}, req, false); err == nil {
 		t.Error("invalid answer accepted")
 	}
 	if e, _ := s.Lookup(Key{"r", "1", "2"}); e.Summary != nil || e.Error == "" {
@@ -141,7 +146,7 @@ func TestGenerateSharesConcurrentCalls(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 3 {
 		wg.Go(func() {
-			if _, err := s.Generate(context.Background(), key, req); err != nil {
+			if _, err := s.Generate(context.Background(), key, req, false); err != nil {
 				t.Error(err)
 			}
 		})
@@ -238,7 +243,7 @@ func aiCalls(t *testing.T, path string) []store.AICall {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	rows, err := db.Query(`SELECT at, provider, model, trigger, repo, from_version, to_version, releases,
+	rows, err := db.Query(`SELECT at, provider, model, trigger, mode, repo, from_version, to_version, releases,
 		input_tokens, output_tokens, duration_ms, error FROM ai_calls ORDER BY id`)
 	if err != nil {
 		t.Fatal(err)
@@ -249,7 +254,7 @@ func aiCalls(t *testing.T, path string) []store.AICall {
 		var c store.AICall
 		var at string
 		var ms int64
-		if err := rows.Scan(&at, &c.Provider, &c.Model, &c.Trigger, &c.Repo, &c.From, &c.To, &c.Releases,
+		if err := rows.Scan(&at, &c.Provider, &c.Model, &c.Trigger, &c.Mode, &c.Repo, &c.From, &c.To, &c.Releases,
 			&c.InputTokens, &c.OutputTokens, &ms, &c.Error); err != nil {
 			t.Fatal(err)
 		}
@@ -268,14 +273,14 @@ func TestCallRecordsAndUsage(t *testing.T) {
 		onCall: func() { *now = now.Add(4200 * time.Millisecond) }}
 
 	// No call, no record: off, or nothing to summarise.
-	s.Generate(ctx, key, req)
+	s.Generate(ctx, key, req, false)
 	s.Configure(f, 2)
-	s.Generate(ctx, key, Request{Latest: "1", Releases: []Notes{{Tag: "v1"}}})
+	s.Generate(ctx, key, Request{Latest: "1", Releases: []Notes{{Tag: "v1"}}}, false)
 	if got := aiCalls(t, path); len(got) != 0 {
 		t.Fatalf("records without a call: %+v", got)
 	}
 
-	e, err := s.Generate(ctx, key, req)
+	e, err := s.Generate(ctx, key, req, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,9 +300,9 @@ func TestCallRecordsAndUsage(t *testing.T) {
 
 	got := aiCalls(t, path)
 	want := []store.AICall{
-		{At: start, Provider: "anthropic", Model: "m1", Trigger: "manual", Repo: key.Repo, From: key.From, To: key.To,
+		{At: start, Provider: "anthropic", Model: "m1", Trigger: "manual", Mode: "full", Repo: key.Repo, From: key.From, To: key.To,
 			Releases: 2, InputTokens: 1500, OutputTokens: 200, Duration: 4200 * time.Millisecond},
-		{At: start.Add(4200 * time.Millisecond), Provider: "anthropic", Model: "m1", Trigger: "auto", Repo: k2.Repo, From: k2.From, To: k2.To,
+		{At: start.Add(4200 * time.Millisecond), Provider: "anthropic", Model: "m1", Trigger: "auto", Mode: "full", Repo: k2.Repo, From: k2.From, To: k2.To,
 			Releases: 2, InputTokens: 1500, OutputTokens: 4096, Duration: 4200 * time.Millisecond, Error: "the answer was cut off"},
 	}
 	if len(got) != len(want) {
@@ -324,9 +329,9 @@ func TestPrune(t *testing.T) {
 	ctx := context.Background()
 	f := &fakeProvider{answer: good}
 	s.Configure(f, 0)
-	keep, drop, busy := Key{"r", "1", "2"}, Key{"r", "1", "3"}, Key{"r", "1", "4"}
+	keep, drop, busy := Key{"r", "1", "2"}, Key{"r", "0", "3"}, Key{"r", "2", "4"} // other running versions: no bases of keep
 	for _, k := range []Key{keep, drop, busy} {
-		if _, err := s.Generate(ctx, k, req); err != nil {
+		if _, err := s.Generate(ctx, k, req, false); err != nil {
 			t.Fatal(err)
 		}
 	}

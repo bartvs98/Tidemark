@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -43,6 +46,9 @@ type aiSummaryJSON struct {
 	Omitted   int            `json:"omitted"`
 	CreatedAt time.Time      `json:"createdAt"`
 	Stale     bool           `json:"stale"` // the notes in range changed since
+	// ExtendedFrom is the latest version of the summary this one extended with the newer
+	// releases' notes; absent for a full summary.
+	ExtendedFrom string `json:"extendedFrom,omitempty"`
 	// The call that produced it; 0 when unknown.
 	InputTokens  int   `json:"inputTokens"`
 	OutputTokens int   `json:"outputTokens"`
@@ -172,6 +178,8 @@ func (s *Server) aiState(t summaryTarget) *aiJSON {
 			CreatedAt: sm.CreatedAt,
 			Stale:     sm.NotesHash != ai.NotesHash(t.req),
 
+			ExtendedFrom: sm.ExtendedFrom,
+
 			InputTokens:  sm.InputTokens,
 			OutputTokens: sm.OutputTokens,
 			DurationMs:   sm.Duration.Milliseconds(),
@@ -183,12 +191,44 @@ func (s *Server) aiState(t summaryTarget) *aiJSON {
 	return out
 }
 
+// parseSummaryMode reads the optional body of a summary request: empty or {} extends an
+// earlier summary when possible, {"mode":"full"} always summarises the whole range.
+func parseSummaryMode(body io.Reader) (full bool, err error) {
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		return false, errors.New("the request body is too large")
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return false, nil
+	}
+	var req struct {
+		Mode string `json:"mode"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		return false, errors.New("invalid request body")
+	}
+	switch req.Mode {
+	case "":
+		return false, nil
+	case "full":
+		return true, nil
+	}
+	return false, errors.New(`unknown mode: use "full" or leave it out`)
+}
+
 // postSummary summarises a container's release notes in range with the configured
 // provider and answers with the new AI state. It waits for the provider (up to
 // summaryTimeout) on the server's background context, so a closed tab doesn't waste the call.
 func (s *Server) postSummary(w http.ResponseWriter, r *http.Request) {
 	if s.ai == nil {
 		writeError(w, http.StatusNotImplemented, "AI summaries are not enabled")
+		return
+	}
+	full, err := parseSummaryMode(http.MaxBytesReader(w, r.Body, 1<<10))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	c, ok := s.findContainer(w, r)
@@ -207,7 +247,7 @@ func (s *Server) postSummary(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(s.background, summaryTimeout)
 	defer cancel()
-	_, err := s.ai.Generate(ctx, t.key, t.req)
+	_, err = s.ai.Generate(ctx, t.key, t.req, full)
 	switch {
 	case errors.Is(err, ai.ErrOff):
 		writeError(w, http.StatusConflict, err.Error())

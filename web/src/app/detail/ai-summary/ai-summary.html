@@ -1,13 +1,22 @@
 @let s = summary();
 @let st = state();
-<tm-card class="tm-ai-sheen" [attr.data-generating]="busy() ? '' : null" [heading]="s || busy() || error() ? 'Summary' : undefined">
+<tm-card
+  class="tm-ai-sheen"
+  [attr.data-generating]="busy() ? '' : null"
+  [heading]="s || busy() || error() ? 'Summary' : undefined"
+>
   @if (s || busy() || error()) {
     <tm-ai-marker tmCardActions />
   }
 
   @if (busy() && !s) {
     <!-- Nothing to show yet: placeholder lines while the model works. -->
-    <div class="flex flex-col gap-2.5" role="status" aria-label="Summarising…" data-testid="ai-generating">
+    <div
+      class="flex flex-col gap-2.5"
+      role="status"
+      aria-label="Summarising…"
+      data-testid="ai-generating"
+    >
       <p class="text-sm text-fg-muted">Summarising {{ count() }}…</p>
       <tm-skeleton width="90%" />
       <tm-skeleton width="75%" />
@@ -16,7 +25,12 @@
   } @else if (s) {
     <div class="flex flex-col gap-4" [attr.aria-busy]="busy() || null">
       <section aria-labelledby="ai-changes" data-testid="ai-changes">
-        <h4 id="ai-changes" class="mb-1.5 text-xs font-medium tracking-wide text-fg-subtle uppercase">What changed</h4>
+        <h4
+          id="ai-changes"
+          class="mb-1.5 text-xs font-medium tracking-wide text-fg-subtle uppercase"
+        >
+          What changed
+        </h4>
         @if (s.changes.length) {
           <ul class="flex list-disc flex-col gap-1 pl-5">
             @for (c of s.changes; track $index) {
@@ -30,7 +44,12 @@
 
       @if (s.actions.length) {
         <section aria-labelledby="ai-actions" data-testid="ai-actions">
-          <h4 id="ai-actions" class="mb-1.5 text-xs font-medium tracking-wide text-fg-subtle uppercase">What you need to do</h4>
+          <h4
+            id="ai-actions"
+            class="mb-1.5 text-xs font-medium tracking-wide text-fg-subtle uppercase"
+          >
+            What you need to do
+          </h4>
           <ul class="flex list-disc flex-col gap-1 pl-5">
             @for (a of s.actions; track $index) {
               <li class="wrap-anywhere">{{ a }}</li>
@@ -41,9 +60,16 @@
 
       <!-- The AI's verdict: a level badge (icon + word) with its reasons; "none" is said quietly. -->
       <section aria-labelledby="ai-verdict" data-testid="ai-verdict">
-        <h4 id="ai-verdict" class="mb-1.5 text-xs font-medium tracking-wide text-fg-subtle uppercase">Verdict</h4>
+        <h4
+          id="ai-verdict"
+          class="mb-1.5 text-xs font-medium tracking-wide text-fg-subtle uppercase"
+        >
+          Verdict
+        </h4>
         @if (s.verdict === 'none') {
-          <p class="flex items-center gap-1.5 text-sm text-fg-muted"><tm-icon name="check" />Nothing to flag</p>
+          <p class="flex items-center gap-1.5 text-sm text-fg-muted">
+            <tm-icon name="check" />Nothing to flag
+          </p>
         } @else {
           <div class="flex flex-col items-start gap-2">
             <tm-level [level]="s.verdict" />
@@ -69,7 +95,10 @@
       <div class="flex min-w-0 flex-col gap-1 text-sm text-fg-muted">
         @if (st.releases) {
           <p>
-            Sends the release notes to {{ provider() }} (<span class="font-mono">{{ st.model }}</span>).
+            Sends the release notes to {{ provider() }} (<span class="font-mono">{{
+              st.model
+            }}</span
+            >).
           </p>
           @if (st.autoMinReleases > 0) {
             <p>Updates with {{ st.autoMinReleases }}+ releases are summarised after each check.</p>
@@ -78,7 +107,14 @@
           <p>There are no release notes to summarise yet.</p>
         }
       </div>
-      <button tmButton type="button" size="sm" [disabled]="!st.releases" (click)="generate()" data-testid="ai-generate">
+      <button
+        tmButton
+        type="button"
+        size="sm"
+        [disabled]="!st.releases"
+        (click)="generate(false)"
+        data-testid="ai-generate"
+      >
         Summarise {{ count() }}
       </button>
     </div>
@@ -87,28 +123,57 @@
   @if (error(); as e) {
     <tm-callout tone="attention" heading="Couldn't summarise" class="mt-4" data-testid="ai-error">
       <span class="block wrap-anywhere">{{ e }}</span>
-      <button tmButton type="button" size="sm" icon="refresh-cw" class="mt-3" (click)="generate()" data-testid="ai-retry">Retry</button>
+      <button
+        tmButton
+        type="button"
+        size="sm"
+        icon="refresh-cw"
+        class="mt-3"
+        (click)="generate()"
+        data-testid="ai-retry"
+      >
+        Retry
+      </button>
     </tm-callout>
   }
 
   @if (s) {
     <!-- Where it came from, and the way to a fresh one. -->
-    <div class="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line pt-3" data-testid="ai-meta">
+    <div
+      class="mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line pt-3"
+      data-testid="ai-meta"
+    >
       <p class="min-w-0 text-sm text-fg-muted">
         <span class="font-mono text-xs">{{ s.model }}</span>
         · {{ plural(s.releases, 'release', 'releases') }}
         @if (s.omitted > 0) {
           <span data-testid="ai-omitted">({{ s.omitted }} left out)</span>
         }
+        @if (s.extendedFrom; as base) {
+          <span data-testid="ai-extended"
+            >· extended from <span class="font-mono text-xs">{{ base }}</span></span
+          >
+        }
         @if (stats(); as t) {
           <span data-testid="ai-stats">· {{ t }}</span>
         }
         · {{ created() }}
         @if (s.stale) {
-          <span class="block sm:ml-1 sm:inline" data-testid="ai-stale">· The notes changed since this summary</span>
+          <span class="block sm:ml-1 sm:inline" data-testid="ai-stale"
+            >· The notes changed since this summary</span
+          >
         }
       </p>
-      <button tmButton type="button" size="sm" icon="refresh-cw" [loading]="busy()" (click)="generate()" data-testid="ai-regenerate">
+      <button
+        tmButton
+        type="button"
+        size="sm"
+        icon="refresh-cw"
+        [loading]="busy()"
+        [tmTooltip]="'Summarise all ' + count() + ' again'"
+        (click)="generate(true)"
+        data-testid="ai-regenerate"
+      >
         Regenerate
       </button>
     </div>

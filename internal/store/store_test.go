@@ -405,7 +405,8 @@ func TestAISummariesRoundTrip(t *testing.T) {
 	a := AISummary{Repo: "github.com/a/b", From: "1.0.0", To: "1.2.0", Provider: "anthropic", Model: "m",
 		Changes: []string{"c1", "c2"}, Actions: []string{"a1"}, Verdict: "breaking",
 		Reasons: []AIReason{{Text: "r", Tag: "v1.2.0"}, {Text: "r2"}}, Releases: 2, Omitted: 1,
-		NotesHash: "h", CreatedAt: at, InputTokens: 1200, OutputTokens: 340, Duration: 4200 * time.Millisecond}
+		NotesHash: "h", CreatedAt: at, InputTokens: 1200, OutputTokens: 340, Duration: 4200 * time.Millisecond,
+		Latest: "v1.2.0", ExtendedFrom: "v1.1.0", Covered: 3, CoveredHash: "ch"}
 	if err := s.PutAISummary(ctx, a); err != nil {
 		t.Fatal(err)
 	}
@@ -470,14 +471,14 @@ func TestAICallsUsage(t *testing.T) {
 		{At: month, Provider: "anthropic", Model: "m", Trigger: "manual", Repo: "r", From: "1", To: "2",
 			Releases: 3, InputTokens: 1000, OutputTokens: 100, Duration: time.Second},
 		{At: month.Add(1500 * time.Millisecond), Trigger: "auto", InputTokens: 20, Error: "rate limited"},
-		{At: month.Add(time.Hour).In(time.FixedZone("x", 2*3600)), Trigger: "auto", OutputTokens: 5},
+		{At: month.Add(time.Hour).In(time.FixedZone("x", 2*3600)), Trigger: "auto", Mode: "extended", OutputTokens: 5},
 	} {
 		if err := s.AddAICall(ctx, c); err != nil {
 			t.Fatal(err)
 		}
 	}
 	u, err := s.AIUsageSince(ctx, month)
-	if err != nil || u != (AIUsage{Calls: 3, Failed: 1, InputTokens: 1020, OutputTokens: 105}) {
+	if err != nil || u != (AIUsage{Calls: 3, Failed: 1, Extended: 1, InputTokens: 1020, OutputTokens: 105}) {
 		t.Errorf("usage = %+v, %v", u, err)
 	}
 	// Sub-second precision orders correctly against a whole-second bound.

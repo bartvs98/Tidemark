@@ -83,7 +83,7 @@ export interface Settings {
     baseUrl?: string;
     autoMinReleases: number;
     /** This month's provider calls (since = start of the month). */
-    usage?: { since: string; calls: number; failed: number; inputTokens: number; outputTokens: number };
+    usage?: { since: string; calls: number; failed: number; extended?: number; inputTokens: number; outputTokens: number };
   };
   /** Absent when the server has no settings manager (then nothing is editable). */
   fields?: Record<SettingKey, SettingField>;
