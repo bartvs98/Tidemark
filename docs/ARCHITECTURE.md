@@ -40,7 +40,7 @@ One Go binary that contains the backend, the scheduler and the compiled Angular 
 | Layer | Choice | Why |
 |---|---|---|
 | Language | **Go 1.26+** | Fast, small static binary, low memory, great Docker ecosystem |
-| Docker | Own minimal read-only Engine API client (`internal/docker`) | Only 2 GET endpoints needed; avoids the SDK dependency tree; same decoder for live and snapshot mode. Pull/create for one-click updates comes in step 11 |
+| Docker | Own minimal read-only Engine API client (`internal/docker`) | Only 2 GET endpoints needed; avoids the SDK dependency tree; same decoder for live and snapshot mode. One-click updates (a parked idea) would add pull/create |
 | Registry | `github.com/google/go-containerregistry` | Handles anonymous token auth for Hub/GHCR/Quay/lscr, tag listing, manifest HEAD, multi-arch indexes |
 | Versions | Own lenient parser (`internal/version`) | Real tags aren't semver: `16-alpine`, `v1.15.0-ls175`, `2026.9.0`, `7.4.2-alpine3.21` |
 | HTTP | stdlib `net/http` (Go 1.22+ pattern routing) | No framework needed |
@@ -176,7 +176,6 @@ GET  /api/icons/{ref}[?variant=light|dark]   app icon from the local cache (fetc
 
 later:
 POST /api/containers/{name}/summary   generate AI summary
-POST /api/containers/{name}/update    gated one-click update (409 + reasons if a gate fails)
 ```
 
 Response shapes (Go structs in `internal/api`, TypeScript types in `web/src/app/dashboard/containers.ts` and `detail/detail-types.ts`):
@@ -233,7 +232,7 @@ What the pages show is in [FEATURES §1](FEATURES.md#1-dashboard) and [§6](FEAT
 
 ## Security
 
-- **Docker socket access is root-equivalent**, so Tidemark reaches Docker only through [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) with `CONTAINERS=1 IMAGES=1`, `POST=0` (setup: [README](../README.md#run-it-with-docker); mounting the socket `:ro` doesn't restrict the API). One-click updates (later) will need `POST=1` and the matching create/start/stop endpoints, as a conscious opt-in (`TIDEMARK_ENABLE_UPDATES`, default off).
+- **Docker socket access is root-equivalent**, so Tidemark reaches Docker only through [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) with `CONTAINERS=1 IMAGES=1`, `POST=0` (setup: [README](../README.md#run-it-with-docker); mounting the socket `:ro` doesn't restrict the API). One-click updates ([parked](ROADMAP.md#ideas-parked)) would need `POST=1` and the matching create/start/stop endpoints, as a conscious opt-in (`TIDEMARK_ENABLE_UPDATES`, default off).
 - Container inspect is never called and only image `*_VERSION` variables are read (see Check pipeline).
 - Secrets (the GitHub and bot tokens) come from env vars or, when settings are editable, from the `settings` table (plain text, like the rest of the data dir, so protect the volume). They're write-only in the UI, never returned by the API and never logged (a settings change logs only the names of the keys). The GitHub token is only sent to api.github.com, the bot token only to api.telegram.org. The bot token is part of Telegram's URL, so send errors are stripped of the URL (and any echo of the token) before they're logged, stored in `notifications.error` or returned (tested).
 - No auth in v1, so keep it LAN-only or behind your reverse proxy's auth: anyone who can reach it can start checks, mark updates reviewed or snoozed and send test messages (it never touches containers). That's why settings are read-only unless `TIDEMARK_SETTINGS_EDITABLE=true`: an editable chat ID would let anyone on the network redirect the notifications, and an editable bot token or GitHub token could be swapped for someone else's.

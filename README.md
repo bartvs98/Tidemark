@@ -16,7 +16,7 @@
 
 ![The Tidemark dashboard in dark mode](docs/brand/screenshot.png)
 
-Status: **in daily use on a home server.** Checking, changelogs, breaking-change highlighting, rules, reviewing and snoozing, update history and Telegram notifications are done. Next on the [roadmap](docs/ROADMAP.md): AI changelog summaries and gated one-click updates. Only public images are supported.
+Status: **in daily use on a home server.** Checking, changelogs, breaking-change highlighting, rules, reviewing and snoozing, update history and Telegram notifications are done. Next on the [roadmap](docs/ROADMAP.md): AI changelog summaries and stats. Only public images are supported.
 
 ## Run it with Docker
 

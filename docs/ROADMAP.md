@@ -46,21 +46,21 @@ From the owner's notes after the MVP. One PR each; the release comes last so v1.
   - On demand (button) or automatically for updates with ≥ N releases in between: summarise all release notes between running and latest into a short "what changed / what you need to do" list.
   - The model also returns a structured verdict (`none | attention | breaking`) with reasons. **This verdict can only raise the heuristic level, never lower it.**
   - Summaries are cached per (repo, from, to).
-- [ ] **11. Gated one-click update**: pull the new image and recreate the container with identical config, **only when every gate passes**:
+- [ ] **11. Stats** (later; brainstorm first, builds on step 8's history). Ideas so far:
+  - _Behind:_ how long each container has been behind (age of the running version vs. the latest), updates per container and stack over time, an up-to-date ratio over time (the tide as a history chart).
+  - _Upstream:_ release cadence per image/repo, breaking vs. calm releases per repo, biggest version jumps.
+  - _Check health:_ failures per container and reason, check durations, registry and GitHub requests, GitHub quota used.
+  - _Lifetime (for fun):_ containers ever tracked, updates applied (running version changed), breaking changes caught, release notes read, check runs, longest-behind container ever, fastest update after a release, longest fully-up-to-date streak, mean time to update, Tidemark's own uptime.
+
+## Ideas parked
+
+- **Gated one-click update** (was step 11; parked because a useful version would also have to update the compose file, which is out of scope for now): pull the new image and recreate the container with identical config, **only when every gate passes**:
   1. The update class is patch or minor (no major, no `0.x` minor bump).
   2. The heuristic level is `none` **and** the AI verdict (if enabled) is `none`.
   3. The container isn't ignored or held by a rule, and the update isn't snoozed.
   4. The container uses a **floating tag** (`latest`, `1`, `1.4`), so that a pull plus a recreate actually picks up the new version. For a pinned tag (`1.4.2`) in a Compose file, a recreate via the API would be undone by the next `docker compose up`, so for those the UI shows the line to change in the compose file instead of a button.
 
   Safety: disabled by default (`TIDEMARK_ENABLE_UPDATES=false`); turning it on needs socket-proxy write access ([ARCHITECTURE → Security](ARCHITECTURE.md#security)). The old image is kept; after recreating, wait for the healthcheck (or a running state for N seconds) and **roll back** to the old image automatically if it fails. Every update is logged to the update history.
-- [ ] **12. Stats** (later; brainstorm first, builds on step 8's history). Ideas so far:
-  - *Behind:* how long each container has been behind (age of the running version vs. the latest), updates per container and stack over time, an up-to-date ratio over time (the tide as a history chart).
-  - *Upstream:* release cadence per image/repo, breaking vs. calm releases per repo, biggest version jumps.
-  - *Check health:* failures per container and reason, check durations, registry and GitHub requests, GitHub quota used.
-  - *Lifetime (for fun):* containers ever tracked, updates applied (running version changed), breaking changes caught, release notes read, check runs, longest-behind container ever, fastest update after a release, longest fully-up-to-date streak, mean time to update, Tidemark's own uptime.
-
-## Ideas parked
-
 - More notifiers (ntfy, Discord, webhook)
 - Rules in the UI: per-container rules on the detail page, or editing `config.yaml` in the settings dialog (left out of 9c)
 - Private registries (`TIDEMARK_REGISTRY_AUTH_FILE`: a docker `config.json`)
