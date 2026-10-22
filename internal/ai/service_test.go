@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -14,31 +15,45 @@ import (
 
 	"github.com/bartvs98/tidemark/internal/analysis"
 	"github.com/bartvs98/tidemark/internal/store"
+
+	_ "modernc.org/sqlite"
 )
 
 type fakeProvider struct {
 	calls   atomic.Int32
 	answer  string
 	err     error
+	usage   Usage
 	release chan struct{} // when set, Complete waits for it
+	onCall  func()        // when set, runs during the call (e.g. advances the clock)
 }
 
 func (f *fakeProvider) Name() string  { return "anthropic" }
 func (f *fakeProvider) Model() string { return "m1" }
-func (f *fakeProvider) Complete(ctx context.Context, p Prompt) (json.RawMessage, error) {
+func (f *fakeProvider) Complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error) {
 	f.calls.Add(1)
 	if f.release != nil {
 		<-f.release
 	}
-	if f.err != nil {
-		return nil, f.err
+	if f.onCall != nil {
+		f.onCall()
 	}
-	return json.RawMessage(f.answer), nil
+	if f.err != nil {
+		return nil, f.usage, f.err
+	}
+	return json.RawMessage(f.answer), f.usage, nil
 }
 
 func newService(t *testing.T) (*Service, *store.Store, *time.Time) {
+	s, st, now, _ := newServiceAt(t)
+	return s, st, now
+}
+
+// newServiceAt also returns the database path, for reading tables the store has no getter for.
+func newServiceAt(t *testing.T) (*Service, *store.Store, *time.Time, string) {
 	t.Helper()
-	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	path := filepath.Join(t.TempDir(), "t.db")
+	st, err := store.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +61,7 @@ func newService(t *testing.T) (*Service, *store.Store, *time.Time) {
 	s := New(st, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	s.now = func() time.Time { return now }
-	return s, st, &now
+	return s, st, &now, path
 }
 
 var (
@@ -212,5 +227,133 @@ func TestStatusAndConfigure(t *testing.T) {
 	s.Configure(nil, 0)
 	if p, _ := s.Status(); p != nil {
 		t.Error("configure off")
+	}
+}
+
+// aiCalls reads the usage records straight from the database.
+func aiCalls(t *testing.T, path string) []store.AICall {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	rows, err := db.Query(`SELECT at, provider, model, trigger, repo, from_version, to_version, releases,
+		input_tokens, output_tokens, duration_ms, error FROM ai_calls ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []store.AICall
+	for rows.Next() {
+		var c store.AICall
+		var at string
+		var ms int64
+		if err := rows.Scan(&at, &c.Provider, &c.Model, &c.Trigger, &c.Repo, &c.From, &c.To, &c.Releases,
+			&c.InputTokens, &c.OutputTokens, &ms, &c.Error); err != nil {
+			t.Fatal(err)
+		}
+		c.At, _ = time.Parse(time.RFC3339Nano, at)
+		c.Duration = time.Duration(ms) * time.Millisecond
+		out = append(out, c)
+	}
+	return out
+}
+
+func TestCallRecordsAndUsage(t *testing.T) {
+	s, st, now, path := newServiceAt(t)
+	ctx := context.Background()
+	start := *now
+	f := &fakeProvider{answer: good, usage: Usage{InputTokens: 1500, OutputTokens: 200},
+		onCall: func() { *now = now.Add(4200 * time.Millisecond) }}
+
+	// No call, no record: off, or nothing to summarise.
+	s.Generate(ctx, key, req)
+	s.Configure(f, 2)
+	s.Generate(ctx, key, Request{Latest: "1", Releases: []Notes{{Tag: "v1"}}})
+	if got := aiCalls(t, path); len(got) != 0 {
+		t.Fatalf("records without a call: %+v", got)
+	}
+
+	e, err := s.Generate(ctx, key, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sm := e.Summary; sm.InputTokens != 1500 || sm.OutputTokens != 200 || sm.Duration != 4200*time.Millisecond {
+		t.Errorf("summary usage: %+v", sm)
+	}
+	s2 := New(st, s.log)
+	s2.Load(ctx)
+	if got, _ := s2.Lookup(key); got.Summary == nil || got.Summary.InputTokens != 1500 || got.Summary.Duration != 4200*time.Millisecond {
+		t.Errorf("reloaded usage: %+v", got.Summary)
+	}
+
+	// A failed automatic call is recorded too, with what the provider reported.
+	f.err, f.usage = errors.New("the answer was cut off"), Usage{InputTokens: 1500, OutputTokens: 4096}
+	k2 := Key{"github.com/a/b", "1.0.0", "1.3.0"}
+	s.Auto(ctx, k2, req)
+
+	got := aiCalls(t, path)
+	want := []store.AICall{
+		{At: start, Provider: "anthropic", Model: "m1", Trigger: "manual", Repo: key.Repo, From: key.From, To: key.To,
+			Releases: 2, InputTokens: 1500, OutputTokens: 200, Duration: 4200 * time.Millisecond},
+		{At: start.Add(4200 * time.Millisecond), Provider: "anthropic", Model: "m1", Trigger: "auto", Repo: k2.Repo, From: k2.From, To: k2.To,
+			Releases: 2, InputTokens: 1500, OutputTokens: 4096, Duration: 4200 * time.Millisecond, Error: "the answer was cut off"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("records = %+v", got)
+	}
+	for i := range want {
+		if !got[i].At.Equal(want[i].At) {
+			t.Errorf("record %d at %v, want %v", i, got[i].At, want[i].At)
+		}
+		got[i].At = want[i].At
+		if got[i] != want[i] {
+			t.Errorf("record %d:\n got %+v\nwant %+v", i, got[i], want[i])
+		}
+	}
+
+	u, err := s.Usage(ctx, start)
+	if err != nil || u != (store.AIUsage{Calls: 2, Failed: 1, InputTokens: 3000, OutputTokens: 4296}) {
+		t.Errorf("usage = %+v, %v", u, err)
+	}
+}
+
+func TestPrune(t *testing.T) {
+	s, st, _ := newService(t)
+	ctx := context.Background()
+	f := &fakeProvider{answer: good}
+	s.Configure(f, 0)
+	keep, drop, busy := Key{"r", "1", "2"}, Key{"r", "1", "3"}, Key{"r", "1", "4"}
+	for _, k := range []Key{keep, drop, busy} {
+		if _, err := s.Generate(ctx, k, req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.setGenerating(busy, true) // a regeneration is running
+
+	n, err := s.Prune(ctx, map[Key]bool{keep: true})
+	if err != nil || n != 1 {
+		t.Fatalf("pruned %d, %v", n, err)
+	}
+	for k, want := range map[Key]bool{keep: true, drop: false, busy: true} {
+		if _, ok := s.Lookup(k); ok != want {
+			t.Errorf("memory %v: present %v, want %v", k, ok, want)
+		}
+	}
+	rows, _ := st.AISummaries(ctx)
+	if len(rows) != 2 || rows[0].To != "2" || rows[1].To != "4" {
+		t.Errorf("store: %+v", rows)
+	}
+
+	s.setGenerating(busy, false)
+	if n, err := s.Prune(ctx, nil); err != nil || n != 2 {
+		t.Errorf("prune all: %d %v", n, err)
+	}
+	if rows, _ := st.AISummaries(ctx); len(rows) != 0 {
+		t.Errorf("left in store: %+v", rows)
+	}
+	if _, ok := s.Lookup(keep); ok {
+		t.Error("left in memory")
 	}
 }

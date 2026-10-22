@@ -614,6 +614,8 @@ type AISummary struct {
 	Releases, Omitted               int
 	NotesHash                       string
 	CreatedAt                       time.Time // zero = never succeeded
+	InputTokens, OutputTokens       int       // of the call that made the summary
+	Duration                        time.Duration
 	Error                           string
 	FailedAt                        time.Time
 }
@@ -627,7 +629,8 @@ type AIReason struct {
 func (s *Store) AISummaries(ctx context.Context) ([]AISummary, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT repo, from_version, to_version, provider, model, changes_json, actions_json, verdict,
-			reasons_json, releases, omitted, notes_hash, created_at, error, failed_at
+			reasons_json, releases, omitted, notes_hash, created_at, error, failed_at,
+			input_tokens, output_tokens, duration_ms
 		FROM ai_summaries ORDER BY repo, from_version, to_version`)
 	if err != nil {
 		return nil, err
@@ -637,8 +640,10 @@ func (s *Store) AISummaries(ctx context.Context) ([]AISummary, error) {
 	for rows.Next() {
 		var a AISummary
 		var changes, actions, reasons, created, failed string
+		var ms int64
 		if err := rows.Scan(&a.Repo, &a.From, &a.To, &a.Provider, &a.Model, &changes, &actions, &a.Verdict,
-			&reasons, &a.Releases, &a.Omitted, &a.NotesHash, &created, &a.Error, &failed); err != nil {
+			&reasons, &a.Releases, &a.Omitted, &a.NotesHash, &created, &a.Error, &failed,
+			&a.InputTokens, &a.OutputTokens, &ms); err != nil {
 			return nil, err
 		}
 		if err := errors.Join(json.Unmarshal([]byte(changes), &a.Changes), json.Unmarshal([]byte(actions), &a.Actions),
@@ -646,6 +651,7 @@ func (s *Store) AISummaries(ctx context.Context) ([]AISummary, error) {
 			return nil, fmt.Errorf("store: ai summary %s %s→%s: %w", a.Repo, a.From, a.To, err)
 		}
 		a.CreatedAt, a.FailedAt = parseTS(created), parseTS(failed)
+		a.Duration = time.Duration(ms) * time.Millisecond
 		out = append(out, a)
 	}
 	return out, rows.Err()
@@ -658,17 +664,93 @@ func (s *Store) PutAISummary(ctx context.Context, a AISummary) error {
 	reasons, _ := json.Marshal(nonNil(a.Reasons))
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO ai_summaries (repo, from_version, to_version, provider, model, changes_json, actions_json,
-			verdict, reasons_json, releases, omitted, notes_hash, created_at, error, failed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			verdict, reasons_json, releases, omitted, notes_hash, created_at, error, failed_at,
+			input_tokens, output_tokens, duration_ms)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (repo, from_version, to_version) DO UPDATE SET provider = excluded.provider,
 			model = excluded.model, changes_json = excluded.changes_json, actions_json = excluded.actions_json,
 			verdict = excluded.verdict, reasons_json = excluded.reasons_json, releases = excluded.releases,
 			omitted = excluded.omitted, notes_hash = excluded.notes_hash, created_at = excluded.created_at,
-			error = excluded.error, failed_at = excluded.failed_at`,
+			error = excluded.error, failed_at = excluded.failed_at, input_tokens = excluded.input_tokens,
+			output_tokens = excluded.output_tokens, duration_ms = excluded.duration_ms`,
 		a.Repo, a.From, a.To, a.Provider, a.Model, string(changes), string(actions),
 		cmp.Or(a.Verdict, "none"), string(reasons), a.Releases, a.Omitted, a.NotesHash,
-		tsOrEmpty(a.CreatedAt), a.Error, tsOrEmpty(a.FailedAt))
+		tsOrEmpty(a.CreatedAt), a.Error, tsOrEmpty(a.FailedAt), a.InputTokens, a.OutputTokens, a.Duration.Milliseconds())
 	return err
+}
+
+// DeleteAISummaries deletes the stored summaries keep rejects and returns how many went.
+func (s *Store) DeleteAISummaries(ctx context.Context, keep func(repo, from, to string) bool) (int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT repo, from_version, to_version FROM ai_summaries`)
+	if err != nil {
+		return 0, err
+	}
+	var drop [][3]string
+	for rows.Next() {
+		var k [3]string
+		if err := rows.Scan(&k[0], &k[1], &k[2]); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if !keep(k[0], k[1], k[2]) {
+			drop = append(drop, k)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil || len(drop) == 0 {
+		return 0, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	for _, k := range drop {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM ai_summaries WHERE repo = ? AND from_version = ? AND to_version = ?`,
+			k[0], k[1], k[2]); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(drop), nil
+}
+
+// AICall is one provider call made for an AI summary.
+type AICall struct {
+	At                                  time.Time // start of the call
+	Provider, Model, Trigger            string    // trigger: manual | auto
+	Repo, From, To                      string
+	Releases, InputTokens, OutputTokens int // releases sent
+	Duration                            time.Duration
+	Error                               string // "" = success
+}
+
+// AIUsage sums AI calls: Calls counts all, Failed the ones with an error.
+type AIUsage struct{ Calls, Failed, InputTokens, OutputTokens int }
+
+// tsSortable is a fixed-width UTC timestamp, so text comparison orders it (ai_calls.at).
+func tsSortable(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000000000Z") }
+
+// AddAICall records one provider call.
+func (s *Store) AddAICall(ctx context.Context, c AICall) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO ai_calls (at, provider, model, trigger, repo, from_version, to_version, releases,
+			input_tokens, output_tokens, duration_ms, error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		tsSortable(c.At), c.Provider, c.Model, c.Trigger, c.Repo, c.From, c.To, c.Releases,
+		c.InputTokens, c.OutputTokens, c.Duration.Milliseconds(), c.Error)
+	return err
+}
+
+// AIUsageSince sums the calls since t.
+func (s *Store) AIUsageSince(ctx context.Context, t time.Time) (AIUsage, error) {
+	var u AIUsage
+	err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*), COALESCE(SUM(error != ''), 0), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+		FROM ai_calls WHERE at >= ?`, tsSortable(t)).Scan(&u.Calls, &u.Failed, &u.InputTokens, &u.OutputTokens)
+	return u, err
 }
 
 // nonNil makes a nil slice marshal as [] rather than null.

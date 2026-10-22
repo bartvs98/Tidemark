@@ -352,6 +352,9 @@ export class Styleguide {
     omitted: 0,
     createdAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
     stale: false,
+    inputTokens: 12340,
+    outputTokens: 640,
+    durationMs: 4200,
   };
   protected readonly aiStates: { label: string; ai: AiState }[] = [
     { label: 'Summary, with a breaking verdict', ai: { ...this.aiBase, summary: this.aiSummary } },
@@ -359,6 +362,7 @@ export class Styleguide {
       label: 'Summary, nothing to flag, some releases left out',
       ai: { ...this.aiBase, summary: { ...this.aiSummary, verdict: 'none', reasons: [], actions: [], omitted: 3, releases: 20 } },
     },
+    { label: 'Summary, call stats unknown (an older one)', ai: { ...this.aiBase, summary: { ...this.aiSummary, inputTokens: 0, outputTokens: 0, durationMs: 0 } } },
     { label: 'Stale: the notes changed since', ai: { ...this.aiBase, summary: { ...this.aiSummary, verdict: 'attention', stale: true } } },
     { label: 'No summary yet (automatic from 5 releases)', ai: this.aiBase },
     { label: 'No summary yet, OpenAI-compatible, auto off', ai: { ...this.aiBase, provider: 'openai', model: 'llama3.1:8b', autoMinReleases: 0, releases: 1 } },

@@ -1,7 +1,8 @@
 <div class="mb-8">
   <h1 class="text-2xl font-semibold tracking-tight">Styleguide</h1>
   <p class="mt-1 text-fg-muted">
-    Every token and component in Tidemark. Switch the theme in the header to check both modes. Rules live in
+    Every token and component in Tidemark. Switch the theme in the header to check both modes. Rules
+    live in
     <span class="font-mono text-sm">docs/DESIGN-SYSTEM.md</span>.
   </p>
 </div>
@@ -17,7 +18,10 @@
           <div class="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
             @for (token of group.tokens; track token) {
               <div>
-                <div class="h-12 rounded-md border border-line" [style.background]="'var(--color-' + token + ')'"></div>
+                <div
+                  class="h-12 rounded-md border border-line"
+                  [style.background]="'var(--color-' + token + ')'"
+                ></div>
                 <p class="mt-1 font-mono text-xs text-fg-muted">{{ token }}</p>
               </div>
             }
@@ -66,7 +70,10 @@
   <!-- ── Status language ────────────────────────────────── -->
   <section>
     <h2 class="mb-1 text-xl font-semibold">Status language</h2>
-    <p class="mb-4 text-fg-muted">Update class is always neutral. Only risk gets colour, and every status has an icon and a word.</p>
+    <p class="mb-4 text-fg-muted">
+      Update class is always neutral. Only risk gets colour, and every status has an icon and a
+      word.
+    </p>
     <tm-card>
       <div class="grid gap-6 sm:grid-cols-3">
         <div>
@@ -104,14 +111,19 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Update states</h2>
     <p class="mb-4 text-fg-muted">
-      <span class="font-mono text-sm">tm-container-version</span> and <span class="font-mono text-sm">tm-container-update</span>
+      <span class="font-mono text-sm">tm-container-version</span> and
+      <span class="font-mono text-sm">tm-container-update</span>
       for every state a container can be in. When a refresh fails, the last good result stays and
-      <span class="font-mono text-sm">tm-refresh-failed</span> says so quietly (not a risk, so no colour), with a short reason
-      when the failure could be classified ("rate limited"); only a container that was never checked successfully gets the dashed
-      "check failed" badge. Hover or focus them for the full error.
+      <span class="font-mono text-sm">tm-refresh-failed</span> says so quietly (not a risk, so no
+      colour), with a short reason when the failure could be classified ("rate limited"); only a
+      container that was never checked successfully gets the dashed "check failed" badge. Hover or
+      focus them for the full error.
     </p>
     <tm-card flush>
-      <table class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]" data-testid="update-states">
+      <table
+        class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]"
+        data-testid="update-states"
+      >
         <colgroup>
           <col class="w-[40%]" />
           <col class="w-[30%]" />
@@ -131,7 +143,9 @@
                 <div class="truncate font-medium">{{ s.container.name }}</div>
                 <div class="truncate text-xs text-fg-subtle">{{ s.label }}</div>
               </td>
-              <td data-stack="indent"><tm-container-version [container]="s.container" [checking]="!!s.checking" /></td>
+              <td data-stack="indent">
+                <tm-container-version [container]="s.container" [checking]="!!s.checking" />
+              </td>
               <td><tm-container-update [container]="s.container" [checking]="!!s.checking" /></td>
             </tr>
           }
@@ -145,30 +159,49 @@
     <h2 class="mb-1 text-xl font-semibold">Stack sections</h2>
     <p class="mb-4 text-fg-muted">
       The dashboard's list view, built from the same pieces. Each Compose stack is a
-      <span class="font-mono text-sm">tm-section</span> with a <span class="font-mono text-sm">tm-container-table</span>. All
-      tables share fixed column widths, so one sticky <span class="font-mono text-sm">tm-column-bar</span> labels them all
-      (scroll to see it stick); each table keeps a <span class="font-mono text-sm">sm:sr-only</span> header for screen
-      readers. Rows are <span class="font-mono text-sm">tr.tm-row-link</span>: the name is a stretched link, so the whole
-      row is clickable (here it stays on this page). Below 640px, <span class="font-mono text-sm">tm-table-stack</span>
-      stacks each row: name first, then version and update. Rows that are up to date are toned down
-      automatically (<span class="font-mono text-sm">data-current</span>), so the ones with an update stand out; with
-      <span class="font-mono text-sm">dimQuiet</span> (the dashboard sets it everywhere) quiet rows (up to date, snoozed, ignored) also fade as a whole
-      (<span class="font-mono text-sm">data-dimmed</span>, 60%, full again on hover or keyboard focus; sonarr below). With
-      <span class="font-mono text-sm">showStack</span> the stack name sits before the status, for lists that aren't grouped by stack.
-      Stacks with nothing to do go together into one collapsed, muted "Up to date" section, each a
-      <span class="font-mono text-sm">level</span> 3 sub-section (smaller <span class="font-mono text-sm">h3</span> heading).
+      <span class="font-mono text-sm">tm-section</span> with a
+      <span class="font-mono text-sm">tm-container-table</span>. All tables share fixed column
+      widths, so one sticky <span class="font-mono text-sm">tm-column-bar</span> labels them all
+      (scroll to see it stick); each table keeps a
+      <span class="font-mono text-sm">sm:sr-only</span> header for screen readers. Rows are
+      <span class="font-mono text-sm">tr.tm-row-link</span>: the name is a stretched link, so the
+      whole row is clickable (here it stays on this page). Below 640px,
+      <span class="font-mono text-sm">tm-table-stack</span> stacks each row: name first, then
+      version and update. Rows that are up to date are toned down automatically (<span
+        class="font-mono text-sm"
+        >data-current</span
+      >), so the ones with an update stand out; with
+      <span class="font-mono text-sm">dimQuiet</span> (the dashboard sets it everywhere) quiet rows
+      (up to date, snoozed, ignored) also fade as a whole (<span class="font-mono text-sm"
+        >data-dimmed</span
+      >, 60%, full again on hover or keyboard focus; sonarr below). With
+      <span class="font-mono text-sm">showStack</span> the stack name sits before the status, for
+      lists that aren't grouped by stack. Stacks with nothing to do go together into one collapsed,
+      muted "Up to date" section, each a <span class="font-mono text-sm">level</span> 3 sub-section
+      (smaller <span class="font-mono text-sm">h3</span> heading).
     </p>
     <tm-column-bar />
     <div class="flex flex-col gap-10">
       @for (stack of stacks; track stack.name) {
-        <tm-section [heading]="stack.name ?? 'Ungrouped'" [icon]="stack.name ? 'layers' : 'box'" [meta]="stack.containers.length + ' containers'">
+        <tm-section
+          [heading]="stack.name ?? 'Ungrouped'"
+          [icon]="stack.name ? 'layers' : 'box'"
+          [meta]="stack.containers.length + ' containers'"
+        >
           <tm-container-table [containers]="stack.containers" [link]="sampleLink" dimQuiet />
         </tm-section>
       }
       <tm-section heading="With showStack" icon="layers" meta="3 containers">
         <tm-container-table [containers]="stackSamples" [link]="sampleLink" showStack />
       </tm-section>
-      <tm-section heading="Up to date" icon="circle-check" [meta]="settledStacks.length + ' stacks'" collapsible muted [(open)]="settledOpen">
+      <tm-section
+        heading="Up to date"
+        icon="circle-check"
+        [meta]="settledStacks.length + ' stacks'"
+        collapsible
+        muted
+        [(open)]="settledOpen"
+      >
         @if (settledOpen()) {
           <div class="flex flex-col gap-8">
             @for (stack of settledStacks; track stack.name) {
@@ -176,7 +209,10 @@
                 [level]="3"
                 [heading]="stack.name ?? 'Ungrouped'"
                 [icon]="stack.name ? 'layers' : 'box'"
-                [meta]="stack.containers.length + (stack.containers.length === 1 ? ' container' : ' containers')"
+                [meta]="
+                  stack.containers.length +
+                  (stack.containers.length === 1 ? ' container' : ' containers')
+                "
                 muted
               >
                 <tm-container-table [containers]="stack.containers" [link]="sampleLink" />
@@ -192,10 +228,12 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Tiles</h2>
     <p class="mb-4 text-fg-muted">
-      <span class="font-mono text-sm">tm-container-tile</span>: the dashboard's tile view. The whole tile is a stretched
-      link; keyboard focus outlines it. Up-to-date tiles are quiet (no surface, muted name); tiles with an update stay
-      prominent. <span class="font-mono text-sm">showStack</span> adds the stack name before the status;
-      <span class="font-mono text-sm">dimQuiet</span> fades a quiet tile as a whole, as on the dashboard.
+      <span class="font-mono text-sm">tm-container-tile</span>: the dashboard's tile view. The whole
+      tile is a stretched link; keyboard focus outlines it. Up-to-date tiles are quiet (no surface,
+      muted name); tiles with an update stay prominent.
+      <span class="font-mono text-sm">showStack</span> adds the stack name before the status;
+      <span class="font-mono text-sm">dimQuiet</span> fades a quiet tile as a whole, as on the
+      dashboard.
     </p>
     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       @for (c of tiles; track c.id) {
@@ -220,11 +258,14 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Reviewed &amp; snoozed</h2>
     <p class="mb-4 text-fg-muted">
-      An update the user has dealt with (<span class="font-mono text-sm">review</span> on the container). <strong>Reviewed</strong>:
-      the badges fade and a quiet "Reviewed" marker (check icon + word) joins them; the row stays in place.
-      <strong>Snoozed</strong>: the badges fade, the version cell says "until 3 Nov" or "until newer than v2.0.1", and the row or tile is
-      toned down like an up-to-date one. A channel tag, or a floating tag without a version, is reviewed and snoozed against the <strong>build</strong> (its registry digest): "Reviewed this build", "until a new build", never the digest itself. Snoozed containers move to a collapsed "Snoozed" section above "Ignored". Neither state has a
-      colour of its own: it is not a risk.
+      An update the user has dealt with (<span class="font-mono text-sm">review</span> on the
+      container). <strong>Reviewed</strong>: the badges fade and a quiet "Reviewed" marker (check
+      icon + word) joins them; the row stays in place. <strong>Snoozed</strong>: the badges fade,
+      the version cell says "until 3 Nov" or "until newer than v2.0.1", and the row or tile is toned
+      down like an up-to-date one. A channel tag, or a floating tag without a version, is reviewed
+      and snoozed against the <strong>build</strong> (its registry digest): "Reviewed this build",
+      "until a new build", never the digest itself. Snoozed containers move to a collapsed "Snoozed"
+      section above "Ignored". Neither state has a colour of its own: it is not a risk.
     </p>
     <h3 class="mb-2 text-sm font-medium text-fg-muted">List</h3>
     <tm-container-table [containers]="reviewSamples" [link]="sampleLink" showStack />
@@ -235,19 +276,37 @@
       }
     </div>
     <h3 class="mt-6 mb-2 text-sm font-medium text-fg-muted">The "Snoozed" section</h3>
-    <tm-section heading="Snoozed" icon="clock" meta="3 containers" collapsible muted [(open)]="snoozedOpen">
+    <tm-section
+      heading="Snoozed"
+      icon="clock"
+      meta="3 containers"
+      collapsible
+      muted
+      [(open)]="snoozedOpen"
+    >
       @if (snoozedOpen()) {
-        <tm-container-table [containers]="[snoozedUntil, snoozedNewer, snoozedBuild]" [link]="sampleLink" showStack />
+        <tm-container-table
+          [containers]="[snoozedUntil, snoozedNewer, snoozedBuild]"
+          [link]="sampleLink"
+          showStack
+        />
       }
     </tm-section>
 
-    <h3 class="mt-8 mb-1 text-sm font-medium text-fg-muted">Detail tab row: <span class="font-mono">tm-review-actions</span></h3>
+    <h3 class="mt-8 mb-1 text-sm font-medium text-fg-muted">
+      Detail tab row: <span class="font-mono">tm-review-actions</span>
+    </h3>
     <p class="mb-3 text-sm text-fg-muted">
-      Without a review: "Mark reviewed" and a "Snooze" menu. With one: a quiet status plus Undo / Unsnooze. Without a version or build both
-      actions are disabled, with the reason on hover. They call the API on click, so on this page a click only shows a failure toast. In a plain box, not a card: a card would clip the open menu.
+      Without a review: "Mark reviewed" and a "Snooze" menu. With one: a quiet status plus Undo /
+      Unsnooze. Without a version or build both actions are disabled, with the reason on hover. They
+      call the API on click, so on this page a click only shows a failure toast. In a plain box, not
+      a card: a card would clip the open menu.
     </p>
     <div class="rounded-lg border border-line bg-surface pb-28 shadow-raised">
-      <table class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]" data-testid="review-action-states">
+      <table
+        class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]"
+        data-testid="review-action-states"
+      >
         <thead>
           <tr>
             <th scope="col" class="w-[35%]">Case</th>
@@ -265,15 +324,21 @@
       </table>
     </div>
 
-    <h3 class="mt-8 mb-1 text-sm font-medium text-fg-muted">Detail page: <span class="font-mono">tm-history</span></h3>
+    <h3 class="mt-8 mb-1 text-sm font-medium text-fg-muted">
+      Detail page: <span class="font-mono">tm-history</span>
+    </h3>
     <p class="mb-3 text-sm text-fg-muted">
-      Image changes, newest first: a version change, a new image whose version is unknown (image ids in mono, "ran for" when known), and where
-      tracking started. Empty state below.
+      Image changes, newest first: a version change, a new image whose version is unknown (image ids
+      in mono, "ran for" when known), and where tracking started. Empty state below.
     </p>
     <div class="grid gap-4 md:grid-cols-2">
       <tm-card heading="History"><tm-history [entries]="historyEntries" /></tm-card>
       <tm-card heading="History">
-        <tm-empty-state icon="history" heading="No history yet" description="It starts at the first successful check." />
+        <tm-empty-state
+          icon="history"
+          heading="No history yet"
+          description="It starts at the first successful check."
+        />
       </tm-card>
     </div>
   </section>
@@ -282,11 +347,22 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">AI summary</h2>
     <p class="mb-4 text-fg-muted">
-      <span class="font-mono text-sm">tm-ai-summary</span> on the detail page, below the verdict callout and only while AI is on. Everything the
-      model wrote is <strong>plain text</strong>. The neutral <span class="font-mono text-sm">tm-ai-marker</span> <tm-ai-marker /> says it was
-      written by a model; it has no colour, since colour means risk. The AI's verdict can only raise the level, never lower it, and its
-      reasons carry the marker in the "Read before updating" callout and "AI: " in the dashboard tooltip. The buttons call the API, so
-      here a click only shows an error.
+      <span class="font-mono text-sm">tm-ai-summary</span> on the detail page, below the verdict
+      callout and only while AI is on. Everything the model wrote is <strong>plain text</strong>.
+      The neutral <span class="font-mono text-sm">tm-ai-marker</span> <tm-ai-marker /> says it was
+      written by a model; it has no colour, since colour means risk. The AI's verdict can only raise
+      the level, never lower it, and its reasons carry the marker in the "Read before updating"
+      callout and "AI: " in the dashboard tooltip. The buttons call the API, so here a click only
+      shows an error.
+    </p>
+    <p class="mb-4 text-fg-muted">
+      The card carries the <span class="font-mono text-sm">tm-ai-sheen</span> utility: a brand-teal
+      ring fading to neutral, a faint teal glow from the top left, and a brighter arc travelling
+      round the ring (6 s a loop, 2.5 s while generating; only ring and glow under reduced motion).
+      It is a different shape and speed from the severity frame below and never uses a risk colour.
+      The footer adds the call's tokens and time ("12.3k tokens in · 640 out · 4.2 s"; parts left
+      out when 0). The same utility works on any card-shaped element; add
+      <span class="font-mono text-sm">data-generating</span> for the quick sweep.
     </p>
     <div class="grid gap-6 lg:grid-cols-2" data-testid="ai-summary-states">
       @for (s of aiStates; track s.label) {
@@ -302,16 +378,25 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Tooltips</h2>
     <p class="mb-4 text-fg-muted">
-      <span class="font-mono text-sm">[tmTooltip]</span> replaces the native <span class="font-mono text-sm">title</span>. It
-      appears after a short hover or on keyboard focus, and on touch a tap toggles it (a tap elsewhere closes it). It closes
-      on Escape, only one is open at a time, and the pointer can move onto it. A newline in the
-      text gives a second line. Empty text shows nothing.
+      <span class="font-mono text-sm">[tmTooltip]</span> replaces the native
+      <span class="font-mono text-sm">title</span>. It appears after a short hover or on keyboard
+      focus, and on touch a tap toggles it (a tap elsewhere closes it). It closes on Escape, only
+      one is open at a time, and the pointer can move onto it. A newline in the text gives a second
+      line. Empty text shows nothing.
     </p>
     <tm-card>
       <div class="flex flex-wrap items-center gap-6">
         <button tmButton variant="secondary" tmTooltip="Check every container now">Button</button>
-        <tm-icon name="circle-help" [size]="20" class="text-fg-muted" tabindex="0" tmTooltip="Running version detected from the image label" />
-        <tm-badge tone="attention" icon="triangle-alert" tabindex="0" [tmTooltip]="multiLineTip">Multi-line</tm-badge>
+        <tm-icon
+          name="circle-help"
+          [size]="20"
+          class="text-fg-muted"
+          tabindex="0"
+          tmTooltip="Running version detected from the image label"
+        />
+        <tm-badge tone="attention" icon="triangle-alert" tabindex="0" [tmTooltip]="multiLineTip"
+          >Multi-line</tm-badge
+        >
       </div>
     </tm-card>
   </section>
@@ -320,17 +405,24 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Tide gauge</h2>
     <p class="mb-4 text-fg-muted">
-      <span class="font-mono text-sm">tm-tide-gauge</span>: the logo as a meter. The line is the latest versions; the water
-      is where you are. <span class="font-mono text-sm">level</span> runs from 0 to 1, and
-      <span class="font-mono text-sm">label</span> is the accessible name (there is no text inside). Accent colour only. Override
-      <span class="font-mono text-sm">--tm-gauge-line</span> and <span class="font-mono text-sm">--tm-gauge-floor</span> to move the
-      line and the lowest water. The waves stop under reduced motion.
+      <span class="font-mono text-sm">tm-tide-gauge</span>: the logo as a meter. The line is the
+      latest versions; the water is where you are. <span class="font-mono text-sm">level</span> runs
+      from 0 to 1, and <span class="font-mono text-sm">label</span> is the accessible name (there is
+      no text inside). Accent colour only. Override
+      <span class="font-mono text-sm">--tm-gauge-line</span> and
+      <span class="font-mono text-sm">--tm-gauge-floor</span> to move the line and the lowest water.
+      The waves stop under reduced motion.
     </p>
     <div class="grid gap-4 md:grid-cols-3">
       @for (level of heroLevels; track level) {
         <div>
           <div class="relative h-[180px] overflow-hidden rounded-xl border border-line bg-surface">
-            <tm-tide-gauge size="hero" [level]="level" [label]="'Level ' + level" class="absolute inset-0 [--tm-gauge-line:64px]" />
+            <tm-tide-gauge
+              size="hero"
+              [level]="level"
+              [label]="'Level ' + level"
+              class="absolute inset-0 [--tm-gauge-line:64px]"
+            />
           </div>
           <p class="mt-1 font-mono text-xs text-fg-muted">hero · level {{ level }}</p>
         </div>
@@ -347,8 +439,9 @@
       </div>
     </tm-card>
     <p class="mt-3 text-fg-muted">
-      <span class="font-mono text-sm">tm-tide-backdrop</span> is mounted once in the app shell: a quiet wash of water behind
-      the whole page. It has no inputs and isn't repeated here; it is the background of this page.
+      <span class="font-mono text-sm">tm-tide-backdrop</span> is mounted once in the app shell: a
+      quiet wash of water behind the whole page. It has no inputs and isn't repeated here; it is the
+      background of this page.
     </p>
   </section>
 
@@ -356,8 +449,9 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Severity frame</h2>
     <p class="mb-4 text-fg-muted">
-      <span class="font-mono text-sm">tm-severity-frame</span> with <span class="font-mono text-sm">data-level</span> gives a
-      card the level's border, with two soft arcs of its colour slowly circling it (static under reduced motion). The detail page's
+      <span class="font-mono text-sm">tm-severity-frame</span> with
+      <span class="font-mono text-sm">data-level</span> gives a card the level's border, with two
+      soft arcs of its colour slowly circling it (static under reduced motion). The detail page's
       header uses it for breaking and attention; the level badge stays.
     </p>
     <div class="grid gap-4 md:grid-cols-2">
@@ -370,12 +464,18 @@
           <p class="mt-2 text-sm text-fg-muted">data-level="{{ level }}"</p>
         </div>
       }
-      <div class="tm-severity-frame rounded-xl border bg-surface p-5 before:hidden" data-level="breaking">
+      <div
+        class="tm-severity-frame rounded-xl border bg-surface p-5 before:hidden"
+        data-level="breaking"
+      >
         <div class="flex flex-wrap items-center gap-3">
           <span class="text-lg font-semibold">immich-server</span>
           <tm-level level="breaking" />
         </div>
-        <p class="mt-2 text-sm text-fg-muted">Reviewed or snoozed: <span class="font-mono">before:hidden</span> stills the arcs, the border stays</p>
+        <p class="mt-2 text-sm text-fg-muted">
+          Reviewed or snoozed: <span class="font-mono">before:hidden</span> stills the arcs, the
+          border stays
+        </p>
       </div>
     </div>
   </section>
@@ -384,18 +484,29 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Cards &amp; sections</h2>
     <p class="mb-4 text-fg-muted">
-      A <span class="font-mono text-sm">tm-section</span> with a button in <span class="font-mono text-sm">[tmSectionActions]</span>,
-      holding a <span class="font-mono text-sm">tm-card</span> with a <span class="font-mono text-sm">heading</span> and a
-      button in <span class="font-mono text-sm">[tmCardActions]</span>.
+      A <span class="font-mono text-sm">tm-section</span> with a button in
+      <span class="font-mono text-sm">[tmSectionActions]</span>, holding a
+      <span class="font-mono text-sm">tm-card</span> with a
+      <span class="font-mono text-sm">heading</span> and a button in
+      <span class="font-mono text-sm">[tmCardActions]</span>.
     </p>
     <tm-section heading="backups" icon="layers" meta="1 container">
-      <button tmSectionActions tmButton variant="primary" size="sm" icon="refresh-cw" [loading]="loading()" (click)="fakeLoad()">
+      <button
+        tmSectionActions
+        tmButton
+        variant="primary"
+        size="sm"
+        icon="refresh-cw"
+        [loading]="loading()"
+        (click)="fakeLoad()"
+      >
         Check now
       </button>
       <tm-card heading="Rules">
         <button tmCardActions tmButton variant="ghost" size="sm" icon="external-link">Docs</button>
         <p class="text-fg-muted">
-          Pinned to <span class="font-mono text-sm">1.4</span> by the label <span class="font-mono text-sm">tidemark.pin</span>.
+          Pinned to <span class="font-mono text-sm">1.4</span> by the label
+          <span class="font-mono text-sm">tidemark.pin</span>.
         </p>
       </tm-card>
     </tm-section>
@@ -405,9 +516,11 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Per-container rules</h2>
     <p class="mb-4 text-fg-muted">
-      Rules are not a risk, so they stay neutral: a held-back version is a quiet line under the versions, ignored
-      containers say so with an icon and a word, and skipped rules get a dashed "unknown" badge. Ignored containers sit in a
-      <span class="font-mono text-sm">collapsible muted</span> section at the bottom of the dashboard.
+      Rules are not a risk, so they stay neutral: a held-back version is a quiet line under the
+      versions, ignored containers say so with an icon and a word, and skipped rules get a dashed
+      "unknown" badge. Ignored containers sit in a
+      <span class="font-mono text-sm">collapsible muted</span> section at the bottom of the
+      dashboard.
     </p>
     <div class="flex flex-col gap-6">
       <tm-card flush>
@@ -442,15 +555,27 @@
         </table>
       </tm-card>
 
-      <tm-section heading="Ignored" icon="eye-off" meta="2 containers" collapsible muted [(open)]="ignoredOpen">
+      <tm-section
+        heading="Ignored"
+        icon="eye-off"
+        meta="2 containers"
+        collapsible
+        muted
+        [(open)]="ignoredOpen"
+      >
         <tm-card>
-          <p class="text-fg-muted">Collapsed by default. The heading is a button with <span class="font-mono text-sm">aria-expanded</span>.</p>
+          <p class="text-fg-muted">
+            Collapsed by default. The heading is a button with
+            <span class="font-mono text-sm">aria-expanded</span>.
+          </p>
         </tm-card>
       </tm-section>
 
       <tm-callout tone="attention" heading="Couldn't read the config file">
         Its rules aren't applied until it loads; rules from labels still are.
-        <span class="mt-1 block font-mono text-xs break-all">/config/tidemark.yml: yaml: line 4: did not find expected key</span>
+        <span class="mt-1 block font-mono text-xs break-all"
+          >/config/tidemark.yml: yaml: line 4: did not find expected key</span
+        >
       </tm-callout>
     </div>
   </section>
@@ -459,21 +584,41 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Menu</h2>
     <p class="mb-4 text-fg-muted">
-      <span class="font-mono text-sm">tm-menu</span>: a button that opens a short list of actions (Angular Aria: arrow keys, Home/End,
-      typeahead, Escape). Open one to see an item with an icon and a disabled item with a hint (hover or focus it). It sits in a plain box here
-      because a <span class="font-mono text-sm">tm-card</span> clips overflow, and with it the open menu.
+      <span class="font-mono text-sm">tm-menu</span>: a button that opens a short list of actions
+      (Angular Aria: arrow keys, Home/End, typeahead, Escape). Open one to see an item with an icon
+      and a disabled item with a hint (hover or focus it). It sits in a plain box here because a
+      <span class="font-mono text-sm">tm-card</span> clips overflow, and with it the open menu.
     </p>
     <div class="rounded-lg border border-line bg-surface p-5 pb-36 shadow-raised">
-        <div class="flex flex-wrap items-center gap-3">
-          <tm-menu label="Snooze" icon="clock" size="sm" [items]="menuItems" (selected)="menuChoice.set($event)" />
-          <tm-menu label="Snooze" icon="clock" [items]="menuItems" (selected)="menuChoice.set($event)" />
-          <tm-menu label="Actions" variant="ghost" size="sm" align="end" [items]="menuItems" (selected)="menuChoice.set($event)" />
-          <tm-menu label="Snooze" icon="clock" size="sm" [items]="menuItems" disabled />
-          <span class="text-sm text-fg-muted">
-            sm, md, ghost with <span class="font-mono">align="end"</span>, disabled; chosen:
-            <span class="font-mono">{{ menuChoice() || 'none' }}</span>.
-          </span>
-        </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <tm-menu
+          label="Snooze"
+          icon="clock"
+          size="sm"
+          [items]="menuItems"
+          (selected)="menuChoice.set($event)"
+        />
+        <tm-menu
+          label="Snooze"
+          icon="clock"
+          [items]="menuItems"
+          (selected)="menuChoice.set($event)"
+        />
+        <tm-menu
+          label="Actions"
+          variant="ghost"
+          size="sm"
+          align="end"
+          [items]="menuItems"
+          (selected)="menuChoice.set($event)"
+        />
+        <tm-menu label="Snooze" icon="clock" size="sm" [items]="menuItems" disabled />
+        <span class="text-sm text-fg-muted">
+          sm, md, ghost with <span class="font-mono">align="end"</span>, disabled; chosen:
+          <span class="font-mono">{{ menuChoice() || 'none' }}</span
+          >.
+        </span>
+      </div>
     </div>
   </section>
 
@@ -481,28 +626,54 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Form pieces</h2>
     <p class="mb-4 text-fg-muted">
-      <span class="font-mono text-sm">tm-field</span> wraps one control: label above, hint, error or locked note below, ids linked.
-      The controls (<span class="font-mono text-sm">input[tmInput]</span>, <span class="font-mono text-sm">tm-password-input</span>,
-      <span class="font-mono text-sm">tm-select</span>, <span class="font-mono text-sm">tm-switch</span>) work with Signal Forms'
-      <span class="font-mono text-sm">[formField]</span> or with <span class="font-mono text-sm">[(value)]</span> /
-      <span class="font-mono text-sm">[(checked)]</span>. In a plain box, since a <span class="font-mono text-sm">tm-card</span> would clip
-      an open select.
+      <span class="font-mono text-sm">tm-field</span> wraps one control: label above, hint, error or
+      locked note below, ids linked. The controls (<span class="font-mono text-sm"
+        >input[tmInput]</span
+      >, <span class="font-mono text-sm">tm-password-input</span>,
+      <span class="font-mono text-sm">tm-select</span>,
+      <span class="font-mono text-sm">tm-switch</span>) work with Signal Forms'
+      <span class="font-mono text-sm">[formField]</span> or with
+      <span class="font-mono text-sm">[(value)]</span> /
+      <span class="font-mono text-sm">[(checked)]</span>. In a plain box, since a
+      <span class="font-mono text-sm">tm-card</span> would clip an open select.
     </p>
     <div class="rounded-lg border border-line bg-surface p-5 pb-10 shadow-raised">
       <div class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
         <tm-field label="Check schedule" hint="Cron, @daily, @every 3h, or off." required>
-          <input tmInput mono [value]="formSchedule()" (input)="formSchedule.set($any($event.target).value)" />
+          <input
+            tmInput
+            mono
+            [value]="formSchedule()"
+            (input)="formSchedule.set($any($event.target).value)"
+          />
         </tm-field>
         <tm-field label="Public URL" hint="Links in notifications point here.">
-          <input tmInput mono type="url" placeholder="https://tidemark.lan" [value]="formUrl()" (input)="formUrl.set($any($event.target).value)" />
+          <input
+            tmInput
+            mono
+            type="url"
+            placeholder="https://tidemark.lan"
+            [value]="formUrl()"
+            (input)="formUrl.set($any($event.target).value)"
+          />
         </tm-field>
-        <tm-field label="Notify digest" error="invalid cron spec: expected exactly 5 fields, found 3">
+        <tm-field
+          label="Notify digest"
+          error="invalid cron spec: expected exactly 5 fields, found 3"
+        >
           <input tmInput mono [value]="formBad()" />
         </tm-field>
-        <tm-field label="Icons URL" hint="Where app logos come from." locked="Set by TIDEMARK_ICONS_URL">
+        <tm-field
+          label="Icons URL"
+          hint="Where app logos come from."
+          locked="Set by TIDEMARK_ICONS_URL"
+        >
           <input tmInput mono disabled value="https://cdn.jsdelivr.net/gh/selfhst/icons" />
         </tm-field>
-        <tm-field label="GitHub token" hint="Raises the GitHub limit from 60 to 5000 requests an hour.">
+        <tm-field
+          label="GitHub token"
+          hint="Raises the GitHub limit from 60 to 5000 requests an hour."
+        >
           <tm-password-input placeholder="github_pat_…" [(value)]="formToken" />
         </tm-field>
         <tm-field label="Bot token" hint="Filled: use the eye to show it.">
@@ -511,8 +682,15 @@
         <tm-field label="Notify about" hint="Which updates send a message.">
           <tm-select [options]="formLevels" [(value)]="formLevel" />
         </tm-field>
-        <tm-field label="Notify about" error="unknown level &quot;some&quot; (use all, attention or breaking)">
-          <tm-select placeholder="Choose a level" [options]="formLevelsOrNone" [(value)]="formEmptyLevel" />
+        <tm-field
+          label="Notify about"
+          error='unknown level "some" (use all, attention or breaking)'
+        >
+          <tm-select
+            placeholder="Choose a level"
+            [options]="formLevelsOrNone"
+            [(value)]="formEmptyLevel"
+          />
         </tm-field>
         <tm-field label="Notify about" locked="Set by TIDEMARK_NOTIFY_LEVEL">
           <tm-select [options]="formLevels" [value]="'breaking'" disabled />
@@ -530,21 +708,39 @@
       <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-line pt-5">
         <input tmInput size="sm" class="w-48" placeholder="sm input" aria-label="sm input" />
         <tm-password-input size="sm" class="w-48" label="sm secret" placeholder="sm secret" />
-        <tm-select size="sm" class="w-48" label="Notify about" [options]="formLevels" [(value)]="formLevel" />
+        <tm-select
+          size="sm"
+          class="w-48"
+          label="Notify about"
+          [options]="formLevels"
+          [(value)]="formLevel"
+        />
         <tm-switch size="sm" label="Dim quiet rows" [(checked)]="formDim" />
         <tm-switch label="Dim quiet rows" [(checked)]="formDim" />
         <span class="text-sm text-fg-muted">
-          sm (32 px) controls, a sm and a md switch; chosen level <span class="font-mono">{{ formLevel() }}</span>
+          sm (32 px) controls, a sm and a md switch; chosen level
+          <span class="font-mono">{{ formLevel() }}</span>
         </span>
       </div>
       <div class="mt-6 border-t border-line pt-5">
         <p class="mb-3 text-sm text-fg-muted">
-          <span class="font-mono">tm-secret-setting</span> (settings dialog): a write-only token. Set, not set and set by an env var;
-          Replace opens a password input, Clear marks it for Save.
+          <span class="font-mono">tm-secret-setting</span> (settings dialog): a write-only token.
+          Set, not set and set by an env var; Replace opens a password input, Clear marks it for
+          Save.
         </p>
         <div class="grid gap-5 sm:grid-cols-3">
-          <tm-secret-setting label="Bot token" hint="From @BotFather." [field]="secretSet" [(value)]="secretEdit" />
-          <tm-secret-setting label="Token" hint="Read-only, public repositories." placeholder="github_pat_…" [field]="secretUnset" />
+          <tm-secret-setting
+            label="Bot token"
+            hint="From @BotFather."
+            [field]="secretSet"
+            [(value)]="secretEdit"
+          />
+          <tm-secret-setting
+            label="Token"
+            hint="Read-only, public repositories."
+            placeholder="github_pat_…"
+            [field]="secretUnset"
+          />
           <tm-secret-setting label="Token" [field]="secretLocked" />
         </div>
       </div>
@@ -573,37 +769,62 @@
         <div class="flex flex-wrap items-center gap-2">
           <button tmButton variant="primary" loading>Checking…</button>
           <button tmButton variant="secondary" disabled>Disabled</button>
-          <a tmButton variant="ghost" href="https://github.com" target="_blank" rel="noopener" icon="external-link">As a link</a>
+          <a
+            tmButton
+            variant="ghost"
+            href="https://github.com"
+            target="_blank"
+            rel="noopener"
+            icon="external-link"
+            >As a link</a
+          >
         </div>
         <div class="flex flex-wrap items-center gap-3">
           <tm-segmented label="View" [options]="views" [(value)]="view" />
           <tm-segmented label="View" iconOnly [options]="views" [(value)]="view" />
-          <span class="text-sm text-fg-muted">Segmented control: <span class="font-mono">{{ view() }}</span></span>
+          <span class="text-sm text-fg-muted"
+            >Segmented control: <span class="font-mono">{{ view() }}</span></span
+          >
         </div>
         <div class="flex flex-wrap items-center gap-3">
           <tm-segmented label="View" size="md" [options]="views" [(value)]="view" />
           <button tmButton variant="secondary" size="md" icon="refresh-cw">Check now</button>
           <span class="text-sm text-fg-muted">
-            <span class="font-mono">size="md"</span>: 36 px, level with a md button in a toolbar (default <span class="font-mono">sm</span> is 32 px)
+            <span class="font-mono">size="md"</span>: 36 px, level with a md button in a toolbar
+            (default <span class="font-mono">sm</span> is 32 px)
           </span>
         </div>
         <div class="flex flex-wrap items-center gap-3">
-          <tm-search label="Search containers" placeholder="Search containers" class="w-64" [(value)]="searchEmpty" />
-          <tm-search label="Search containers" placeholder="Search containers" class="w-64" [(value)]="searchFilled" />
+          <tm-search
+            label="Search containers"
+            placeholder="Search containers"
+            class="w-64"
+            [(value)]="searchEmpty"
+          />
+          <tm-search
+            label="Search containers"
+            placeholder="Search containers"
+            class="w-64"
+            [(value)]="searchFilled"
+          />
           <button tmButton variant="secondary" size="md" icon="refresh-cw">Check now</button>
           <span class="text-sm text-fg-muted">
-            <span class="font-mono">tm-search</span>: empty, then filled (clear button; Escape also clears). 36 px, level with md buttons
+            <span class="font-mono">tm-search</span>: empty, then filled (clear button; Escape also
+            clears). 36 px, level with md buttons
           </span>
         </div>
         <div class="flex flex-wrap items-center gap-3">
           <tm-theme-switch />
           <span class="text-sm text-fg-muted">
-            <span class="font-mono">tm-theme-switch</span>, as in the header: icon-only, so each button has an aria-label
+            <span class="font-mono">tm-theme-switch</span>, as in the header: icon-only, so each
+            button has an aria-label
           </span>
         </div>
         <div class="flex flex-wrap items-center gap-3">
           <tm-segmented label="Show" [options]="filters" [(value)]="filter" />
-          <span class="text-sm text-fg-muted">With counts, as a filter: <span class="font-mono">{{ filter() }}</span></span>
+          <span class="text-sm text-fg-muted"
+            >With counts, as a filter: <span class="font-mono">{{ filter() }}</span></span
+          >
         </div>
       </div>
     </tm-card>
@@ -630,21 +851,32 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Callouts &amp; release notes</h2>
     <p class="mb-4 text-fg-muted">
-      Callouts explain why something is missing and what to do. Release notes are sanitised markdown (images become "Image: alt" links); lines the
-      breaking-change analysis flagged get a highlighter in the level's colour, the words that triggered it a dotted underline, and
+      Callouts explain why something is missing and what to do. Release notes are sanitised markdown
+      (images become "Image: alt" links); lines the breaking-change analysis flagged get a
+      highlighter in the level's colour, the words that triggered it a dotted underline, and
       hovering a line says why. Long notes sit in a
-      <span class="font-mono text-sm">tm-clamp</span>; with <span class="font-mono text-sm">marks</span> its button counts the
-      flagged lines it hides.
+      <span class="font-mono text-sm">tm-clamp</span>; with
+      <span class="font-mono text-sm">marks</span> its button counts the flagged lines it hides.
     </p>
     <div class="grid gap-4 md:grid-cols-2">
       <div class="flex flex-col gap-3">
-        <tm-callout heading="No release notes found">The repository has no releases and no CHANGELOG.md.</tm-callout>
-        <tm-callout tone="attention" heading="GitHub rate limit reached">Set <span class="font-mono">TIDEMARK_GITHUB_TOKEN</span> to raise the limit.</tm-callout>
-        <tm-callout tone="breaking" heading="Breaking: config key renamed">DB_URL is now DATABASE_URL.</tm-callout>
+        <tm-callout heading="No release notes found"
+          >The repository has no releases and no CHANGELOG.md.</tm-callout
+        >
+        <tm-callout tone="attention" heading="GitHub rate limit reached"
+          >Set <span class="font-mono">TIDEMARK_GITHUB_TOKEN</span> to raise the limit.</tm-callout
+        >
+        <tm-callout tone="breaking" heading="Breaking: config key renamed"
+          >DB_URL is now DATABASE_URL.</tm-callout
+        >
         <tm-callout>A callout without a heading.</tm-callout>
       </div>
       <tm-card>
-        <tm-markdown [markdown]="sampleNotes" githubRepo="https://github.com/home-assistant/core" [flags]="sampleFlags" />
+        <tm-markdown
+          [markdown]="sampleNotes"
+          githubRepo="https://github.com/home-assistant/core"
+          [flags]="sampleFlags"
+        />
       </tm-card>
       <tm-card>
         <tm-clamp max="12rem">
@@ -662,7 +894,10 @@
   <!-- ── Tabs ───────────────────────────────────────────── -->
   <section>
     <h2 class="mb-1 text-xl font-semibold">Tabs</h2>
-    <p class="mb-4 text-fg-muted">Angular Aria tabs with the <span class="font-mono text-sm">tm-tabs</span> class. Arrow keys move between tabs.</p>
+    <p class="mb-4 text-fg-muted">
+      Angular Aria tabs with the <span class="font-mono text-sm">tm-tabs</span> class. Arrow keys
+      move between tabs.
+    </p>
     <tm-card>
       <div ngTabs class="tm-tabs">
         <div ngTabList selectedTab="changes">
@@ -694,8 +929,15 @@
       <div class="flex flex-wrap gap-2">
         <button tmButton (click)="toasts.show('Checking 20 containers…')">Info</button>
         <button tmButton (click)="toasts.show('Check finished · 3 updates', 'ok')">Ok</button>
-        <button tmButton (click)="toasts.show('GitHub rate limit reached. Add a token in settings.', 'attention')">Attention</button>
-        <button tmButton (click)="toasts.show('Update failed, rolled back to 1.4.2.', 'breaking')">Breaking</button>
+        <button
+          tmButton
+          (click)="toasts.show('GitHub rate limit reached. Add a token in settings.', 'attention')"
+        >
+          Attention
+        </button>
+        <button tmButton (click)="toasts.show('Update failed, rolled back to 1.4.2.', 'breaking')">
+          Breaking
+        </button>
       </div>
     </tm-card>
   </section>
@@ -705,7 +947,10 @@
     <h2 class="mb-4 text-xl font-semibold">Empty & loading states</h2>
     <div class="grid gap-4 md:grid-cols-2">
       <tm-card>
-        <tm-empty-state heading="No updates" description="All 20 containers are up to date. Next check in 4 h.">
+        <tm-empty-state
+          heading="No updates"
+          description="All 20 containers are up to date. Next check in 4 h."
+        >
           <button tmButton size="sm" icon="refresh-cw">Check now</button>
         </tm-empty-state>
       </tm-card>
@@ -729,9 +974,11 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Page skeletons</h2>
     <p class="mb-4 text-fg-muted">
-      <span class="font-mono text-sm">tm-dashboard-skeleton</span> (the toolbar and the list or tiles; the hero's headline, summary
-      and figures are skeletons in the page itself) and <span class="font-mono text-sm">tm-detail-skeleton</span> mirror the loaded
-      pages box for box, so nothing jumps when data arrives. The dashboard one follows <span class="font-mono text-sm">view</span>.
+      <span class="font-mono text-sm">tm-dashboard-skeleton</span> (the toolbar and the list or
+      tiles; the hero's headline, summary and figures are skeletons in the page itself) and
+      <span class="font-mono text-sm">tm-detail-skeleton</span> mirror the loaded pages box for box,
+      so nothing jumps when data arrives. The dashboard one follows
+      <span class="font-mono text-sm">view</span>.
     </p>
     <h3 class="mb-2 font-semibold">Dashboard, list</h3>
     <div class="mb-8"><tm-dashboard-skeleton view="list" /></div>
@@ -745,7 +992,8 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">App icons</h2>
     <p class="mb-4 text-fg-muted">
-      Logos from selfh.st, served by Tidemark's cache. No icon, or a failed load, gives a letter avatar.
+      Logos from selfh.st, served by Tidemark's cache. No icon, or a failed load, gives a letter
+      avatar.
     </p>
     <tm-card>
       <div class="flex flex-wrap items-center gap-6">
@@ -763,19 +1011,34 @@
   <section>
     <h2 class="mb-1 text-xl font-semibold">Dialog</h2>
     <p class="mb-4 text-fg-muted">
-      A native modal <span class="font-mono text-sm">&lt;dialog&gt;</span>: focus stays inside, Escape, the close button or a
-      click on the backdrop closes it. Rows inside use <span class="font-mono text-sm">.tm-setting</span>. The header's gear
-      opens the settings dialog built from it.
+      A native modal <span class="font-mono text-sm">&lt;dialog&gt;</span>: focus stays inside,
+      Escape, the close button or a click on the backdrop closes it. Rows inside use
+      <span class="font-mono text-sm">.tm-setting</span>. The header's gear opens the settings
+      dialog built from it.
     </p>
     <p class="mb-4 text-fg-muted">
-      With pages: <span class="font-mono text-sm">size="lg"</span> (wider, one height, so switching pages doesn't make it
-      jump) and <span class="font-mono text-sm">flush</span>, filled by side tabs
-      (<span class="font-mono text-sm">.tm-tabs tm-tabs-vertical</span>). Below 640px the tabs become a row on top.
+      With pages: <span class="font-mono text-sm">size="lg"</span> (wider, one height, so switching
+      pages doesn't make it jump) and <span class="font-mono text-sm">flush</span>, filled by side
+      tabs (<span class="font-mono text-sm">.tm-tabs tm-tabs-vertical</span>). Below 640px the tabs
+      become a row on top.
     </p>
     <tm-card>
       <div class="flex flex-wrap gap-2">
-        <button tmButton icon="settings" data-testid="styleguide-dialog-open" (click)="dialogOpen.set(true)">Open dialog</button>
-        <button tmButton data-testid="styleguide-dialog-pages-open" (click)="pagesDialogOpen.set(true)">Open dialog with pages</button>
+        <button
+          tmButton
+          icon="settings"
+          data-testid="styleguide-dialog-open"
+          (click)="dialogOpen.set(true)"
+        >
+          Open dialog
+        </button>
+        <button
+          tmButton
+          data-testid="styleguide-dialog-pages-open"
+          (click)="pagesDialogOpen.set(true)"
+        >
+          Open dialog with pages
+        </button>
       </div>
     </tm-card>
     <tm-dialog heading="Example dialog with pages" size="lg" flush [(open)]="pagesDialogOpen">
@@ -809,7 +1072,9 @@
           <dl>
             <div class="tm-setting">
               <dt>Status</dt>
-              <dd><span class="inline-flex items-center gap-1.5"><tm-icon name="check" />On</span></dd>
+              <dd>
+                <span class="inline-flex items-center gap-1.5"><tm-icon name="check" />On</span>
+              </dd>
             </div>
           </dl>
         </div>
@@ -819,11 +1084,16 @@
       <dl>
         <div class="tm-setting">
           <dt>Token</dt>
-          <dd><span class="inline-flex items-center gap-1.5"><tm-icon name="check" />Set</span></dd>
+          <dd>
+            <span class="inline-flex items-center gap-1.5"><tm-icon name="check" />Set</span>
+          </dd>
         </div>
         <div class="tm-setting">
           <dt>Requests left</dt>
-          <dd><span class="font-mono">4,812 / 5,000</span><span class="text-fg-muted"> this hour, resets 21:24</span></dd>
+          <dd>
+            <span class="font-mono">4,812 / 5,000</span
+            ><span class="text-fg-muted"> this hour, resets 21:24</span>
+          </dd>
         </div>
         <div class="tm-setting">
           <dt>Schedule</dt>

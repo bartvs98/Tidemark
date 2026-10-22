@@ -148,13 +148,24 @@ func run(cfg config.Config, log *slog.Logger) error {
 
 	// Notifications: one Telegram message per check run with the new updates, or a digest.
 	// The service always exists; settings turn it on and off.
+	// After a run: delete the stored AI summaries no container needs any more (AI on or
+	// off), then notify. apiSrv is set below, before the first run.
 	notifier := notify.New(db, notify.Options{Log: log})
-	checks.SetAfterRun(func(ctx context.Context, _ string) { notifier.AfterRun(ctx) })
+	var apiSrv *api.Server
+	checks.SetAfterRun(func(ctx context.Context, _ string) {
+		if keys, err := apiSrv.AIKeys(ctx); err != nil {
+			log.Debug("AI summary cleanup skipped", "err", err)
+		} else if n, err := aiSvc.Prune(ctx, keys); err != nil {
+			log.Warn("AI summary cleanup failed", "err", err)
+		} else if n > 0 {
+			log.Info("AI summaries cleaned up", "deleted", n)
+		}
+		notifier.AfterRun(ctx)
+	})
 
 	// Editable settings (env var > stored > default) are pushed into the services by Start
 	// and after every change in the settings dialog. The manager runs appliers one at a
 	// time, so their state needs no lock. Icons go to the API server, built below.
-	var apiSrv *api.Server
 	setIcons := func(svc *icons.Service) { apiSrv.SetIcons(svc) }
 	settingsMgr := settings.New(db, cfg.Env, cfg.Editable, appliers(ctx, cfg, log, checks, changelogs, notifier, aiSvc, setIcons), log)
 

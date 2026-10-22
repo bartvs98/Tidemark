@@ -253,6 +253,12 @@
                   }
                 </dd>
               </div>
+              @if (s.ai?.usage; as u) {
+                <div class="tm-setting">
+                  <dt>This month</dt>
+                  <dd data-testid="settings-ai-usage">{{ usageLine(u) }}</dd>
+                </div>
+              }
             </dl>
             <div class="border-t border-line">
               <div class="tm-setting">
@@ -328,6 +334,12 @@
                       <span class="text-fg-muted">Only on demand</span>
                     }
                   </dd>
+                </div>
+              }
+              @if (s.ai?.usage; as u) {
+                <div class="tm-setting">
+                  <dt>This month</dt>
+                  <dd data-testid="settings-ai-usage">{{ usageLine(u) }}</dd>
                 </div>
               }
             </dl>

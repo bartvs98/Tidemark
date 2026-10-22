@@ -35,7 +35,7 @@ func newAnthropic(key, model, baseURL string, retries int) *anthropicClient {
 func (c *anthropicClient) Name() string  { return "anthropic" }
 func (c *anthropicClient) Model() string { return c.model }
 
-func (c *anthropicClient) Complete(ctx context.Context, p Prompt) (json.RawMessage, error) {
+func (c *anthropicClient) Complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error) {
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:     anthropic.Model(c.model),
 		MaxTokens: 4096,
@@ -49,20 +49,24 @@ func (c *anthropicClient) Complete(ctx context.Context, p Prompt) (json.RawMessa
 	if err != nil {
 		var apiErr *anthropic.Error
 		if errors.As(err, &apiErr) {
-			return nil, statusError("anthropic", c.model, apiErr.StatusCode)
+			return nil, Usage{}, statusError("anthropic", c.model, apiErr.StatusCode)
 		}
-		return nil, scrub(netError(ctx, "anthropic", err), c.key)
+		return nil, Usage{}, scrub(netError(ctx, "anthropic", err), c.key)
+	}
+	u := Usage{
+		InputTokens:  int(msg.Usage.InputTokens + msg.Usage.CacheCreationInputTokens + msg.Usage.CacheReadInputTokens),
+		OutputTokens: int(msg.Usage.OutputTokens),
 	}
 	switch msg.StopReason {
 	case anthropic.StopReasonRefusal:
-		return nil, errDeclined
+		return nil, u, errDeclined
 	case anthropic.StopReasonMaxTokens:
-		return nil, errCutOff
+		return nil, u, errCutOff
 	}
 	for _, b := range msg.Content {
 		if b.Type == "text" {
-			return json.RawMessage(stripFence(b.Text)), nil
+			return json.RawMessage(stripFence(b.Text)), u, nil
 		}
 	}
-	return nil, errors.New("the model's answer was empty")
+	return nil, u, errors.New("the model's answer was empty")
 }

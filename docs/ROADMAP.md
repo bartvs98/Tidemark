@@ -46,6 +46,7 @@ From the owner's notes after the MVP. One PR each; the release comes last so v1.
   - _Behind:_ how long each container has been behind (age of the running version vs. the latest), updates per container and stack over time, an up-to-date ratio over time (the tide as a history chart).
   - _Upstream:_ release cadence per image/repo, breaking vs. calm releases per repo, biggest version jumps.
   - _Check health:_ failures per container and reason, check durations, registry and GitHub requests, GitHub quota used.
+  - _AI usage:_ summaries and tokens per month, provider and model, on demand vs. automatic, failures, slowest calls (every call is recorded in `ai_calls` since step 10; the settings dialog shows this month's totals).
   - _Lifetime (for fun):_ containers ever tracked, updates applied (running version changed), breaking changes caught, release notes read, check runs, longest-behind container ever, fastest update after a release, longest fully-up-to-date streak, mean time to update, Tidemark's own uptime.
 
 ## Ideas parked

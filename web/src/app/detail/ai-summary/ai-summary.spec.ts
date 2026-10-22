@@ -16,6 +16,9 @@ const SUMMARY: NonNullable<AiState['summary']> = {
   omitted: 0,
   createdAt: new Date(Date.now() - 3 * 3600_000).toISOString(),
   stale: false,
+  inputTokens: 12340,
+  outputTokens: 640,
+  durationMs: 4200,
 };
 const URL = '/api/containers/home%20assistant/summary';
 
@@ -60,6 +63,7 @@ describe('AiSummary', () => {
     expect(q('ai-meta')?.querySelector('.font-mono')?.textContent).toBe('claude-haiku-5-5');
     expect(q('ai-meta')?.textContent).toContain('3 releases');
     expect(q('ai-meta')?.textContent).toContain('3 hours ago');
+    expect(q('ai-stats')?.textContent?.trim()).toBe('· 12.3k tokens in · 640 out · 4.2 s');
     expect(q('ai-omitted')).toBeNull();
     expect(q('ai-stale')).toBeNull();
     expect(q('ai-regenerate')).not.toBeNull();
@@ -181,5 +185,25 @@ describe('AiSummary', () => {
     fixture.detectChanges();
     await vi.advanceTimersByTimeAsync(AI_POLL_MS * 3);
     expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves out the stats that are unknown', async () => {
+    const a = await render({ ...BASE, summary: { ...SUMMARY, inputTokens: 900, outputTokens: 0, durationMs: 0 } });
+    expect(a.q('ai-stats')?.textContent?.trim()).toBe('· 900 tokens in');
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    http = TestBed.inject(HttpTestingController);
+    const b = await render({ ...BASE, summary: { ...SUMMARY, inputTokens: 0, outputTokens: 0, durationMs: 0 } });
+    expect(b.q('ai-stats')).toBeNull();
+  });
+
+  it('wears the sheen, quicker (data-generating) while the model works', async () => {
+    const { el, fixture } = await render({ ...BASE, summary: SUMMARY });
+    const card = el.querySelector('tm-card')!;
+    expect(card.classList.contains('tm-ai-sheen')).toBe(true);
+    expect(card.hasAttribute('data-generating')).toBe(false);
+    fixture.componentRef.setInput('ai', { ...BASE, summary: SUMMARY, generating: true });
+    await fixture.whenStable();
+    expect(card.hasAttribute('data-generating')).toBe(true);
   });
 });

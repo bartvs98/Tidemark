@@ -160,7 +160,7 @@ Bring your own key. With `TIDEMARK_SETTINGS_EDITABLE=true` set it up under **Set
       # TIDEMARK_AI_AUTO_MIN_RELEASES: 5              # also summarise big jumps after each check
 ```
 
-For a local model, use `TIDEMARK_AI_PROVIDER: openai` with `TIDEMARK_AI_BASE_URL: http://ollama:11434/v1` and a `TIDEMARK_AI_MODEL` that supports structured (JSON schema) output; no key needed. Nothing is sent until you click **Summarise** on a container's page, unless you set an auto threshold. A summary is stored per version range, so each range costs one call; at most about 120,000 characters of notes go out per summary.
+For a local model, use `TIDEMARK_AI_PROVIDER: openai` with `TIDEMARK_AI_BASE_URL: http://ollama:11434/v1` and a `TIDEMARK_AI_MODEL` that supports structured (JSON schema) output; no key needed. Nothing is sent until you click **Summarise** on a container's page, unless you set an auto threshold. A summary is stored per version range, so each range costs one call (it's deleted once no container needs it); at most about 120,000 characters of notes go out per summary. **Settings → AI** shows this month's summaries and tokens; your provider's dashboard has the cost.
 
 ## Development
 

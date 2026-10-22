@@ -39,5 +39,8 @@
   <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>.
 </footer>
 
-<tm-settings-dialog [(open)]="settingsOpen" />
+<!-- Loaded on the first open (its own chunk); a `when` trigger fires once, so it stays after closing. -->
+@defer (when settingsOpen()) {
+  <tm-settings-dialog [(open)]="settingsOpen" />
+}
 <tm-toaster />

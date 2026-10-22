@@ -49,6 +49,16 @@ type aiSettingsJSON struct {
 	Model           string `json:"model"`             // effective: the provider's default when none is set
 	BaseURL         string `json:"baseUrl,omitempty"` // openai only
 	AutoMinReleases int    `json:"autoMinReleases"`   // 0 = only on demand
+	// Usage is this month's provider calls; absent when it couldn't be read.
+	Usage *aiUsageJSON `json:"usage,omitempty"`
+}
+
+type aiUsageJSON struct {
+	Since        time.Time `json:"since"` // start of the current month, server local time
+	Calls        int       `json:"calls"`
+	Failed       int       `json:"failed"`
+	InputTokens  int       `json:"inputTokens"`
+	OutputTokens int       `json:"outputTokens"`
 }
 
 type githubJSON struct {
@@ -112,6 +122,14 @@ func (s *Server) settingsBody(ctx context.Context) settingsJSON {
 				if s.settings != nil && s.settings.Runtime().AIBaseURL != "" {
 					out.AI.BaseURL = s.settings.Runtime().AIBaseURL
 				}
+			}
+			now := time.Now()
+			since := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+			if u, err := s.ai.Usage(ctx, since); err != nil {
+				s.log.Warn("reading AI usage failed", "err", err)
+			} else {
+				out.AI.Usage = &aiUsageJSON{Since: since, Calls: u.Calls, Failed: u.Failed,
+					InputTokens: u.InputTokens, OutputTokens: u.OutputTokens}
 			}
 		}
 	}

@@ -46,6 +46,10 @@ export interface AiSummaryData {
   createdAt: string;
   /** The release notes in range changed since this summary was made. */
   stale: boolean;
+  /** Tokens and time of the call that made it; 0 when unknown. */
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
 }
 
 /** One detected change of the container's image (internal/store history). */

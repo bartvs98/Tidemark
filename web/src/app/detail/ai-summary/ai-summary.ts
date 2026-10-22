@@ -3,6 +3,7 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { TmAiMarker, TmButton, TmCallout, TmCard, TmIcon, TmLevel, TmSkeleton } from '../../ui';
 import { timeAgo } from '../dates';
+import { callStats } from '../ai-format';
 import { AiState } from '../detail-types';
 
 /** How often the detail is reloaded while the server is generating a summary (an automatic run). */
@@ -55,6 +56,10 @@ export class AiSummary {
   protected readonly created = computed(() => {
     const at = this.summary()?.createdAt;
     return at ? timeAgo(at, this.locale) : '';
+  });
+  protected readonly stats = computed(() => {
+    const s = this.summary();
+    return s ? callStats(s.inputTokens ?? 0, s.outputTokens ?? 0, s.durationMs ?? 0) : '';
   });
   protected readonly count = computed(() => this.plural(this.state().releases, 'release', 'releases'));
 

@@ -18,6 +18,12 @@ import (
 // autoBackoff is how long Auto leaves a key alone after a failed attempt.
 const autoBackoff = 6 * time.Hour
 
+// Triggers of a provider call, as recorded in the usage records.
+const (
+	triggerManual = "manual"
+	triggerAuto   = "auto"
+)
+
 // Service keeps every stored summary in memory (Lookup is called per container on every
 // list request) and generates new ones, one provider call per key at a time.
 type Service struct {
@@ -85,8 +91,13 @@ func (s *Service) Generating(k Key) bool {
 
 // Generate always calls the provider (one call per key at a time; a concurrent caller
 // waits for and shares the running one). Stores success (clears error) or failure (keeps
-// an earlier summary, sets Error/FailedAt). Returns ErrOff / ErrNoNotes without a call.
+// an earlier summary, sets Error/FailedAt) and records the call as manual. Returns
+// ErrOff / ErrNoNotes without a call.
 func (s *Service) Generate(ctx context.Context, k Key, r Request) (Entry, error) {
+	return s.generateAs(ctx, k, r, triggerManual)
+}
+
+func (s *Service) generateAs(ctx context.Context, k Key, r Request, trigger string) (Entry, error) {
 	p, _ := s.Status()
 	if p == nil {
 		return Entry{}, ErrOff
@@ -97,15 +108,17 @@ func (s *Service) Generate(ctx context.Context, k Key, r Request) (Entry, error)
 	v, err, _ := s.flight.Do(k.Repo+"\x00"+k.From+"\x00"+k.To, func() (any, error) {
 		s.setGenerating(k, true)
 		defer s.setGenerating(k, false)
-		return s.generate(ctx, p, k, r)
+		return s.generate(ctx, p, k, r, trigger)
 	})
 	e, _ := v.(Entry)
 	return e, err
 }
 
-func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request) (Entry, error) {
+func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, trigger string) (Entry, error) {
 	prompt, sel := buildPrompt(r)
-	raw, err := p.Complete(ctx, prompt)
+	start := s.now()
+	raw, usage, err := p.Complete(ctx, prompt)
+	took := s.now().Sub(start)
 	var sum *Summary
 	if err == nil {
 		sum, err = summaryFrom(raw, sel)
@@ -118,14 +131,25 @@ func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request) (E
 	} else {
 		sum.Provider, sum.Model = p.Name(), p.Model()
 		sum.NotesHash, sum.CreatedAt = NotesHash(r), s.now()
+		sum.InputTokens, sum.OutputTokens, sum.Duration = usage.InputTokens, usage.OutputTokens, took
 		e = Entry{Summary: sum}
 	}
 	s.entries[k] = e
 	s.mu.Unlock()
 
 	// A summary that worked is still worth showing when it couldn't be stored.
-	if serr := s.st.PutAISummary(context.WithoutCancel(ctx), entryToStore(k, e)); serr != nil {
+	sctx := context.WithoutCancel(ctx)
+	if serr := s.st.PutAISummary(sctx, entryToStore(k, e)); serr != nil {
 		s.log.Error("store AI summary", "repo", k.Repo, "err", serr)
+	}
+	call := store.AICall{At: start, Provider: p.Name(), Model: p.Model(), Trigger: trigger,
+		Repo: k.Repo, From: k.From, To: k.To, Releases: len(sel.sent),
+		InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, Duration: took}
+	if err != nil {
+		call.Error = e.Error
+	}
+	if serr := s.st.AddAICall(sctx, call); serr != nil {
+		s.log.Error("record AI call", "repo", k.Repo, "err", serr)
 	}
 	if err != nil {
 		return e, errors.New(e.Error)
@@ -149,11 +173,36 @@ func (s *Service) Auto(ctx context.Context, k Key, r Request) {
 	if !e.FailedAt.IsZero() && s.now().Sub(e.FailedAt) < autoBackoff {
 		return
 	}
-	if _, err := s.Generate(ctx, k, r); err != nil {
+	if _, err := s.generateAs(ctx, k, r, triggerAuto); err != nil {
 		s.log.Warn("AI summary failed", "repo", k.Repo, "from", k.From, "to", k.To, "provider", p.Name(), "err", err)
 		return
 	}
 	s.log.Info("AI summary generated", "repo", k.Repo, "from", k.From, "to", k.To, "releases", len(r.Releases))
+}
+
+// Usage sums the provider calls since t.
+func (s *Service) Usage(ctx context.Context, since time.Time) (store.AIUsage, error) {
+	return s.st.AIUsageSince(ctx, since)
+}
+
+// Prune deletes stored summaries (memory + store) whose key isn't in keep. Skips keys
+// that are generating right now. Returns how many went.
+func (s *Service) Prune(ctx context.Context, keep map[Key]bool) (int, error) {
+	// Held throughout, so memory and store change together and no generation starts
+	// writing a key (generate stores under its generating flag) while it's deleted.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := func(k Key) bool { return keep[k] || s.generating[k] }
+	n, err := s.st.DeleteAISummaries(ctx, func(repo, from, to string) bool { return kept(Key{repo, from, to}) })
+	if err != nil {
+		return 0, err
+	}
+	for k := range s.entries {
+		if !kept(k) {
+			delete(s.entries, k)
+		}
+	}
+	return n, nil
 }
 
 func (s *Service) setGenerating(k Key, on bool) {
@@ -202,7 +251,8 @@ func entryFromStore(a store.AISummary) Entry {
 	var lvl analysis.Level
 	_ = lvl.UnmarshalText([]byte(a.Verdict)) // unknown: none
 	sum := &Summary{Changes: a.Changes, Actions: a.Actions, Verdict: lvl, Provider: a.Provider, Model: a.Model,
-		Releases: a.Releases, Omitted: a.Omitted, NotesHash: a.NotesHash, CreatedAt: a.CreatedAt}
+		Releases: a.Releases, Omitted: a.Omitted, NotesHash: a.NotesHash, CreatedAt: a.CreatedAt,
+		InputTokens: a.InputTokens, OutputTokens: a.OutputTokens, Duration: a.Duration}
 	for _, r := range a.Reasons {
 		sum.Reasons = append(sum.Reasons, Reason{Text: r.Text, Tag: r.Tag})
 	}
@@ -216,6 +266,7 @@ func entryToStore(k Key, e Entry) store.AISummary {
 		a.Provider, a.Model, a.Changes, a.Actions = sum.Provider, sum.Model, sum.Changes, sum.Actions
 		a.Verdict, a.Releases, a.Omitted = sum.Verdict.String(), sum.Releases, sum.Omitted
 		a.NotesHash, a.CreatedAt = sum.NotesHash, sum.CreatedAt
+		a.InputTokens, a.OutputTokens, a.Duration = sum.InputTokens, sum.OutputTokens, sum.Duration
 		for _, r := range sum.Reasons {
 			a.Reasons = append(a.Reasons, store.AIReason{Text: r.Text, Tag: r.Tag})
 		}

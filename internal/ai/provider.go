@@ -27,11 +27,15 @@ type Prompt struct {
 	Schema map[string]any // JSON schema of the output (additionalProperties false everywhere)
 }
 
-// Provider runs one completion and returns the model's JSON object (raw).
+// Usage is what one provider call cost, as the provider reports it (0 when it doesn't).
+type Usage struct{ InputTokens, OutputTokens int }
+
+// Provider runs one completion and returns the model's JSON object (raw) and its usage,
+// also on errors when the provider reported it.
 type Provider interface {
 	Name() string  // anthropic | openai | gemini
 	Model() string // effective model
-	Complete(ctx context.Context, p Prompt) (json.RawMessage, error)
+	Complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error)
 }
 
 // NewProvider builds the provider for the settings. model "" = provider default; openai has no

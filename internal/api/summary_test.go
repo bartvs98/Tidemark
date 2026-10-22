@@ -28,19 +28,20 @@ type fakeProvider struct {
 	mu    sync.Mutex
 	out   string
 	err   error
+	usage ai.Usage
 	calls int
 }
 
 func (p *fakeProvider) Name() string  { return "anthropic" }
 func (p *fakeProvider) Model() string { return "claude-test" }
-func (p *fakeProvider) Complete(context.Context, ai.Prompt) (json.RawMessage, error) {
+func (p *fakeProvider) Complete(context.Context, ai.Prompt) (json.RawMessage, ai.Usage, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.calls++
 	if p.err != nil {
-		return nil, p.err
+		return nil, p.usage, p.err
 	}
-	return json.RawMessage(p.out), nil
+	return json.RawMessage(p.out), p.usage, nil
 }
 
 func (p *fakeProvider) answer(out string, err error) {
@@ -51,7 +52,9 @@ func (p *fakeProvider) answer(out string, err error) {
 
 type summaryFixture struct {
 	h   http.Handler
+	srv *Server
 	svc *ai.Service
+	db  *store.Store
 	p   *fakeProvider
 }
 
@@ -87,17 +90,18 @@ func newSummaryFixture(t *testing.T, newest string) summaryFixture {
 	}
 	p := &fakeProvider{}
 	svc.Configure(p, 0)
-	h := New(Deps{
+	srv := New(Deps{
 		Version: "t", Log: log, Source: src, Checks: checks, Store: db, AI: svc,
 		Changelogs: changelog.New(db, "", log, changelog.WithBaseURLs(gh.URL, gh.URL, gh.URL)),
 		Background: t.Context(),
-	}).Handler(fstest.MapFS{})
+	})
+	h := srv.Handler(fstest.MapFS{})
 
 	checks.Start(t.Context(), check.TriggerManual)
 	for deadline := time.Now().Add(5 * time.Second); checks.Status().Running && time.Now().Before(deadline); {
 		time.Sleep(5 * time.Millisecond)
 	}
-	return summaryFixture{h: h, svc: svc, p: p}
+	return summaryFixture{h: h, srv: srv, svc: svc, db: db, p: p}
 }
 
 func (f summaryFixture) detail(t *testing.T) detailJSON {
@@ -137,6 +141,7 @@ func TestSummaryLifecycle(t *testing.T) {
 	}
 
 	f.p.answer(`{"changes":["New player"],"actions":[],"verdict":"attention","reasons":[{"text":"Config moved","tag":"v10.10.7"}]}`, nil)
+	f.p.usage = ai.Usage{InputTokens: 12300, OutputTokens: 640}
 	rec := send(t, f.h, http.MethodPost, "/api/containers/jellyfin/summary", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST = %d: %s", rec.Code, rec.Body)
@@ -152,6 +157,16 @@ func TestSummaryLifecycle(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"actions":[]`) {
 		t.Errorf("actions not an array: %s", rec.Body)
+	}
+	if sm != nil && (sm.InputTokens != 12300 || sm.OutputTokens != 640 || sm.DurationMs < 0) ||
+		!strings.Contains(rec.Body.String(), `"inputTokens":12300,"outputTokens":640,"durationMs":`) {
+		t.Errorf("usage fields: %s", rec.Body)
+	}
+	if a := f.detail(t).AI; a == nil || a.Summary == nil || a.Summary.InputTokens != 12300 || a.Summary.OutputTokens != 640 {
+		t.Errorf("detail usage: %+v", a)
+	}
+	if u, err := f.svc.Usage(t.Context(), time.Time{}); err != nil || u != (store.AIUsage{Calls: 1, InputTokens: 12300, OutputTokens: 640}) {
+		t.Errorf("recorded usage = %+v, %v", u, err)
 	}
 
 	// The verdict raises the level, on the list and the detail alike, with the AI's reasons last.
@@ -233,5 +248,70 @@ func TestSummaryErrors(t *testing.T) {
 	h := New(Deps{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Source: docker.NewSnapshot("../docker/testdata/snapshot.json")}).Handler(fstest.MapFS{})
 	if rec := send(t, h, http.MethodPost, "/api/containers/jellyfin/summary", ""); rec.Code != http.StatusNotImplemented {
 		t.Errorf("no service: %d", rec.Code)
+	}
+}
+
+// AIKeys names exactly the summaries the list applies, so pruning to it keeps them all.
+func TestAIKeysAndPrune(t *testing.T) {
+	f := newSummaryFixture(t, "fixes")
+	f.detail(t) // stores the notes
+	f.p.answer(`{"changes":["x"],"actions":[],"verdict":"breaking","reasons":[{"text":"From AI","tag":""}]}`, nil)
+	if rec := send(t, f.h, http.MethodPost, "/api/containers/jellyfin/summary", ""); rec.Code != http.StatusOK {
+		t.Fatalf("POST = %d: %s", rec.Code, rec.Body)
+	}
+	rows, _ := f.db.AISummaries(t.Context())
+	if len(rows) != 1 {
+		t.Fatalf("stored = %+v", rows)
+	}
+	jellyfin := ai.Key{Repo: rows[0].Repo, From: rows[0].From, To: rows[0].To}
+
+	keys, err := f.srv.AIKeys(t.Context())
+	if err != nil || !keys[jellyfin] {
+		t.Fatalf("keys = %v, %v (want %v in it)", keys, err, jellyfin)
+	}
+	// A summary for every key, plus one nothing needs: each key's summary shows on the list.
+	notes := ai.Request{Latest: "x", Releases: []ai.Notes{{Tag: "v", Body: "notes"}}}
+	for k := range keys {
+		if _, err := f.svc.Generate(t.Context(), k, notes); err != nil {
+			t.Fatal(err)
+		}
+	}
+	orphan := ai.Key{Repo: jellyfin.Repo, From: "1.0.0", To: "2.0.0"}
+	if _, err := f.svc.Generate(t.Context(), orphan, notes); err != nil {
+		t.Fatal(err)
+	}
+	applied := func() int {
+		var body containerList
+		if err := json.Unmarshal(do(t, f.h, "/api/containers").Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, c := range body.Containers {
+			if c.Update != nil && aiReasons(c.Update.Reasons) != nil {
+				n++
+			}
+		}
+		return n
+	}
+	before := applied()
+	if before < len(keys) {
+		t.Errorf("%d containers show an AI verdict, want at least one per key (%d)", before, len(keys))
+	}
+
+	n, err := f.svc.Prune(t.Context(), keys)
+	if err != nil || n != 1 {
+		t.Errorf("pruned %d, %v; want only the orphan", n, err)
+	}
+	if _, ok := f.svc.Lookup(orphan); ok {
+		t.Error("orphan still in memory")
+	}
+	if got := applied(); got != before {
+		t.Errorf("after prune %d containers show an AI verdict, want %d", got, before)
+	}
+
+	// Docker failing is an error, not an empty set (which would prune everything).
+	broken := New(Deps{Log: f.srv.log, Source: docker.NewSnapshot("missing.json"), AI: f.svc})
+	if _, err := broken.AIKeys(t.Context()); err == nil {
+		t.Error("AIKeys without Docker: no error")
 	}
 }

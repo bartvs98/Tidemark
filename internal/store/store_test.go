@@ -405,7 +405,7 @@ func TestAISummariesRoundTrip(t *testing.T) {
 	a := AISummary{Repo: "github.com/a/b", From: "1.0.0", To: "1.2.0", Provider: "anthropic", Model: "m",
 		Changes: []string{"c1", "c2"}, Actions: []string{"a1"}, Verdict: "breaking",
 		Reasons: []AIReason{{Text: "r", Tag: "v1.2.0"}, {Text: "r2"}}, Releases: 2, Omitted: 1,
-		NotesHash: "h", CreatedAt: at}
+		NotesHash: "h", CreatedAt: at, InputTokens: 1200, OutputTokens: 340, Duration: 4200 * time.Millisecond}
 	if err := s.PutAISummary(ctx, a); err != nil {
 		t.Fatal(err)
 	}
@@ -434,5 +434,54 @@ func TestAISummariesRoundTrip(t *testing.T) {
 	got, _ = s.AISummaries(ctx)
 	if len(got) != 2 || !slices.Equal(got[0].Changes, []string{"new"}) {
 		t.Errorf("upsert: %+v", got)
+	}
+}
+
+func TestDeleteAISummaries(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	for _, to := range []string{"1", "2", "3"} {
+		if err := s.PutAISummary(ctx, AISummary{Repo: "r", From: "0", To: to, CreatedAt: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := s.DeleteAISummaries(ctx, func(repo, from, to string) bool { return repo == "r" && from == "0" && to == "2" })
+	if err != nil || n != 2 {
+		t.Fatalf("deleted %d, %v", n, err)
+	}
+	got, _ := s.AISummaries(ctx)
+	if len(got) != 1 || got[0].To != "2" {
+		t.Errorf("left: %+v", got)
+	}
+	if n, err := s.DeleteAISummaries(ctx, func(string, string, string) bool { return true }); err != nil || n != 0 {
+		t.Errorf("keep all: %d %v", n, err)
+	}
+}
+
+func TestAICallsUsage(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	month := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	if u, err := s.AIUsageSince(ctx, month); err != nil || u != (AIUsage{}) {
+		t.Fatalf("empty: %+v %v", u, err)
+	}
+	for _, c := range []AICall{
+		{At: month.Add(-time.Nanosecond), InputTokens: 999, OutputTokens: 999}, // last month
+		{At: month, Provider: "anthropic", Model: "m", Trigger: "manual", Repo: "r", From: "1", To: "2",
+			Releases: 3, InputTokens: 1000, OutputTokens: 100, Duration: time.Second},
+		{At: month.Add(1500 * time.Millisecond), Trigger: "auto", InputTokens: 20, Error: "rate limited"},
+		{At: month.Add(time.Hour).In(time.FixedZone("x", 2*3600)), Trigger: "auto", OutputTokens: 5},
+	} {
+		if err := s.AddAICall(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	u, err := s.AIUsageSince(ctx, month)
+	if err != nil || u != (AIUsage{Calls: 3, Failed: 1, InputTokens: 1020, OutputTokens: 105}) {
+		t.Errorf("usage = %+v, %v", u, err)
+	}
+	// Sub-second precision orders correctly against a whole-second bound.
+	if u, _ := s.AIUsageSince(ctx, month.Add(time.Second)); u.Calls != 2 {
+		t.Errorf("since +1s: %+v", u)
 	}
 }

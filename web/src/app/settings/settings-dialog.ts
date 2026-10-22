@@ -18,6 +18,7 @@ import {
   TmTooltip,
   Toasts,
 } from '../ui';
+import { usageLine } from '../detail/ai-format';
 import { SecretSetting } from './secret-setting/secret-setting';
 
 /** The settings that can be edited here (with TIDEMARK_SETTINGS_EDITABLE=true), by API name. */
@@ -76,7 +77,14 @@ export interface Settings {
   /** TIDEMARK_SETTINGS_EDITABLE: the fields can be changed here. */
   editable: boolean;
   /** Absent when AI summaries are off. `model` is the effective one, `baseUrl` is set for the openai provider only. */
-  ai?: { provider: 'anthropic' | 'openai' | 'gemini'; model: string; baseUrl?: string; autoMinReleases: number };
+  ai?: {
+    provider: 'anthropic' | 'openai' | 'gemini';
+    model: string;
+    baseUrl?: string;
+    autoMinReleases: number;
+    /** This month's provider calls (since = start of the month). */
+    usage?: { since: string; calls: number; failed: number; inputTokens: number; outputTokens: number };
+  };
   /** Absent when the server has no settings manager (then nothing is editable). */
   fields?: Record<SettingKey, SettingField>;
   /** Stored values that were ignored, a half Telegram pair… */
@@ -169,6 +177,7 @@ export class SettingsDialog {
   protected readonly levels = NOTIFY_LEVELS;
   protected readonly levelOptions: SelectOption[] = Object.entries(NOTIFY_LEVELS).map(([value, label]) => ({ value, label }));
   protected readonly aiProviders = AI_PROVIDERS;
+  protected readonly usageLine = usageLine;
   protected readonly aiProviderOptions: SelectOption[] = Object.entries(AI_PROVIDERS).map(([value, label]) => ({ value, label }));
   protected readonly testing = signal(false);
 

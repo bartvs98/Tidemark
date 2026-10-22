@@ -43,6 +43,10 @@ type aiSummaryJSON struct {
 	Omitted   int            `json:"omitted"`
 	CreatedAt time.Time      `json:"createdAt"`
 	Stale     bool           `json:"stale"` // the notes in range changed since
+	// The call that produced it; 0 when unknown.
+	InputTokens  int   `json:"inputTokens"`
+	OutputTokens int   `json:"outputTokens"`
+	DurationMs   int64 `json:"durationMs"`
 }
 
 // aiOn reports whether AI summaries are configured; verdicts only apply while they are.
@@ -78,6 +82,39 @@ func (s *Server) applyAI(u *updateJSON, repo source.Repo, running, latest *versi
 	}
 }
 
+// updateKey is the summary key of a judged update whose notes come from repo; ok is false
+// without a latest version.
+func updateKey(u *updateJSON, repo source.Repo) (ai.Key, bool) {
+	return ai.KeyFor(repo.Key(), parseVersion(u.Running), parseVersion(u.Latest))
+}
+
+// AIKeys is the key of every container's update whose summary applyAI would look up now
+// (not ignored, a checked result with an update, not a channel build, the repo resolves,
+// a latest version), whether or not AI is on. The after-run hook prunes the rest.
+func (s *Server) AIKeys(ctx context.Context) (map[ai.Key]bool, error) {
+	list, err := s.source.Containers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	keys := map[ai.Key]bool{}
+	for _, c := range list {
+		rs := s.rulesFor(c)
+		ref, _ := imageref.Parse(c.ImageRef)
+		u := s.checkedUpdate(c, ref, rs)
+		if !judged(u) {
+			continue
+		}
+		repo, ok := s.notesRepo(c, ref, rs)
+		if !ok {
+			continue
+		}
+		if k, ok := updateKey(u, repo); ok {
+			keys[k] = true
+		}
+	}
+	return keys, nil
+}
+
 // summaryTarget is what a summary of the update would cover: its key and the request built
 // from the stored notes in range.
 type summaryTarget struct {
@@ -89,10 +126,10 @@ type summaryTarget struct {
 // is false when there is nothing to judge: no checked result, no update, a channel build
 // (stable notes say nothing about it) or no latest version.
 func targetFor(u *updateJSON, ref imageref.Ref, repo source.Repo, ch changelog.Changes) (summaryTarget, bool) {
-	if u == nil || u.CheckedAt == nil || u.Class == string(version.None) || u.Channel != "" {
+	if !judged(u) {
 		return summaryTarget{}, false
 	}
-	k, ok := ai.KeyFor(repo.Key(), parseVersion(u.Running), parseVersion(u.Latest))
+	k, ok := updateKey(u, repo)
 	if !ok {
 		return summaryTarget{}, false
 	}
@@ -134,6 +171,10 @@ func (s *Server) aiState(t summaryTarget) *aiJSON {
 			Omitted:   sm.Omitted,
 			CreatedAt: sm.CreatedAt,
 			Stale:     sm.NotesHash != ai.NotesHash(t.req),
+
+			InputTokens:  sm.InputTokens,
+			OutputTokens: sm.OutputTokens,
+			DurationMs:   sm.Duration.Milliseconds(),
 		}
 		if out.Summary.Reasons == nil {
 			out.Summary.Reasons = []ai.Reason{}

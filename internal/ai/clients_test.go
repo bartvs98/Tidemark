@@ -39,7 +39,8 @@ func anthropicMsg(stop, text string) string {
 	b, _ := json.Marshal(map[string]any{
 		"id": "msg_1", "type": "message", "role": "assistant", "model": DefaultAnthropicModel,
 		"content":     []map[string]any{{"type": "text", "text": text}},
-		"stop_reason": stop, "usage": map[string]int{"input_tokens": 1, "output_tokens": 1},
+		"stop_reason": stop, "usage": map[string]int{"input_tokens": 100, "cache_creation_input_tokens": 5,
+			"cache_read_input_tokens": 20, "output_tokens": 7},
 	})
 	return string(b)
 }
@@ -50,12 +51,15 @@ func TestAnthropicRequestAndSuccess(t *testing.T) {
 	if c.Name() != "anthropic" || c.Model() != DefaultAnthropicModel {
 		t.Errorf("name/model %s %s", c.Name(), c.Model())
 	}
-	raw, err := c.Complete(context.Background(), testPrompt)
+	raw, u, err := c.Complete(context.Background(), testPrompt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(raw) != answer {
 		t.Errorf("raw = %s", raw)
+	}
+	if u != (Usage{InputTokens: 125, OutputTokens: 7}) { // cache tokens count as input
+		t.Errorf("usage = %+v", u)
 	}
 	g := *got
 	if g["_path"] != "/v1/messages" || hdr.Get("X-Api-Key") != testKey || hdr.Get("Authorization") != "" {
@@ -95,14 +99,14 @@ func TestAnthropicStopReasonsAndErrors(t *testing.T) {
 		{529, `{"type":"error","error":{"type":"overloaded_error","message":"busy"}}`, "anthropic error (status 529)"},
 	} {
 		srv, _, _ := server(t, tc.status, tc.body)
-		_, err := newAnthropic(testKey, "m1", srv.URL+"/", 0).Complete(context.Background(), testPrompt)
+		_, _, err := newAnthropic(testKey, "m1", srv.URL+"/", 0).Complete(context.Background(), testPrompt)
 		if err == nil || err.Error() != tc.want {
 			t.Errorf("%d: err = %v, want %q", tc.status, err, tc.want)
 		}
 	}
 	srv, _, _ := server(t, 200, "")
 	srv.Close()
-	_, err := newAnthropic(testKey, "", srv.URL+"/", 0).Complete(context.Background(), testPrompt)
+	_, _, err := newAnthropic(testKey, "", srv.URL+"/", 0).Complete(context.Background(), testPrompt)
 	if err == nil || !strings.HasPrefix(err.Error(), "couldn't reach anthropic") || strings.Contains(err.Error(), testKey) {
 		t.Errorf("network: %v", err)
 	}
@@ -117,12 +121,15 @@ func openAIAnswer(finish, content string) string {
 func TestOpenAIRequestAndSuccess(t *testing.T) {
 	srv, got, hdr := server(t, 200, openAIAnswer("stop", "```json\n"+answer+"\n```"))
 	c := newOpenAI("openai", testKey, "gpt-x", srv.URL+"/v1/")
-	raw, err := c.Complete(context.Background(), testPrompt)
+	raw, u, err := c.Complete(context.Background(), testPrompt)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(raw) != answer {
 		t.Errorf("fence not stripped: %s", raw)
+	}
+	if u != (Usage{}) { // no usage in the answer
+		t.Errorf("usage without one = %+v", u)
 	}
 	g := *got
 	if g["_path"] != "/v1/chat/completions" || hdr.Get("Authorization") != "Bearer "+testKey || g["model"] != "gpt-x" {
@@ -140,11 +147,31 @@ func TestOpenAIRequestAndSuccess(t *testing.T) {
 
 	// A local server needs no key: no Authorization header at all.
 	srv, _, hdr = server(t, 200, openAIAnswer("stop", answer))
-	if _, err := newOpenAI("openai", "", "llama", srv.URL).Complete(context.Background(), testPrompt); err != nil {
+	if _, _, err := newOpenAI("openai", "", "llama", srv.URL).Complete(context.Background(), testPrompt); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := (*hdr)["Authorization"]; ok {
 		t.Error("Authorization sent without a key")
+	}
+}
+
+func TestOpenAIUsage(t *testing.T) {
+	withUsage := func(finish, content string) string {
+		var m map[string]any
+		json.Unmarshal([]byte(openAIAnswer(finish, content)), &m)
+		m["usage"] = map[string]int{"prompt_tokens": 1234, "completion_tokens": 56, "total_tokens": 1290}
+		return mustJSON(m)
+	}
+	srv, _, _ := server(t, 200, withUsage("stop", answer))
+	_, u, err := newOpenAI("openai", testKey, "m", srv.URL).Complete(context.Background(), testPrompt)
+	if err != nil || u != (Usage{InputTokens: 1234, OutputTokens: 56}) {
+		t.Errorf("usage = %+v, %v", u, err)
+	}
+	// Also reported when the answer is a failure.
+	srv, _, _ = server(t, 200, withUsage("length", "{"))
+	_, u, err = newOpenAI("openai", testKey, "m", srv.URL).Complete(context.Background(), testPrompt)
+	if err == nil || u != (Usage{InputTokens: 1234, OutputTokens: 56}) {
+		t.Errorf("cut off: usage = %+v, %v", u, err)
 	}
 }
 
@@ -166,14 +193,14 @@ func TestOpenAIErrors(t *testing.T) {
 		{503, `{}`, "gemini error (status 503)"},
 	} {
 		srv, _, _ := server(t, tc.status, tc.body)
-		_, err := newOpenAI("gemini", testKey, "m1", srv.URL).Complete(context.Background(), testPrompt)
+		_, _, err := newOpenAI("gemini", testKey, "m1", srv.URL).Complete(context.Background(), testPrompt)
 		if err == nil || err.Error() != tc.want {
 			t.Errorf("%d %s: err = %v, want %q", tc.status, tc.body, err, tc.want)
 		}
 	}
 	srv, _, _ := server(t, 200, "")
 	srv.Close()
-	_, err := newOpenAI("openai", testKey, "m", srv.URL).Complete(context.Background(), testPrompt)
+	_, _, err := newOpenAI("openai", testKey, "m", srv.URL).Complete(context.Background(), testPrompt)
 	if err == nil || err.Error() != "couldn't reach openai" {
 		t.Errorf("network: %v", err)
 	}

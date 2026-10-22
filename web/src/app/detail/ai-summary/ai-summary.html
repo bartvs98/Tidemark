@@ -1,6 +1,6 @@
 @let s = summary();
 @let st = state();
-<tm-card [heading]="s || busy() || error() ? 'Summary' : undefined">
+<tm-card class="tm-ai-sheen" [attr.data-generating]="busy() ? '' : null" [heading]="s || busy() || error() ? 'Summary' : undefined">
   @if (s || busy() || error()) {
     <tm-ai-marker tmCardActions />
   }
@@ -99,6 +99,9 @@
         · {{ plural(s.releases, 'release', 'releases') }}
         @if (s.omitted > 0) {
           <span data-testid="ai-omitted">({{ s.omitted }} left out)</span>
+        }
+        @if (stats(); as t) {
+          <span data-testid="ai-stats">· {{ t }}</span>
         }
         · {{ created() }}
         @if (s.stale) {

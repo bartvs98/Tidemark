@@ -26,12 +26,12 @@ func newOpenAI(name, key, model, baseURL string) *openAIClient {
 func (c *openAIClient) Name() string  { return c.name }
 func (c *openAIClient) Model() string { return c.model }
 
-func (c *openAIClient) Complete(ctx context.Context, p Prompt) (json.RawMessage, error) {
-	raw, err := c.complete(ctx, p)
-	return raw, scrub(err, c.key)
+func (c *openAIClient) Complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error) {
+	raw, u, err := c.complete(ctx, p)
+	return raw, u, scrub(err, c.key)
 }
 
-func (c *openAIClient) complete(ctx context.Context, p Prompt) (json.RawMessage, error) {
+func (c *openAIClient) complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error) {
 	body, _ := json.Marshal(map[string]any{
 		"model": c.model,
 		"messages": []map[string]string{
@@ -49,7 +49,7 @@ func (c *openAIClient) complete(ctx context.Context, p Prompt) (json.RawMessage,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("invalid %s base URL", c.name)
+		return nil, Usage{}, fmt.Errorf("invalid %s base URL", c.name)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.key != "" {
@@ -57,15 +57,15 @@ func (c *openAIClient) complete(ctx context.Context, p Prompt) (json.RawMessage,
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, netError(ctx, c.name, err)
+		return nil, Usage{}, netError(ctx, c.name, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return nil, netError(ctx, c.name, err)
+		return nil, Usage{}, netError(ctx, c.name, err)
 	}
 	if resp.StatusCode/100 != 2 {
-		return nil, statusError(c.name, c.model, resp.StatusCode)
+		return nil, Usage{}, statusError(c.name, c.model, resp.StatusCode)
 	}
 	var out struct {
 		Choices []struct {
@@ -75,22 +75,30 @@ func (c *openAIClient) complete(ctx context.Context, p Prompt) (json.RawMessage,
 			} `json:"message"`
 			FinishReason string `json:"finish_reason"`
 		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
-	if err := json.Unmarshal(data, &out); err != nil || len(out.Choices) == 0 {
-		return nil, fmt.Errorf("%s sent an answer Tidemark can't read", c.name)
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, Usage{}, fmt.Errorf("%s sent an answer Tidemark can't read", c.name)
+	}
+	u := Usage{InputTokens: out.Usage.PromptTokens, OutputTokens: out.Usage.CompletionTokens}
+	if len(out.Choices) == 0 {
+		return nil, u, fmt.Errorf("%s sent an answer Tidemark can't read", c.name)
 	}
 	ch := out.Choices[0]
 	switch {
 	case ch.Message.Refusal != nil && *ch.Message.Refusal != "":
-		return nil, errDeclined
+		return nil, u, errDeclined
 	case ch.FinishReason == "length":
-		return nil, errCutOff
+		return nil, u, errCutOff
 	case ch.FinishReason == "content_filter":
-		return nil, errDeclined
+		return nil, u, errDeclined
 	case ch.Message.Content == nil || strings.TrimSpace(*ch.Message.Content) == "":
-		return nil, errors.New("the model's answer was empty")
+		return nil, u, errors.New("the model's answer was empty")
 	}
-	return json.RawMessage(stripFence(*ch.Message.Content)), nil
+	return json.RawMessage(stripFence(*ch.Message.Content)), u, nil
 }
 
 // stripFence removes a ```json … ``` fence some models put around the object.

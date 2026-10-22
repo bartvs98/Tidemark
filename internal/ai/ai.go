@@ -67,6 +67,9 @@ type Summary struct {
 	Omitted   int // releases in range left out (input cap)
 	NotesHash string
 	CreatedAt time.Time
+	// The call that produced it, as the provider reported it (0 when unknown).
+	InputTokens, OutputTokens int
+	Duration                  time.Duration
 }
 
 // Entry is the stored state of one key.

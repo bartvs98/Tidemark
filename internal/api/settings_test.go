@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/bartvs98/tidemark/internal/ai"
 	"github.com/bartvs98/tidemark/internal/changelog"
@@ -150,6 +151,17 @@ func noSecrets(t *testing.T, body string) {
 
 func TestSettingsFields(t *testing.T) {
 	f := newSettingsFixture(t, false)
+	now := time.Now()
+	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	for _, c := range []store.AICall{
+		{At: month.Add(-time.Second), InputTokens: 999, OutputTokens: 999}, // last month
+		{At: now, Trigger: "manual", InputTokens: 1200, OutputTokens: 300},
+		{At: now, Trigger: "auto", InputTokens: 50, Error: "rate limited by anthropic"},
+	} {
+		if err := f.db.AddAICall(t.Context(), c); err != nil {
+			t.Fatal(err)
+		}
+	}
 	rec := do(t, f.h, "/api/settings")
 	noSecrets(t, rec.Body.String())
 	var body struct {
@@ -188,7 +200,16 @@ func TestSettingsFields(t *testing.T) {
 	if body.Checks.Schedule != "0 */6 * * *" {
 		t.Errorf("checks = %+v", body.Checks)
 	}
-	if body.AI == nil || *body.AI != (aiSettingsJSON{Provider: "anthropic", Model: ai.DefaultAnthropicModel, AutoMinReleases: 4}) {
+	if body.AI == nil || body.AI.Usage == nil {
+		t.Fatalf("ai = %+v", body.AI)
+	}
+	if u := *body.AI.Usage; !u.Since.Equal(month) || u.Calls != 2 || u.Failed != 1 || u.InputTokens != 1250 || u.OutputTokens != 300 {
+		t.Errorf("usage = %+v, want since %v", u, month)
+	}
+	if !strings.Contains(rec.Body.String(), `"usage":{"since":"`+month.Format(time.RFC3339)+`","calls":2,"failed":1,"inputTokens":1250,"outputTokens":300}`) {
+		t.Errorf("usage JSON: %s", rec.Body)
+	}
+	if a := withoutUsage(*body.AI); a != (aiSettingsJSON{Provider: "anthropic", Model: ai.DefaultAnthropicModel, AutoMinReleases: 4}) {
 		t.Errorf("ai = %+v", body.AI)
 	}
 }
@@ -281,7 +302,10 @@ func TestPatchSettings(t *testing.T) {
 		*body.Fields["notifyLevel"].Value != "attention" || !*body.Fields["telegramBotToken"].Set || body.Warnings != nil {
 		t.Errorf("body = %s", rec.Body)
 	}
-	if body.AI == nil || *body.AI != (aiSettingsJSON{Provider: "openai", Model: "gpt-test", BaseURL: "http://ollama.lan:11434/v1", AutoMinReleases: 4}) {
+	if body.AI == nil || body.AI.Usage == nil || body.AI.Usage.Calls != 0 {
+		t.Fatalf("ai = %+v", body.AI)
+	}
+	if a := withoutUsage(*body.AI); a != (aiSettingsJSON{Provider: "openai", Model: "gpt-test", BaseURL: "http://ollama.lan:11434/v1", AutoMinReleases: 4}) {
 		t.Errorf("ai = %+v", body.AI)
 	}
 	if body.Checks.Schedule != "@daily" || f.checks.Schedule() != "@daily" {
@@ -303,4 +327,9 @@ func TestPatchSettings(t *testing.T) {
 	if rec.Code != http.StatusOK || f.checks.Schedule() != "0 */6 * * *" {
 		t.Errorf("got %d, schedule %q", rec.Code, f.checks.Schedule())
 	}
+}
+
+func withoutUsage(a aiSettingsJSON) aiSettingsJSON {
+	a.Usage = nil
+	return a
 }

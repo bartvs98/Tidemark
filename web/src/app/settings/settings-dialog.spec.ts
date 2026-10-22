@@ -367,7 +367,7 @@ describe('SettingsDialog', () => {
     });
 
     describe('AI page', () => {
-      const ON: Settings['ai'] = { provider: 'openai', model: 'llama3.1:8b', baseUrl: 'http://ollama:11434/v1', autoMinReleases: 5 };
+      const ON: Settings['ai'] = { provider: 'openai', model: 'llama3.1:8b', baseUrl: 'http://ollama:11434/v1', autoMinReleases: 5, usage: { since: '2026-10-01T00:00:00+02:00', calls: 14, failed: 2, inputTokens: 182000, outputTokens: 9100 } };
       const withAi = (fields: Partial<Record<SettingKey, SettingField>>, ai?: Settings['ai']): Settings => ({
         ...EDITABLE,
         ai,
@@ -449,6 +449,7 @@ describe('SettingsDialog', () => {
         expect(text).toContain('llama3.1:8b');
         expect(text).toContain('http://ollama:11434/v1');
         expect(text).toContain('From 5 releases behind');
+        expect(panel().querySelector('[data-testid="settings-ai-usage"]')?.textContent).toBe('14 summaries · 182k tokens in · 9.1k out · 2 failed');
         expect(panel().querySelector('[data-testid="settings-ai-note"]')?.textContent).toContain('5+ releases');
 
         TestBed.resetTestingModule();
