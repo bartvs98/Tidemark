@@ -131,7 +131,7 @@ func TestReleasesInRange(t *testing.T) {
 	ctx := context.Background()
 	repo := gh("home-assistant/core")
 
-	if err := s.Sync(ctx, repo, v(t, "2026.9.0")); err != nil {
+	if err := s.Sync(ctx, repo, v(t, "2026.9.0"), nil); err != nil {
 		t.Fatal(err)
 	}
 	cs, err := s.Changes(ctx, repo, v(t, "2026.9.0"), v(t, "2026.10.1"))
@@ -165,8 +165,8 @@ func TestSyncIsCachedAndConditional(t *testing.T) {
 	ctx := context.Background()
 	repo := gh("filebrowser/filebrowser")
 
-	_ = s.Sync(ctx, repo, v(t, "2.32.0"))
-	_ = s.Sync(ctx, repo, v(t, "2.32.0")) // fresh: no request
+	_ = s.Sync(ctx, repo, v(t, "2.32.0"), nil)
+	_ = s.Sync(ctx, repo, v(t, "2.32.0"), nil) // fresh: no request
 	if f.apiCalls.Load() != 1 {
 		t.Fatalf("api calls = %d, want 1", f.apiCalls.Load())
 	}
@@ -175,7 +175,7 @@ func TestSyncIsCachedAndConditional(t *testing.T) {
 	st, _, _ := s.store.RepoState(ctx, repo.Key())
 	st.FetchedAt = st.FetchedAt.Add(-7 * time.Hour)
 	_ = s.store.SaveRepoState(ctx, st)
-	if err := s.Sync(ctx, repo, v(t, "2.32.0")); err != nil {
+	if err := s.Sync(ctx, repo, v(t, "2.32.0"), nil); err != nil {
 		t.Fatal(err)
 	}
 	if f.notMod.Load() != 1 {
@@ -184,6 +184,54 @@ func TestSyncIsCachedAndConditional(t *testing.T) {
 	if cs, _ := s.Changes(ctx, repo, v(t, "2.32.0"), v(t, "2.32.1")); !slices.Equal(tags(cs), []string{"v2.32.1"}) || cs.FromTag != "v2.32.0" {
 		t.Errorf("after 304: %+v", cs)
 	}
+}
+
+// A release whose image is already out but whose notes aren't stored yet is fetched
+// after latestRetry, not freshFor; once it's there, the plain freshFor applies again.
+func TestSyncFetchesAgainForMissingLatest(t *testing.T) {
+	f := &fakeHosts{releases: map[string][]string{"a/b": {"v1.2.0", "v1.1.0"}}}
+	s := setup(t, f)
+	ctx := context.Background()
+	repo := gh("a/b")
+	age := func(d time.Duration) {
+		st, _, _ := s.store.RepoState(ctx, repo.Key())
+		st.FetchedAt = time.Now().Add(-d)
+		_ = s.store.SaveRepoState(ctx, st)
+	}
+	calls := func(want int32) {
+		t.Helper()
+		if got := f.apiCalls.Load(); got != want {
+			t.Errorf("api calls = %d, want %d", got, want)
+		}
+	}
+
+	_ = s.Sync(ctx, repo, v(t, "1.1.0"), v(t, "1.2.0"))
+	calls(1)
+	// The image is at 1.3.0 (linuxserver build tag), the notes stop at 1.2.0.
+	f.releases["a/b"] = []string{"v1.3.0", "v1.2.0", "v1.1.0"}
+	latest := v(t, "1.3.0-ls12")
+	_ = s.Sync(ctx, repo, v(t, "1.1.0"), latest) // fetched just now: wait
+	calls(1)
+	age(90 * time.Minute)
+	_ = s.Sync(ctx, repo, v(t, "1.1.0"), latest)
+	calls(2)
+	if cs, _ := s.Changes(ctx, repo, v(t, "1.1.0"), latest); !slices.Equal(tags(cs), []string{"v1.3.0", "v1.2.0"}) {
+		t.Errorf("range = %v", tags(cs))
+	}
+	// Has the latest now: back to freshFor.
+	age(90 * time.Minute)
+	_ = s.Sync(ctx, repo, v(t, "1.1.0"), latest)
+	calls(2)
+
+	// A latest that never gets notes is asked about at most every latestRetry.
+	age(10 * time.Minute)
+	_ = s.Sync(ctx, repo, v(t, "1.1.0"), v(t, "1.4.0"))
+	calls(2)
+	age(90 * time.Minute)
+	_ = s.Sync(ctx, repo, v(t, "1.1.0"), v(t, "1.4.0"))
+	calls(3)
+	_ = s.Sync(ctx, repo, v(t, "1.1.0"), v(t, "1.4.0"))
+	calls(3)
 }
 
 func TestPaginationUntilCovered(t *testing.T) {
@@ -197,12 +245,12 @@ func TestPaginationUntilCovered(t *testing.T) {
 	repo := gh("big/repo")
 
 	// Running 1.180.0 is on page 1 (releases 250…151): one request.
-	_ = s.Sync(ctx, repo, v(t, "1.180.0"))
+	_ = s.Sync(ctx, repo, v(t, "1.180.0"), nil)
 	if f.apiCalls.Load() != 1 {
 		t.Errorf("api calls = %d, want 1", f.apiCalls.Load())
 	}
 	// Running 1.20.0 is on page 3: the sync goes deeper even though page 1 is fresh.
-	_ = s.Sync(ctx, repo, v(t, "1.20.0"))
+	_ = s.Sync(ctx, repo, v(t, "1.20.0"), nil)
 	cs, _ := s.Changes(ctx, repo, v(t, "1.20.0"), v(t, "1.250.0"))
 	if len(cs.Releases) != 230 || cs.Partial || cs.FromTag != "1.20.0" {
 		t.Errorf("got %d releases, partial=%v from=%q", len(cs.Releases), cs.Partial, cs.FromTag)
@@ -220,13 +268,13 @@ func TestPaginationLimitIsNotRetriedWhileFresh(t *testing.T) {
 	repo := gh("huge/repo")
 
 	// Running 1.50.0 is beyond the 5 pages a sync fetches.
-	_ = s.Sync(ctx, repo, v(t, "1.50.0"))
+	_ = s.Sync(ctx, repo, v(t, "1.50.0"), nil)
 	if f.apiCalls.Load() != maxPages {
 		t.Fatalf("api calls = %d, want %d", f.apiCalls.Load(), maxPages)
 	}
 	// Going deeper is impossible, so while fresh the next syncs ask nothing.
-	_ = s.Sync(ctx, repo, v(t, "1.50.0"))
-	_ = s.Sync(ctx, repo, v(t, "1.50.0"))
+	_ = s.Sync(ctx, repo, v(t, "1.50.0"), nil)
+	_ = s.Sync(ctx, repo, v(t, "1.50.0"), nil)
 	if f.apiCalls.Load() != maxPages {
 		t.Errorf("api calls = %d after resyncs, want %d", f.apiCalls.Load(), maxPages)
 	}
@@ -255,7 +303,7 @@ func TestChangelogFallbackAndMissingRepo(t *testing.T) {
 	ctx := context.Background()
 
 	repo := gh("lobaro/restic-backup-docker")
-	if err := s.Sync(ctx, repo, v(t, "2.1.4")); err != nil {
+	if err := s.Sync(ctx, repo, v(t, "2.1.4"), nil); err != nil {
 		t.Fatal(err)
 	}
 	cs, _ := s.Changes(ctx, repo, v(t, "2.1.4"), v(t, "2.1.6"))
@@ -268,7 +316,7 @@ func TestChangelogFallbackAndMissingRepo(t *testing.T) {
 	}
 
 	missing := gh("nobody/nothing")
-	if err := s.Sync(ctx, missing, nil); err != nil {
+	if err := s.Sync(ctx, missing, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if cs, _ := s.Changes(ctx, missing, nil, nil); cs.Kind != KindNone || cs.Error != "repository not found" {
@@ -281,14 +329,14 @@ func TestRateLimitKeepsOldData(t *testing.T) {
 	s := setup(t, f)
 	ctx := context.Background()
 	repo := gh("a/b")
-	_ = s.Sync(ctx, repo, v(t, "1.0.0"))
+	_ = s.Sync(ctx, repo, v(t, "1.0.0"), nil)
 
 	st, _, _ := s.store.RepoState(ctx, repo.Key())
 	st.FetchedAt = st.FetchedAt.Add(-7 * time.Hour)
 	_ = s.store.SaveRepoState(ctx, st)
 	f.rateLimit.Store(true)
 
-	if err := s.Sync(ctx, repo, v(t, "1.0.0")); !errors.Is(err, ErrRateLimited) {
+	if err := s.Sync(ctx, repo, v(t, "1.0.0"), nil); !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("err = %v", err)
 	}
 	cs, _ := s.Changes(ctx, repo, v(t, "1.0.0"), v(t, "1.1.0"))
@@ -298,7 +346,7 @@ func TestRateLimitKeepsOldData(t *testing.T) {
 
 	// Until the reset, other repos fail fast without asking GitHub.
 	before := f.apiCalls.Load()
-	if err := s.Sync(ctx, gh("c/d"), nil); !errors.Is(err, ErrRateLimited) || f.apiCalls.Load() != before {
+	if err := s.Sync(ctx, gh("c/d"), nil, nil); !errors.Is(err, ErrRateLimited) || f.apiCalls.Load() != before {
 		t.Errorf("err = %v, extra calls = %d", err, f.apiCalls.Load()-before)
 	}
 }
@@ -309,12 +357,12 @@ func TestSecondaryRateLimitWaits(t *testing.T) {
 	s := setup(t, f)
 	ctx := context.Background()
 
-	if err := s.Sync(ctx, gh("a/b"), nil); !errors.Is(err, ErrRateLimited) {
+	if err := s.Sync(ctx, gh("a/b"), nil, nil); !errors.Is(err, ErrRateLimited) {
 		t.Fatalf("err = %v, want rate limited", err)
 	}
 	// Until Retry-After passes, no further requests.
 	before := f.apiCalls.Load()
-	if err := s.Sync(ctx, gh("c/d"), nil); !errors.Is(err, ErrRateLimited) || f.apiCalls.Load() != before {
+	if err := s.Sync(ctx, gh("c/d"), nil, nil); !errors.Is(err, ErrRateLimited) || f.apiCalls.Load() != before {
 		t.Errorf("err = %v, extra calls = %d", err, f.apiCalls.Load()-before)
 	}
 }
@@ -323,7 +371,7 @@ func TestGitLab(t *testing.T) {
 	s := setup(t, &fakeHosts{})
 	ctx := context.Background()
 	repo := source.Repo{Host: "gitlab.com", Path: "group/sub/project"}
-	if err := s.Sync(ctx, repo, nil); err != nil {
+	if err := s.Sync(ctx, repo, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	cs, _ := s.Changes(ctx, repo, v(t, "1.9.0"), v(t, "2.0.0"))
@@ -347,7 +395,7 @@ func TestPrereleaseLatestIncludesPrereleases(t *testing.T) {
 	s := setup(t, f)
 	ctx := context.Background()
 	repo := gh("home-assistant/core")
-	if err := s.Sync(ctx, repo, v(t, "2026.10.0")); err != nil {
+	if err := s.Sync(ctx, repo, v(t, "2026.10.0"), nil); err != nil {
 		t.Fatal(err)
 	}
 	// A container that follows pre-releases: Latest is an rc, so the rcs in range count.

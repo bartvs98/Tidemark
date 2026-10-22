@@ -100,11 +100,14 @@ func run(cfg config.Config, log *slog.Logger) error {
 		if !ok {
 			return
 		}
-		var need *tmversion.Version
+		var need, latest *tmversion.Version
 		if v, ok := tmversion.Parse(r.Running); ok {
 			need = &v
 		}
-		if err := changelogs.Sync(ctx, repo, need); err != nil {
+		if v, ok := tmversion.Parse(r.Latest); ok {
+			latest = &v
+		}
+		if err := changelogs.Sync(ctx, repo, need, latest); err != nil {
 			log.Debug("changelog prefetch failed", "repo", repo.Key(), "err", err)
 		}
 	})

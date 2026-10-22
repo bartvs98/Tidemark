@@ -96,7 +96,7 @@ linuxserver.io images point at their packaging repo (`linuxserver/docker-<app>`)
 
 **Fetching:**
 
-- Notes are stored and refreshed at most every 6 h, or sooner when the running version isn't covered yet.
+- Notes are stored and refreshed at most every 6 h, or sooner when the running version isn't covered yet. While they don't have the latest version yet (its image is out before its notes were fetched), they're refreshed at most every hour instead, so a new release gets its notes and breaking verdict soon. A repo without any notes stays at 6 h.
 - They're fetched right after each check for containers with an update, so the detail page opens instantly. Otherwise the detail page fetches them, waiting up to 15 s.
 - Pages are fetched only until the running version is covered, at most 5 × 100 releases. Older notes beyond that show as "not loaded".
 - When GitHub's rate limit is hit, no GitHub calls are made until it resets (15 min if GitHub doesn't say), and the stored notes still show.

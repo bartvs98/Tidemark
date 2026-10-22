@@ -110,7 +110,7 @@ One check run covers every container (when runs happen: [FEATURES §7](FEATURES.
    - For floating tags, the tag's manifest is `HEAD`ed to detect a new image under the same tag.
    - Containers with the same image and the same rules are checked once.
    - Channel tags (`resolve.Channel`) get `channel` in the API, which skips the verdict.
-4. **Changelog prefetch:** an after-check hook in `cmd/tidemark/main.go`, only for images with an update, capped at 1 min per image. It resolves the source repo and syncs its notes into the store ([FEATURES §4](FEATURES.md#4-changelog-between-versions)). GitHub's first page is a conditional request (ETag), so an unchanged repo costs no quota. The run stores notes but doesn't select a range: the API picks running → latest on read. If nothing was prefetched, the detail endpoint syncs on demand.
+4. **Changelog prefetch:** an after-check hook in `cmd/tidemark/main.go`, only for images with an update, capped at 1 min per image. It resolves the source repo and syncs its notes into the store (`changelog.Service.Sync` with the running and latest version; when it refreshes: [FEATURES §4](FEATURES.md#4-changelog-between-versions)). GitHub's first page is a conditional request (ETag), so an unchanged repo costs no quota. The run stores notes but doesn't select a range: the API picks running → latest on read. If nothing was prefetched, the detail endpoint syncs on demand.
 5. **Analysis** isn't part of the run. The API computes flags and level from the stored notes on every read (`changelog.Service.Changes` is cached per repo until a sync stores something), so list and detail always agree.
 6. **AI** (later, if enabled): summary + verdict, cached per (repo, from, to).
 7. **Persist:**
