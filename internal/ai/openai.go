@@ -15,6 +15,7 @@ import (
 // OpenRouter, Ollama, LM Studio, Gemini's compatibility layer) with plain net/http.
 type openAIClient struct {
 	name, key, model, base string
+	effort                 string // reasoning_effort to send; "" = leave it out (not every server knows it)
 	client                 *http.Client
 }
 
@@ -32,7 +33,7 @@ func (c *openAIClient) Complete(ctx context.Context, p Prompt) (json.RawMessage,
 }
 
 func (c *openAIClient) complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error) {
-	body, _ := json.Marshal(map[string]any{
+	req := map[string]any{
 		"model": c.model,
 		"messages": []map[string]string{
 			{"role": "system", "content": p.System},
@@ -46,16 +47,20 @@ func (c *openAIClient) complete(ctx context.Context, p Prompt) (json.RawMessage,
 				"schema": p.Schema,
 			},
 		},
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/chat/completions", bytes.NewReader(body))
+	}
+	if c.effort != "" {
+		req["reasoning_effort"] = c.effort
+	}
+	body, _ := json.Marshal(req)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, Usage{}, fmt.Errorf("invalid %s base URL", c.name)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Content-Type", "application/json")
 	if c.key != "" {
-		req.Header.Set("Authorization", "Bearer "+c.key)
+		httpReq.Header.Set("Authorization", "Bearer "+c.key)
 	}
-	resp, err := c.client.Do(req)
+	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return nil, Usage{}, netError(ctx, c.name, err)
 	}

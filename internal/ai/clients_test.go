@@ -144,6 +144,13 @@ func TestOpenAIRequestAndSuccess(t *testing.T) {
 	if len(msgs) != 2 || mustJSON(msgs[0]) != `{"content":"sys","role":"system"}` || mustJSON(msgs[1]) != `{"content":"user msg","role":"user"}` {
 		t.Errorf("messages = %v", msgs)
 	}
+	if _, ok := g["reasoning_effort"]; ok { // not every OpenAI-compatible server knows it
+		t.Error("reasoning_effort sent without one set")
+	}
+	c.effort = "low"
+	if _, _, err := c.Complete(context.Background(), testPrompt); err != nil || (*got)["reasoning_effort"] != "low" {
+		t.Errorf("reasoning_effort = %v (%v)", (*got)["reasoning_effort"], err)
+	}
 
 	// A local server needs no key: no Authorization header at all.
 	srv, _, hdr = server(t, 200, openAIAnswer("stop", answer))
@@ -251,8 +258,8 @@ func TestNewProvider(t *testing.T) {
 		t.Error("openai default base URL")
 	}
 	p, _ = NewProvider("gemini", "k", "", "http://ignored")
-	if p.(*openAIClient).base != GeminiBaseURL {
-		t.Error("gemini base URL")
+	if c := p.(*openAIClient); c.base != GeminiBaseURL || c.effort != "low" {
+		t.Errorf("gemini base URL %q, effort %q", c.base, c.effort)
 	}
 }
 
