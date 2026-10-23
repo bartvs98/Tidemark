@@ -13,7 +13,7 @@ import { booleanAttribute, Component, input } from '@angular/core';
 @Component({
   selector: 'tm-card',
   templateUrl: './card.html',
-  host: { class: 'block overflow-hidden rounded-lg border border-line bg-surface shadow-raised' },
+  host: { class: 'flex flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-raised' },
 })
 export class TmCard {
   readonly heading = input<string>();

@@ -28,7 +28,7 @@ export interface BarListItem {
   selector: 'tm-bar-list',
   imports: [RouterLink],
   templateUrl: './bar-list.html',
-  host: { class: 'block' },
+  host: { class: 'block h-full' },
 })
 export class TmBarList {
   private readonly locale = inject(LOCALE_ID);
