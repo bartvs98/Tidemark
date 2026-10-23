@@ -810,6 +810,7 @@ type RunStats struct {
 	Containers, Ignored, Checked, UpToDate int
 	Updates, Attention, Breaking           int // open updates
 	Reviewed, Snoozed, Failed              int
+	ReleasesBehind                         int // releases in range over all updates, from the stored notes
 
 	Classes  map[string]int // updates per class (patch | minor | major | digest), open or not
 	Failures map[string]int // failing containers per error kind, "other" when unclassified
@@ -829,11 +830,11 @@ func (s *Store) AddRunStats(ctx context.Context, r RunStats) error {
 	requests, _ := json.Marshal(reqs)
 	_, err := s.db.ExecContext(ctx, `
 		INSERT OR REPLACE INTO run_stats (run_id, at, duration_ms, containers, ignored, checked, up_to_date,
-			updates, attention, breaking, reviewed, snoozed, failed, classes, failures, requests,
+			updates, attention, breaking, reviewed, snoozed, failed, releases_behind, classes, failures, requests,
 			github_remaining, github_limit)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		r.RunID, tsSortable(r.At), r.Duration.Milliseconds(), r.Containers, r.Ignored, r.Checked, r.UpToDate,
-		r.Updates, r.Attention, r.Breaking, r.Reviewed, r.Snoozed, r.Failed,
+		r.Updates, r.Attention, r.Breaking, r.Reviewed, r.Snoozed, r.Failed, r.ReleasesBehind,
 		string(classes), string(failures), string(requests), intOrNil(r.GitHubRemaining), intOrNil(r.GitHubLimit))
 	return err
 }
@@ -846,7 +847,7 @@ func (s *Store) RunStatsSince(ctx context.Context, since time.Time) ([]RunStats,
 	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT run_id, at, duration_ms, containers, ignored, checked, up_to_date, updates, attention, breaking,
-			reviewed, snoozed, failed, classes, failures, requests, github_remaining, github_limit
+			reviewed, snoozed, failed, releases_behind, classes, failures, requests, github_remaining, github_limit
 		FROM run_stats WHERE at >= ? ORDER BY at, run_id`, from)
 	if err != nil {
 		return nil, err
@@ -859,7 +860,7 @@ func (s *Store) RunStatsSince(ctx context.Context, since time.Time) ([]RunStats,
 		var ms int64
 		var remaining, limit sql.NullInt64
 		if err := rows.Scan(&r.RunID, &at, &ms, &r.Containers, &r.Ignored, &r.Checked, &r.UpToDate, &r.Updates,
-			&r.Attention, &r.Breaking, &r.Reviewed, &r.Snoozed, &r.Failed, &classes, &failures, &requests,
+			&r.Attention, &r.Breaking, &r.Reviewed, &r.Snoozed, &r.Failed, &r.ReleasesBehind, &classes, &failures, &requests,
 			&remaining, &limit); err != nil {
 			return nil, err
 		}

@@ -29,7 +29,7 @@ runs AS (
   FROM n
 )
 INSERT INTO run_stats (run_id, at, duration_ms, containers, ignored, checked, up_to_date, updates, attention, breaking,
-                       reviewed, snoozed, failed, classes, failures, requests, github_remaining, github_limit)
+                       reviewed, snoozed, failed, releases_behind, classes, failures, requests, github_remaining, github_limit)
 SELECT 1000 + i,
        strftime('%Y-%m-%dT%H:%M:%S', 'now', '-' || hours_ago || ' hours', '+' || secs || ' seconds') || '.000000000Z',
        secs * 1000 + (i * 137) % 900,
@@ -40,6 +40,7 @@ SELECT 1000 + i,
        CASE WHEN updates >= 3 THEN 1 ELSE 0 END,
        0, 0,
        CASE WHEN i % 29 = 28 THEN 1 ELSE 0 END,
+       20 + updates * 12 + (i % 10) * 2,
        printf('{"patch":1,"minor":%d}', updates),
        CASE WHEN i % 29 = 28 THEN '{"rate-limit":1}' WHEN i % 53 = 52 THEN '{"timeout":1}' ELSE '{}' END,
        printf('{"registry":{"requests":%d,"limited":0},"github":{"requests":%d,"limited":%d}}',

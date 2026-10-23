@@ -108,6 +108,15 @@ export class Stats {
         note: `${p.upToDate} of ${p.checked} up to date`,
       })) ?? [],
   );
+  /** Update debt per run: releases between running and latest over all updates (stored notes). */
+  protected readonly debtPoints = computed(
+    () =>
+      this.data()?.behind.tide.filter((p) => p.checked > 0).map((p) => ({
+        at: p.at,
+        value: p.releasesBehind,
+        note: `${count(p.updates, 'open update')}`,
+      })) ?? [],
+  );
   protected readonly weekBars = computed(
     () =>
       this.data()?.behind.applied.perWeek.map((w) => ({

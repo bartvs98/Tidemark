@@ -14,6 +14,7 @@ CREATE TABLE run_stats (
   reviewed    INTEGER NOT NULL,
   snoozed     INTEGER NOT NULL,
   failed      INTEGER NOT NULL,             -- containers whose latest attempt failed
+  releases_behind INTEGER NOT NULL,         -- update debt: releases between running and latest, summed (stored notes; 0 without)
   classes     TEXT NOT NULL,                -- JSON {"patch":n,…}: all updates, open or not; zero keys left out
   failures    TEXT NOT NULL,                -- JSON {"rate-limit":n,…,"other":n}; zero keys left out
   requests    TEXT NOT NULL,                -- JSON {"registry":{"requests":n,"limited":n},"github":{…},"gitlab":{…}}

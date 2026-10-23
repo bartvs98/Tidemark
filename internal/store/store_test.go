@@ -500,7 +500,7 @@ func TestRunStatsRoundTrip(t *testing.T) {
 	remaining, limit := 4812, 5000
 	full := RunStats{
 		RunID: 2, At: day.Add(500 * time.Millisecond).In(time.FixedZone("x", 3600)), Duration: 1234 * time.Millisecond,
-		Containers: 10, Ignored: 1, Checked: 8, UpToDate: 5, Updates: 2, Attention: 1, Breaking: 1, Reviewed: 1, Snoozed: 0, Failed: 1,
+		Containers: 10, Ignored: 1, Checked: 8, UpToDate: 5, Updates: 2, Attention: 1, Breaking: 1, Reviewed: 1, Snoozed: 0, Failed: 1, ReleasesBehind: 17,
 		Classes:         map[string]int{"minor": 2, "major": 1, "patch": 0},
 		Failures:        map[string]int{"rate-limit": 1},
 		Requests:        map[string]stats.Count{"registry": {Requests: 40, Limited: 1}, "github": {Requests: 3}},

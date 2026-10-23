@@ -41,7 +41,8 @@ export interface BehindStats {
     medianMs?: number;
   };
   /** One point per run_stats row in range; if more than 180, the last row per UTC day. */
-  tide: { at: string; checked: number; upToDate: number; updates: number; attention: number; breaking: number }[];
+  /** One point per run; `releasesBehind` is the update debt: releases between running and latest over all updates. */
+  tide: { at: string; checked: number; upToDate: number; updates: number; attention: number; breaking: number; releasesBehind: number }[];
 }
 export interface AppliedUpdate {
   name: string;

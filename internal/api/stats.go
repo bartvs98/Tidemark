@@ -110,6 +110,8 @@ type tideJSON struct {
 	Updates   int       `json:"updates"`
 	Attention int       `json:"attention"`
 	Breaking  int       `json:"breaking"`
+	// Update debt: releases between running and latest over all updates (stored notes).
+	ReleasesBehind int `json:"releasesBehind"`
 }
 
 type upstreamJSON struct {
@@ -266,10 +268,22 @@ func (s *Server) RunStats(ctx context.Context) (store.RunStats, error) {
 	}
 	reviews := s.reviews(ctx)
 	out := make([]containerJSON, 0, len(list))
+	behind := 0
 	for _, c := range list {
-		out = append(out, s.toContainerJSON(ctx, c, reviews))
+		cj := s.toContainerJSON(ctx, c, reviews)
+		out = append(out, cj)
+		rs := s.rulesFor(c)
+		if u := cj.Update; !rs.Ignore && u != nil && u.CheckedAt != nil && u.Class != string(version.None) {
+			ref, _ := imageref.Parse(c.ImageRef)
+			if repo, ok := s.notesRepo(c, ref, rs); ok {
+				n, _ := s.behindBy(ctx, repo, u)
+				behind += n
+			}
+		}
 	}
-	return countSnapshot(out), nil
+	snap := countSnapshot(out)
+	snap.ReleasesBehind = behind
+	return snap, nil
 }
 
 func countSnapshot(list []containerJSON) store.RunStats {
@@ -497,6 +511,25 @@ func gap(from, to time.Time) *time.Duration {
 	return &g
 }
 
+// behindBy is how far an update is behind in the stored notes: the releases between running
+// and latest, and when the oldest of them came out (nil without a date). Zero for channel
+// tags and versions that don't parse.
+func (s *Server) behindBy(ctx context.Context, repo source.Repo, u *updateJSON) (int, *time.Time) {
+	running, latest := parseVersion(u.Running), parseVersion(u.Latest)
+	if running == nil || latest == nil || u.Channel != "" || s.changelogs == nil {
+		return 0, nil
+	}
+	ch, err := s.changelogs.Changes(ctx, repo, running, latest)
+	if err != nil {
+		return 0, nil
+	}
+	if first, ok := oldestPublished(ch.Releases); ok {
+		first = first.UTC()
+		return len(ch.Releases), &first
+	}
+	return len(ch.Releases), nil
+}
+
 func oldestPublished(rels []store.Release) (time.Time, bool) {
 	var oldest time.Time
 	for _, r := range rels {
@@ -523,15 +556,8 @@ func (s *Server) behindStats(ctx context.Context, d *statsData) behindJSON {
 		if cc.json.Review != nil {
 			b.Review = cc.json.Review.Kind
 		}
-		running, latest := parseVersion(u.Running), parseVersion(u.Latest)
-		if repo, ok := d.repoOf[cc.c.Name]; ok && running != nil && latest != nil && u.Channel == "" {
-			if ch, err := s.changelogs.Changes(ctx, repo, running, latest); err == nil {
-				b.ReleasesBehind = len(ch.Releases)
-				if first, ok := oldestPublished(ch.Releases); ok {
-					first = first.UTC()
-					b.BehindSince = &first
-				}
-			}
+		if repo, ok := d.repoOf[cc.c.Name]; ok {
+			b.ReleasesBehind, b.BehindSince = s.behindBy(ctx, repo, u)
 		}
 		out.Containers = append(out.Containers, b)
 	}
@@ -559,7 +585,7 @@ func (s *Server) behindStats(ctx context.Context, d *statsData) behindJSON {
 	}
 	tide = thin(tide, func(r store.RunStats) time.Time { return r.At }, func(_, _ store.RunStats) bool { return true })
 	for _, r := range tide {
-		out.Tide = append(out.Tide, tideJSON{At: r.At.UTC(), Checked: r.Checked, UpToDate: r.UpToDate, Updates: r.Updates, Attention: r.Attention, Breaking: r.Breaking})
+		out.Tide = append(out.Tide, tideJSON{At: r.At.UTC(), Checked: r.Checked, UpToDate: r.UpToDate, Updates: r.Updates, Attention: r.Attention, Breaking: r.Breaking, ReleasesBehind: r.ReleasesBehind})
 	}
 	return out
 }

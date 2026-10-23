@@ -31,8 +31,8 @@ function fixture(overrides: Partial<StatsData> = {}): StatsData {
       },
       timeToUpdate: { count: 6, medianMs: 3 * 86_400_000 },
       tide: [
-        { at: '2026-10-19T12:00:00Z', checked: 8, upToDate: 6, updates: 2, attention: 0, breaking: 1 },
-        { at: '2026-10-20T12:00:00Z', checked: 8, upToDate: 7, updates: 1, attention: 0, breaking: 1 },
+        { at: '2026-10-19T12:00:00Z', checked: 8, upToDate: 6, updates: 2, attention: 0, breaking: 1, releasesBehind: 14 },
+        { at: '2026-10-20T12:00:00Z', checked: 8, upToDate: 7, updates: 1, attention: 0, breaking: 1, releasesBehind: 9 },
       ],
     },
     upstream: {

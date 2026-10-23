@@ -121,7 +121,7 @@ func TestRunStatsCounts(t *testing.T) {
 	src := staticSource{
 		ctrApp("ignored", "1.0.0", map[string]string{"tidemark.ignore": "true"}),
 		ctrApp("current", "2.0.0", nil),
-		ctrApp("open", "1.0.0", nil),
+		ctrApp("open", "1.0.0", map[string]string{"tidemark.repo": "github.com/team/notes"}),
 		ctrApp("reviewed", "1.2.0", nil),
 		ctrApp("snoozed", "1.0.0", nil),
 		ctrApp("held", "1.0.0", map[string]string{"tidemark.allow-major": "false"}), // 1.0.0 → 1.2.0, minor
@@ -135,6 +135,12 @@ func TestRunStatsCounts(t *testing.T) {
 	_ = db.SaveReview(ctx, store.Review{ContainerName: "reviewed", Kind: "reviewed", Version: "2.0.0", CreatedAt: now})
 	_ = db.SaveReview(ctx, store.Review{ContainerName: "snoozed", Kind: "snoozed", Until: now.Add(day), CreatedAt: now})
 	_ = db.SaveReview(ctx, store.Review{ContainerName: "open", Kind: "reviewed", Version: "1.2.0", CreatedAt: now}) // older: no longer applies
+	// Notes for open's repo only: it's 3 releases behind (1.0.0 → 2.0.0), the update debt.
+	if err := db.SaveReleases(ctx, "github.com/team/notes", []store.Release{
+		{Tag: "v1.0.0"}, {Tag: "v1.1.0"}, {Tag: "v1.2.0"}, {Tag: "v2.0.0"},
+	}, false); err != nil {
+		t.Fatal(err)
+	}
 
 	got, err := srv.RunStats(ctx)
 	if err != nil {
@@ -142,7 +148,7 @@ func TestRunStatsCounts(t *testing.T) {
 	}
 	want := store.RunStats{
 		Containers: 7, Ignored: 1, Checked: 5, UpToDate: 1,
-		Updates: 2, Breaking: 1, Reviewed: 1, Snoozed: 1, Failed: 1,
+		Updates: 2, Breaking: 1, Reviewed: 1, Snoozed: 1, Failed: 1, ReleasesBehind: 3,
 		Classes:  map[string]int{"major": 3, "minor": 1},
 		Failures: map[string]int{"other": 1},
 	}

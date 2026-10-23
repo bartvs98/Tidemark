@@ -42,15 +42,18 @@
         <tm-card heading="Up to date">
           <tm-time-chart label="Up to date" [points]="tidePoints()" [max]="1" [format]="percentFormat" />
         </tm-card>
+        <tm-card heading="Releases behind">
+          <tm-time-chart label="Releases behind" [points]="debtPoints()" data-testid="debt-chart" />
+        </tm-card>
         <tm-card heading="Updates applied per week">
           <tm-bar-chart label="Updates applied per week" [bars]="weekBars()" empty="No updates applied in this range" />
         </tm-card>
-      </div>
-
-      <div class="mt-4 grid gap-4 sm:mt-5 sm:grid-cols-2 sm:gap-5">
         <tm-card heading="Updates per stack">
           <tm-bar-list label="Updates per stack" [items]="stackItems()" empty="No updates applied in this range" />
         </tm-card>
+      </div>
+
+      <div class="mt-4 sm:mt-5">
         <tm-card heading="Longest behind">
           <tm-bar-list
             label="Longest behind"
