@@ -50,7 +50,6 @@ function fixture(overrides: Partial<StatsData> = {}): StatsData {
         },
       ],
       perMonth: [{ month: '2026-09', releases: 7, breaking: 1, attention: 1 }, { month: '2026-10', releases: 5, breaking: 1, attention: 0 }],
-      biggestJumps: [{ name: 'grafana', from: '10.4.0', to: '11.6.0', at: '2026-09-01T00:00:00Z', ms: 1, releases: 24, class: 'major' }],
     },
     health: {
       runs: { total: 60, failed: 2, byTrigger: { startup: 3, schedule: 55, manual: 2 }, medianMs: 4200, slowestMs: 31_000 },
@@ -73,18 +72,13 @@ function fixture(overrides: Partial<StatsData> = {}): StatsData {
       auto: 2,
       extended: 0,
       medianMs: 4200,
-      slowest: [{ at: '2026-10-18T00:00:00Z', repo: 'grafana/grafana', from: '11.6.0', to: '12.2.1', provider: 'anthropic', model: 'claude-haiku', ms: 9000 }],
     },
     lifetime: {
       since: '2026-07-01T00:00:00Z',
       startedAt: '2026-10-20T08:00:00Z',
-      checkRuns: 120,
       containersTracked: 9,
-      updatesApplied: 31,
       releasesStored: 410,
       breakingFlagged: 17,
-      meanTimeToUpdateMs: 5 * 86_400_000,
-      summaries: 12,
     },
     ...overrides,
   };

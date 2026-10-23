@@ -132,14 +132,9 @@
 
     <!-- Upstream -->
     <tm-section heading="Upstream" icon="git-compare" data-testid="stats-upstream">
-      <div class="grid gap-4 sm:grid-cols-2 sm:gap-5">
-        <tm-card heading="Releases per month">
-          <tm-bar-chart label="Releases per month" [bars]="monthBars()" empty="No releases in this range" />
-        </tm-card>
-        <tm-card heading="Biggest jumps">
-          <tm-bar-list label="Biggest jumps" [items]="jumpItems()" empty="No updates applied in this range" />
-        </tm-card>
-      </div>
+      <tm-card heading="Releases per month">
+        <tm-bar-chart label="Releases per month" [bars]="monthBars()" empty="No releases in this range" />
+      </tm-card>
 
       <h3 class="mt-8 mb-3 text-base font-semibold">Repositories</h3>
       @if (d.upstream.repos.length) {
@@ -308,22 +303,6 @@
             </div>
           </tm-card>
         }
-
-        @if (d.ai.slowest.length) {
-          <h3 class="mt-8 mb-3 text-base font-semibold">Slowest summaries</h3>
-          <tm-card flush>
-            <ul class="divide-y divide-line" data-testid="slowest">
-              @for (c of d.ai.slowest; track c.at + c.repo + c.to) {
-                <li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3">
-                  <span class="font-mono text-sm">{{ c.repo }}</span>
-                  <span class="font-mono text-sm text-fg-muted">{{ c.from }} → {{ c.to }}</span>
-                  <span class="text-xs text-fg-subtle">{{ c.model }} · {{ date(c.at) }}</span>
-                  <span class="ml-auto text-sm font-medium tabular-nums">{{ formatDuration(c.ms) }}</span>
-                </li>
-              }
-            </ul>
-          </tm-card>
-        }
       </tm-section>
     }
 
@@ -332,13 +311,9 @@
       @if (lifetime(); as l) {
         <div class="grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
           <tm-stat label="Watching since" [value]="l.since" [hint]="l.sinceHint" />
-          <tm-stat label="Check runs" [value]="d.lifetime.checkRuns" />
           <tm-stat label="Containers tracked" [value]="d.lifetime.containersTracked" />
-          <tm-stat label="Updates applied" [value]="d.lifetime.updatesApplied" />
           <tm-stat label="Release notes read" [value]="d.lifetime.releasesStored" />
           <tm-stat label="Breaking releases flagged" [value]="d.lifetime.breakingFlagged" />
-          <tm-stat label="AI summaries" [value]="d.lifetime.summaries" />
-          <tm-stat label="Mean time to update" [value]="l.meanTime" />
           @if (l.fastest; as u) {
             <tm-stat label="Fastest update" [value]="span(u)" [hint]="u.name + ' to ' + u.to" />
           }

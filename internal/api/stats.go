@@ -34,8 +34,6 @@ const (
 	maxSeriesPoints = 180
 	// Top-N lists.
 	topContainers = 10
-	topJumps      = 5
-	topAICalls    = 5
 	// "all" starts the releases per month at the oldest release, at most this many months back.
 	maxReleaseMonths = 24
 )
@@ -122,9 +120,8 @@ type tideJSON struct {
 }
 
 type upstreamJSON struct {
-	Repos        []repoStatsJSON     `json:"repos"`
-	PerMonth     []monthReleasesJSON `json:"perMonth"`
-	BiggestJumps []jumpJSON          `json:"biggestJumps"`
+	Repos    []repoStatsJSON     `json:"repos"`
+	PerMonth []monthReleasesJSON `json:"perMonth"`
 }
 
 type repoStatsJSON struct {
@@ -143,12 +140,6 @@ type monthReleasesJSON struct {
 	Releases  int    `json:"releases"`
 	Breaking  int    `json:"breaking"`
 	Attention int    `json:"attention"`
-}
-
-type jumpJSON struct {
-	appliedUpdateJSON        // Ms: time to update, 0 when unknown
-	Releases          int    `json:"releases"`
-	Class             string `json:"class"`
 }
 
 type healthJSON struct {
@@ -225,7 +216,6 @@ type aiStatsJSON struct {
 	Auto     int           `json:"auto"`
 	Extended int           `json:"extended"`
 	MedianMs *int64        `json:"medianMs,omitempty"`
-	Slowest  []aiCallJSON  `json:"slowest"`
 }
 
 type aiMonthJSON struct {
@@ -245,29 +235,15 @@ type aiModelJSON struct {
 	OutputTokens int    `json:"outputTokens"`
 }
 
-type aiCallJSON struct {
-	At       time.Time `json:"at"`
-	Repo     string    `json:"repo"`
-	From     string    `json:"from"`
-	To       string    `json:"to"`
-	Provider string    `json:"provider"`
-	Model    string    `json:"model"`
-	Ms       int64     `json:"ms"`
-}
-
 type lifetimeJSON struct {
-	Since              *time.Time         `json:"since,omitempty"` // the first check run's start
-	StartedAt          time.Time          `json:"startedAt"`       // this process
-	CheckRuns          int                `json:"checkRuns"`
-	ContainersTracked  int                `json:"containersTracked"`
-	UpdatesApplied     int                `json:"updatesApplied"`
-	ReleasesStored     int                `json:"releasesStored"`
-	BreakingFlagged    int                `json:"breakingFlagged"`
-	MeanTimeToUpdateMs *int64             `json:"meanTimeToUpdateMs,omitempty"`
-	FastestUpdate      *appliedUpdateJSON `json:"fastestUpdate,omitempty"`
-	LongestBehind      *appliedUpdateJSON `json:"longestBehind,omitempty"`
-	LongestStreak      *streakJSON        `json:"longestStreak,omitempty"`
-	Summaries          int                `json:"summaries"`
+	Since             *time.Time         `json:"since,omitempty"` // the first check run's start
+	StartedAt         time.Time          `json:"startedAt"`       // this process
+	ContainersTracked int                `json:"containersTracked"`
+	ReleasesStored    int                `json:"releasesStored"`
+	BreakingFlagged   int                `json:"breakingFlagged"`
+	FastestUpdate     *appliedUpdateJSON `json:"fastestUpdate,omitempty"`
+	LongestBehind     *appliedUpdateJSON `json:"longestBehind,omitempty"`
+	LongestStreak     *streakJSON        `json:"longestStreak,omitempty"`
 }
 
 type streakJSON struct {
@@ -465,10 +441,10 @@ type appliedInfo struct {
 	h     store.HistoryEntry
 	stack string
 	// toUpdate: detected − the new version's publication; behind: detected − the first
-	// release newer than the old version. Both clamp at 0; nil without the notes.
+	// release newer than the old version. nil without the notes, and when the image was seen
+	// before that release was published (images often land before their release notes), which
+	// would otherwise read as an instant update.
 	toUpdate, behind *time.Duration
-	releases         int // releases after from up to and including to (0 without notes)
-	class            string
 }
 
 func (i appliedInfo) update(ms int64) *appliedUpdateJSON {
@@ -481,13 +457,8 @@ func (s *Server) appliedUpdates(ctx context.Context, d *statsData) []appliedInfo
 		if h.PrevImageID == "" {
 			continue
 		}
-		info := appliedInfo{h: h, stack: d.stackOf[h.ContainerName], class: string(version.Digest)}
+		info := appliedInfo{h: h, stack: d.stackOf[h.ContainerName]}
 		from, to := parseVersion(h.PrevRunning), parseVersion(h.Running)
-		if from != nil && to != nil {
-			if c := version.Classify(*from, *to); c != version.None {
-				info.class = string(c)
-			}
-		}
 		if repo, ok := d.repoOf[h.ContainerName]; ok && to != nil {
 			ch, err := s.changelogs.Changes(ctx, repo, from, to)
 			if err != nil {
@@ -497,7 +468,6 @@ func (s *Server) appliedUpdates(ctx context.Context, d *statsData) []appliedInfo
 					info.toUpdate = gap(rel.PublishedAt, h.DetectedAt)
 				}
 				if from != nil {
-					info.releases = len(ch.Releases)
 					if first, ok := oldestPublished(ch.Releases); ok {
 						info.behind = gap(first, h.DetectedAt)
 					}
@@ -509,9 +479,12 @@ func (s *Server) appliedUpdates(ctx context.Context, d *statsData) []appliedInfo
 	return out
 }
 
-// gap is to − from, at least 0.
+// gap is to − from, nil when to is before from.
 func gap(from, to time.Time) *time.Duration {
-	g := max(to.Sub(from), 0)
+	g := to.Sub(from)
+	if g < 0 {
+		return nil
+	}
 	return &g
 }
 
@@ -647,7 +620,7 @@ func timeToUpdate(d *statsData) timeToUpdateJSON {
 // ── upstream ─────────────────────────────────────────────
 
 func (s *Server) upstreamStats(d *statsData) upstreamJSON {
-	out := upstreamJSON{Repos: []repoStatsJSON{}, PerMonth: []monthReleasesJSON{}, BiggestJumps: []jumpJSON{}}
+	out := upstreamJSON{Repos: []repoStatsJSON{}, PerMonth: []monthReleasesJSON{}}
 
 	repos := map[string]source.Repo{}
 	names := map[string][]string{}
@@ -733,19 +706,6 @@ func (s *Server) upstreamStats(d *statsData) upstreamJSON {
 			}
 		}
 	}
-
-	for _, a := range d.applied {
-		if !d.inRange(a.h.DetectedAt) || a.releases == 0 {
-			continue
-		}
-		var ms int64
-		if a.toUpdate != nil {
-			ms = a.toUpdate.Milliseconds()
-		}
-		out.BiggestJumps = append(out.BiggestJumps, jumpJSON{appliedUpdateJSON: *a.update(ms), Releases: a.releases, Class: a.class})
-	}
-	slices.SortStableFunc(out.BiggestJumps, func(a, b jumpJSON) int { return cmp.Or(cmp.Compare(b.Releases, a.Releases), b.At.Compare(a.At)) })
-	out.BiggestJumps = out.BiggestJumps[:min(len(out.BiggestJumps), topJumps)]
 	return out
 }
 
@@ -923,7 +883,7 @@ func aiStats(d *statsData) *aiStatsJSON {
 	if len(d.calls) == 0 {
 		return nil
 	}
-	out := &aiStatsJSON{Months: []aiMonthJSON{}, ByModel: []aiModelJSON{}, Slowest: []aiCallJSON{}}
+	out := &aiStatsJSON{Months: []aiMonthJSON{}, ByModel: []aiModelJSON{}}
 	start := d.since
 	if start.IsZero() {
 		start = d.calls[0].At
@@ -935,7 +895,6 @@ func aiStats(d *statsData) *aiStatsJSON {
 	}
 	models := map[[2]string]*aiModelJSON{}
 	var ms []int64
-	var ok []store.AICall
 	for _, c := range d.calls {
 		if !d.inRange(c.At) {
 			continue
@@ -974,7 +933,6 @@ func aiStats(d *statsData) *aiStatsJSON {
 			continue
 		}
 		ms = append(ms, c.Duration.Milliseconds())
-		ok = append(ok, c)
 	}
 	for _, m := range models {
 		out.ByModel = append(out.ByModel, *m)
@@ -983,18 +941,13 @@ func aiStats(d *statsData) *aiStatsJSON {
 		return cmp.Or(cmp.Compare(b.Calls, a.Calls), cmp.Compare(a.Provider, b.Provider), cmp.Compare(a.Model, b.Model))
 	})
 	out.MedianMs = median(ms)
-	// The slowest successful calls; a failed one may only have waited for a timeout.
-	slices.SortStableFunc(ok, func(a, b store.AICall) int { return cmp.Compare(b.Duration, a.Duration) })
-	for _, c := range ok[:min(len(ok), topAICalls)] {
-		out.Slowest = append(out.Slowest, aiCallJSON{At: c.At.UTC(), Repo: c.Repo, From: c.From, To: c.To, Provider: c.Provider, Model: c.Model, Ms: c.Duration.Milliseconds()})
-	}
 	return out
 }
 
 // ── lifetime ─────────────────────────────────────────────
 
 func (s *Server) lifetimeStats(d *statsData) lifetimeJSON {
-	out := lifetimeJSON{StartedAt: s.started.UTC(), CheckRuns: len(d.runs), UpdatesApplied: len(d.applied)}
+	out := lifetimeJSON{StartedAt: s.started.UTC()}
 	if len(d.runs) > 0 {
 		first := d.runs[0].StartedAt.UTC()
 		out.Since = &first
@@ -1013,12 +966,9 @@ func (s *Server) lifetimeStats(d *statsData) lifetimeJSON {
 		}
 	}
 
-	var sum, n int64
 	for _, a := range d.applied {
 		if a.toUpdate != nil {
-			v := a.toUpdate.Milliseconds()
-			sum, n = sum+v, n+1
-			if out.FastestUpdate == nil || v <= out.FastestUpdate.Ms {
+			if v := a.toUpdate.Milliseconds(); out.FastestUpdate == nil || v <= out.FastestUpdate.Ms {
 				out.FastestUpdate = a.update(v)
 			}
 		}
@@ -1028,16 +978,7 @@ func (s *Server) lifetimeStats(d *statsData) lifetimeJSON {
 			}
 		}
 	}
-	if n > 0 {
-		mean := sum / n
-		out.MeanTimeToUpdateMs = &mean
-	}
 	out.LongestStreak = longestStreak(d.runStats)
-	for _, c := range d.calls {
-		if c.Error == "" {
-			out.Summaries++
-		}
-	}
 	return out
 }
 

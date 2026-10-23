@@ -147,17 +147,6 @@ export class Stats {
       ],
     }));
   });
-  protected readonly jumpItems = computed(
-    () =>
-      this.data()?.upstream.biggestJumps.map((j) => ({
-        label: `${j.from} → ${j.to}`,
-        mono: true,
-        value: j.releases,
-        display: count(j.releases, 'release'),
-        hint: j.name,
-        href: `/containers/${encodeURIComponent(j.name)}`,
-      })) ?? [],
-  );
 
   // ── Check health ──
   protected readonly healthStats = computed(() => {
@@ -199,13 +188,12 @@ export class Stats {
   protected readonly requestBars = computed(() => {
     const h = this.data()?.health;
     if (!h) return [];
-    const gitlab = h.requestTotals.gitlab > 0;
     return h.requests.map((r) => ({
       label: dayLabel(r.day, this.locale),
       segments: [
         { value: r.registry, tone: 'accent' as const, name: 'Registry' },
-        { value: r.github, tone: 'muted' as const, name: 'GitHub' },
-        ...(gitlab ? [{ value: r.gitlab, tone: 'muted' as const, name: 'GitLab' }] : []),
+        // One segment for both forges: two greys couldn't be told apart.
+        { value: r.github + r.gitlab, tone: 'muted' as const, name: 'Release notes' },
       ],
       note: r.limited ? `${r.limited} rate limited` : undefined,
     }));
@@ -253,7 +241,6 @@ export class Stats {
     return {
       since: l.since ? shortDate(l.since, this.locale) : '—',
       sinceHint: l.since ? `${longDuration(Math.max(0, this.now() - new Date(l.since).getTime()))} ago` : undefined,
-      meanTime: l.meanTimeToUpdateMs === undefined ? '—' : longDuration(l.meanTimeToUpdateMs),
       fastest: l.fastestUpdate,
       longestBehind: l.longestBehind,
       streak: l.longestStreak,

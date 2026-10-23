@@ -307,10 +307,6 @@ func TestStatsFromHistory(t *testing.T) {
 		ttu.Slowest == nil || ttu.Slowest.To != "1.2.0" || ttu.Slowest.From != "1.0.0" || ttu.Slowest.Ms != (5*day).Milliseconds() {
 		t.Errorf("time to update = %+v (fastest %+v, slowest %+v)", ttu, ttu.Fastest, ttu.Slowest)
 	}
-	if j := out.Upstream.BiggestJumps; len(j) != 2 || j[0].To != "1.2.0" || j[0].Releases != 2 || j[0].Class != "minor" ||
-		j[1].To != "2.0.0" || j[1].Releases != 1 || j[1].Class != "major" {
-		t.Errorf("biggest jumps = %+v", j)
-	}
 	runs := out.Health.Runs
 	if runs.Total != 4 || runs.Failed != 0 || runs.ByTrigger != (triggersJSON{Schedule: 2, Manual: 2}) ||
 		runs.MedianMs == nil || *runs.MedianMs != 3000 || runs.SlowestMs == nil || *runs.SlowestMs != 4000 {
@@ -347,12 +343,12 @@ func TestStatsFromHistory(t *testing.T) {
 		t.Errorf("per month = %+v", months)
 	}
 	lt := out.Lifetime
-	if lt.CheckRuns != 5 || lt.Since == nil || lt.ContainersTracked != 2 || lt.UpdatesApplied != 3 || lt.ReleasesStored != 4 ||
-		lt.BreakingFlagged != 1 || lt.Summaries != 2 || !lt.StartedAt.Equal(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC)) {
+	if lt.Since == nil || lt.ContainersTracked != 2 || lt.ReleasesStored != 4 ||
+		lt.BreakingFlagged != 1 || !lt.StartedAt.Equal(time.Date(2026, 10, 20, 8, 0, 0, 0, time.UTC)) {
 		t.Errorf("lifetime = %+v", lt)
 	}
-	if lt.MeanTimeToUpdateMs == nil || *lt.MeanTimeToUpdateMs != (3*day).Milliseconds() || lt.FastestUpdate == nil || lt.FastestUpdate.To != "2.0.0" {
-		t.Errorf("lifetime time to update = %v, fastest %+v", lt.MeanTimeToUpdateMs, lt.FastestUpdate)
+	if lt.FastestUpdate == nil || lt.FastestUpdate.To != "2.0.0" || lt.FastestUpdate.Ms != day.Milliseconds() {
+		t.Errorf("lifetime fastest = %+v", lt.FastestUpdate)
 	}
 	// 1.0.0 → 1.2.0: v1.1.0 came out 60 days ago, the update was seen 20 days ago.
 	if lb := lt.LongestBehind; lb == nil || lb.To != "1.2.0" || lb.Ms != (40*day).Milliseconds() {
@@ -361,7 +357,7 @@ func TestStatsFromHistory(t *testing.T) {
 
 	ai := out.AI
 	if ai == nil || ai.Calls != 3 || ai.Failed != 1 || ai.Manual != 2 || ai.Auto != 1 || ai.Extended != 1 ||
-		ai.MedianMs == nil || *ai.MedianMs != 3500 || len(ai.Slowest) != 2 || ai.Slowest[0].Ms != 5000 {
+		ai.MedianMs == nil || *ai.MedianMs != 3500 {
 		t.Fatalf("ai = %+v", ai)
 	}
 	if !reflect.DeepEqual(ai.ByModel, []aiModelJSON{
@@ -376,6 +372,38 @@ func TestStatsFromHistory(t *testing.T) {
 	// In the 30 days, only the newer two calls count, but the months still cover the range.
 	if ai := getStats(t, h, "30d").AI; ai == nil || ai.Calls != 2 || ai.Months[0].Month != ago(30*day).Format("2006-01") {
 		t.Errorf("30d ai = %+v", ai)
+	}
+}
+
+// An image seen before its release was published isn't an instant update: it's left out.
+func TestTimeToUpdateSkipsImagesBeforeTheirRelease(t *testing.T) {
+	srv, _, db := statsServer(t, staticSource{ctrApp("app", "2.0.0", map[string]string{"tidemark.repo": "github.com/team/app"})})
+	ctx := context.Background()
+	now := time.Now().UTC()
+	ago := func(d time.Duration) time.Time { return now.Add(-d) }
+	if err := db.SaveReleases(ctx, "github.com/team/app", []store.Release{
+		{Tag: "v1.0.0", PublishedAt: ago(30 * day)},
+		{Tag: "v2.0.0", PublishedAt: ago(2 * day)},
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, he := range []store.HistoryEntry{
+		{ContainerName: "app", ImageID: "1", Running: "1.0.0", DetectedAt: ago(20 * day)},
+		{ContainerName: "app", ImageID: "2", Running: "2.0.0", PrevImageID: "1", PrevRunning: "1.0.0", DetectedAt: ago(3 * day)},
+	} {
+		if err := db.AddHistory(ctx, he); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := getStats(t, srv.Handler(fstest.MapFS{}), "30d")
+	if ttu := out.Behind.TimeToUpdate; ttu.Count != 0 || ttu.Fastest != nil || ttu.MedianMs != nil {
+		t.Errorf("time to update = %+v", ttu)
+	}
+	if lt := out.Lifetime; lt.FastestUpdate != nil || lt.LongestBehind != nil {
+		t.Errorf("lifetime fastest %+v, longest behind %+v", lt.FastestUpdate, lt.LongestBehind)
+	}
+	if a := out.Behind.Applied; a.Total != 1 {
+		t.Errorf("applied total = %d, want 1 (still counted)", a.Total)
 	}
 }
 

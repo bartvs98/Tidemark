@@ -68,8 +68,6 @@ export interface UpstreamStats {
   }[];
   /** All those repos together, per calendar month (UTC, 'YYYY-MM'), every month in range incl. zeros. */
   perMonth: { month: string; releases: number; breaking: number; attention: number }[];
-  /** Applied updates in range with the most releases between from and to, top 5. */
-  biggestJumps: (AppliedUpdate & { releases: number; class: UpdateKind })[];
 }
 
 export type FailureKind = 'rate-limit' | 'not-found' | 'timeout' | 'network' | 'registry';
@@ -104,21 +102,16 @@ export interface AiStats {
   auto: number;
   extended: number; // in range
   medianMs?: number; // successful calls in range
-  slowest: { at: string; repo: string; from: string; to: string; provider: string; model: string; ms: number }[];
 }
 
 export interface LifetimeStats {
   /** Ignores the range. */
   since?: string; // first check run's start
   startedAt: string; // this process's start (uptime)
-  checkRuns: number;
   containersTracked: number;
-  updatesApplied: number;
   releasesStored: number; // "release notes read"
   breakingFlagged: number;
-  meanTimeToUpdateMs?: number;
   fastestUpdate?: AppliedUpdate;
   longestBehind?: AppliedUpdate;
   longestStreak?: { runs: number; from: string; to: string }; // consecutive runs with no open updates
-  summaries: number; // AI calls without error
 }
