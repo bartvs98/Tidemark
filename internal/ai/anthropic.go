@@ -14,6 +14,7 @@ import (
 // output (json_schema) so the answer is always the summary object.
 type anthropicClient struct {
 	key, model string
+	effort     string // low | medium | high
 	client     anthropic.Client
 }
 
@@ -23,7 +24,7 @@ func newAnthropic(key, model, baseURL string, retries int) *anthropicClient {
 	if model == "" {
 		model = DefaultAnthropicModel
 	}
-	return &anthropicClient{key: key, model: model, client: anthropic.NewClient(
+	return &anthropicClient{key: key, model: model, effort: "low", client: anthropic.NewClient(
 		option.WithoutEnvironmentDefaults(),
 		option.WithBaseURL(baseURL),
 		option.WithAPIKey(key),
@@ -32,8 +33,9 @@ func newAnthropic(key, model, baseURL string, retries int) *anthropicClient {
 	)}
 }
 
-func (c *anthropicClient) Name() string  { return "anthropic" }
-func (c *anthropicClient) Model() string { return c.model }
+func (c *anthropicClient) Name() string   { return "anthropic" }
+func (c *anthropicClient) Model() string  { return c.model }
+func (c *anthropicClient) Effort() string { return c.effort }
 
 func (c *anthropicClient) Complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error) {
 	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
@@ -42,7 +44,7 @@ func (c *anthropicClient) Complete(ctx context.Context, p Prompt) (json.RawMessa
 		System:    []anthropic.TextBlockParam{{Text: p.System}},
 		Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(p.User))},
 		OutputConfig: anthropic.OutputConfigParam{
-			Effort: anthropic.OutputConfigEffortLow,
+			Effort: anthropic.OutputConfigEffort(c.effort),
 			Format: anthropic.JSONOutputFormatParam{Schema: p.Schema},
 		},
 	})

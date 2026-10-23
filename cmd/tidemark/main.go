@@ -322,7 +322,8 @@ func appliers(ctx context.Context, cfg config.Config, log *slog.Logger, checks *
 		},
 		AI: func(rt config.Runtime) error {
 			if aiSetup != nil && rt.AI() == aiSetup.AI() && rt.AIProvider == aiSetup.AIProvider && rt.AIAPIKey == aiSetup.AIAPIKey &&
-				rt.AIModel == aiSetup.AIModel && rt.AIBaseURL == aiSetup.AIBaseURL && rt.AIAutoMin == aiSetup.AIAutoMin {
+				rt.AIModel == aiSetup.AIModel && rt.AIBaseURL == aiSetup.AIBaseURL && rt.AIEffort == aiSetup.AIEffort &&
+				rt.AIAutoMin == aiSetup.AIAutoMin {
 				return nil
 			}
 			if !rt.AI() {
@@ -331,7 +332,7 @@ func appliers(ctx context.Context, cfg config.Config, log *slog.Logger, checks *
 				log.Info("AI summaries", "on", false)
 				return nil
 			}
-			p, err := ai.NewProvider(rt.AIProvider, rt.AIAPIKey, rt.AIModel, rt.AIBaseURL)
+			p, err := ai.NewProvider(rt.AIProvider, rt.AIAPIKey, rt.AIModel, rt.AIBaseURL, rt.AIEffort)
 			if err != nil {
 				aiSvc.Configure(nil, 0) // not the previous provider: the settings say otherwise now
 				aiSetup = nil
@@ -339,7 +340,7 @@ func appliers(ctx context.Context, cfg config.Config, log *slog.Logger, checks *
 			}
 			aiSvc.Configure(p, rt.AIAutoMin)
 			aiSetup = &rt
-			log.Info("AI summaries", "provider", p.Name(), "model", p.Model(), "auto_min_releases", rt.AIAutoMin)
+			log.Info("AI summaries", "provider", p.Name(), "model", p.Model(), "effort", p.Effort(), "auto_min_releases", rt.AIAutoMin)
 			return nil
 		},
 	}

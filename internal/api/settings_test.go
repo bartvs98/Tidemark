@@ -125,7 +125,7 @@ func newSettingsFixture(t *testing.T, editable bool) settingsFixture {
 				aiSvc.Configure(nil, 0)
 				return nil
 			}
-			p, err := ai.NewProvider(rt.AIProvider, rt.AIAPIKey, rt.AIModel, rt.AIBaseURL)
+			p, err := ai.NewProvider(rt.AIProvider, rt.AIAPIKey, rt.AIModel, rt.AIBaseURL, rt.AIEffort)
 			if err != nil {
 				return err
 			}
@@ -209,7 +209,7 @@ func TestSettingsFields(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"usage":{"since":"`+month.Format(time.RFC3339)+`","calls":2,"failed":1,"extended":0,"inputTokens":1250,"outputTokens":300}`) {
 		t.Errorf("usage JSON: %s", rec.Body)
 	}
-	if a := withoutUsage(*body.AI); a != (aiSettingsJSON{Provider: "anthropic", Model: ai.DefaultAnthropicModel, AutoMinReleases: 4}) {
+	if a := withoutUsage(*body.AI); a != (aiSettingsJSON{Provider: "anthropic", Model: ai.DefaultAnthropicModel, Effort: "low", AutoMinReleases: 4}) {
 		t.Errorf("ai = %+v", body.AI)
 	}
 }

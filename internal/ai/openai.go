@@ -24,8 +24,9 @@ func newOpenAI(name, key, model, baseURL string) *openAIClient {
 		client: &http.Client{Timeout: httpTimeout}}
 }
 
-func (c *openAIClient) Name() string  { return c.name }
-func (c *openAIClient) Model() string { return c.model }
+func (c *openAIClient) Name() string   { return c.name }
+func (c *openAIClient) Model() string  { return c.model }
+func (c *openAIClient) Effort() string { return c.effort }
 
 func (c *openAIClient) Complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error) {
 	raw, u, err := c.complete(ctx, p)

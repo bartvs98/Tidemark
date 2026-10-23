@@ -88,6 +88,7 @@ Everything can be set by environment variables. The settings marked ✎ can also
 | `TIDEMARK_AI_API_KEY` ✎ | — | Your API key for that provider; optional for a local server. Only sent to the provider |
 | `TIDEMARK_AI_MODEL` ✎ | provider default | `claude-haiku-5-5` for anthropic, `gemini-flash-latest` for gemini; required for `openai` |
 | `TIDEMARK_AI_BASE_URL` ✎ | `https://api.openai.com/v1` | `openai` only: the endpoint, e.g. `http://ollama:11434/v1` or `https://openrouter.ai/api/v1` |
+| `TIDEMARK_AI_EFFORT` ✎ | provider default | How long the model thinks before answering: `low`, `medium` or `high`. Default: `low` for anthropic and gemini; for `openai` nothing is sent, as not every compatible server knows the setting. Higher is slower and uses more output tokens |
 | `TIDEMARK_AI_AUTO_MIN_RELEASES` ✎ | `0` | Summarise automatically after a check when an update spans at least this many releases; `0` = only when you click |
 | `TIDEMARK_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `TIDEMARK_SETTINGS_EDITABLE` | `false` | `true` lets the Settings dialog change the ✎ settings. Off by default because Tidemark has no login: anyone who can open it could then redirect your notifications. Saved values, tokens included, are stored in the database in the data dir |

@@ -284,6 +284,11 @@
                     <input tmInput mono data-testid="setting-aiModel" [placeholder]="aiModelPlaceholder()" [value]="value('aiModel')" [disabled]="!!locked('aiModel')" (input)="edit('aiModel', $any($event.target).value)" />
                   </tm-field>
                 </div>
+                <div class="tm-setting">
+                  <tm-field class="col-span-2" label="Reasoning effort" hint="How long the model thinks before it answers." [error]="errors().aiEffort" [locked]="locked('aiEffort')">
+                    <tm-select data-testid="setting-aiEffort" [options]="aiEffortOptions()" [value]="value('aiEffort') || 'default'" [disabled]="!!locked('aiEffort')" (valueChange)="edit('aiEffort', $event === 'default' ? '' : $event)" />
+                  </tm-field>
+                </div>
                 @if (aiProvider() === 'openai') {
                   <div class="tm-setting">
                     <tm-field class="col-span-2" label="Base URL" hint="e.g. http://ollama:11434/v1 for Ollama. Empty: OpenAI." [error]="errors().aiBaseUrl" [locked]="locked('aiBaseUrl')">
@@ -318,6 +323,10 @@
                 <div class="tm-setting">
                   <dt>Model</dt>
                   <dd class="font-mono break-all">{{ ai.model }}</dd>
+                </div>
+                <div class="tm-setting">
+                  <dt>Reasoning effort</dt>
+                  <dd data-testid="settings-ai-effort">{{ ai.effort ? (ai.effort | titlecase) : 'Not sent' }}</dd>
                 </div>
                 @if (ai.baseUrl) {
                   <div class="tm-setting">
