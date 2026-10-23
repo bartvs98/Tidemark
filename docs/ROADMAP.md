@@ -61,3 +61,4 @@ From the owner's notes after the MVP. One PR each; the release comes last so v1.
 - Multi-host via multiple Docker endpoints
 - Release-notes links for official images whose GitHub repo has no releases (postgres, mongo, mariadb, mysql, nginx: link to the project's own release notes)
 - More stats (after step 12): oldest software running (the age of the release each container runs, up to date or not), a tide calendar (a heatmap of each day's up-to-date ratio), release notes read in pages (from their word count), the most breaking upstream ("Grafana flagged breaking 6 times this year")
+- Cost per reasoning effort: record each AI call's effort (new migration), count Gemini's thinking tokens (its `completion_tokens` leaves them out, so usage is undercounted today), and show your own average tokens per summary for each level under the effort select, with an approximate price for the two default models only.
