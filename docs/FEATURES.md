@@ -202,7 +202,7 @@ A Telegram message when a check finds new updates. Off until a bot token and cha
 
 Opt-in: off until a provider is configured, by env vars or on the settings dialog's AI page ([README → AI summaries](../README.md#ai-summaries)). Nothing is sent to a model while it's off. Code: `internal/ai`.
 
-- **Providers:** `anthropic` (default model `claude-haiku-5-5`), `gemini` (default `gemini-flash-latest`) and `openai`: any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, LM Studio) by its base URL, with a model you name. A local server needs no API key.
+- **Providers:** `anthropic` (default model `claude-haiku-5-5`), `gemini` (default `gemini-flash-latest`, asked for low reasoning effort: its default thinking added 20–30 s per call and pushed slow calls past the 2-minute limit) and `openai`: any OpenAI-compatible endpoint (OpenAI, OpenRouter, Ollama, LM Studio) by its base URL, with a model you name. A local server needs no API key.
 - **What it writes:** a verdict (none / attention / breaking) with its reasons, plus a few short items on what changed and what you need to do before or after updating (left out when nothing). The verdict is the point: an extra check on whether anything needs flagging; the prompt tells the model so, and the lists are a bonus. All of it is shown as plain text.
 - **The verdict only raises.** The level everywhere (dashboard, filters, detail page, notifications) is the higher of the heuristic level ([§5](#5-breaking-change-highlighting)) and the AI verdict; an AI "none" never quiets a heuristic "breaking". A raise is sent as "level raised" like any other ([§10](#10-notifications)). AI reasons follow the quoted lines, marked "AI". Verdicts only count while AI is on.
 - **When it runs:**

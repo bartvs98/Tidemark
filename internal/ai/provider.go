@@ -62,7 +62,11 @@ func NewProvider(name, apiKey, model, baseURL string) (Provider, error) {
 		if model == "" {
 			model = DefaultGeminiModel
 		}
-		return newOpenAI("gemini", apiKey, model, GeminiBaseURL), nil
+		c := newOpenAI("gemini", apiKey, model, GeminiBaseURL)
+		// Gemini thinks by default, which adds 20-30 s per call; with an overloaded model
+		// that pushed summaries past httpTimeout. Low effort answers in seconds.
+		c.effort = "low"
+		return c, nil
 	}
 	return nil, fmt.Errorf("unknown AI provider %q (want anthropic, openai or gemini)", name)
 }
