@@ -27,7 +27,6 @@ function fixture(overrides: Partial<StatsData> = {}): StatsData {
       applied: {
         total: 14,
         perStack: [{ stack: 'home', count: 8 }, { stack: '', count: 6 }],
-        perContainer: [{ name: 'traefik', count: 5 }],
         perWeek: [{ week: '2026-10-12', count: 3 }, { week: '2026-10-19', count: 0 }],
       },
       timeToUpdate: { count: 6, medianMs: 3 * 86_400_000 },
@@ -60,6 +59,7 @@ function fixture(overrides: Partial<StatsData> = {}): StatsData {
       failing: [{ name: 'mosquitto', kind: 'rate-limit', error: 'toomanyrequests', since: '2026-10-20T06:00:00Z' }],
       failuresByKind: [{ kind: 'rate-limit', count: 4 }, { kind: 'other', count: 1 }],
       requests: [{ day: '2026-10-19', registry: 40, github: 12, gitlab: 0, limited: 1 }],
+      requestsPer: 'day',
       requestTotals: { registry: 40, github: 12, gitlab: 0, limited: 1 },
       github: { token: false },
     },

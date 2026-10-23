@@ -110,9 +110,10 @@ export class Stats {
   });
   protected readonly tidePoints = computed(
     () =>
-      this.data()?.behind.tide.map((p) => ({
+      // A run that checked nothing (every check failed) has no ratio to plot.
+      this.data()?.behind.tide.filter((p) => p.checked > 0).map((p) => ({
         at: p.at,
-        value: p.checked ? p.upToDate / p.checked : 1,
+        value: p.upToDate / p.checked,
         note: `${p.upToDate} of ${p.checked} up to date`,
       })) ?? [],
   );
@@ -198,6 +199,10 @@ export class Stats {
       note: r.limited ? `${r.limited} rate limited` : undefined,
     }));
   });
+  protected readonly requestsTitle = computed(() =>
+    this.data()?.health.requestsPer === 'week' ? 'Requests per week' : 'Requests per day',
+  );
+  protected readonly failureLabel = failureLabel;
   protected readonly failureItems = computed(
     () =>
       this.data()?.health.failuresByKind.map((f) => ({
@@ -255,7 +260,6 @@ export class Stats {
     effect(() => storeRange(this.range()));
   }
 
-  protected readonly capitalize = capitalize;
   protected readonly count = count;
   protected readonly formatDuration = formatDuration;
   protected readonly formatTokens = formatTokens;

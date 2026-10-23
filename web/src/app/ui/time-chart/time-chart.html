@@ -39,15 +39,18 @@
   </div>
 }
 @if (points().length) {
-  <table class="sr-only">
-    <caption>{{ label() }}</caption>
-    <thead>
-      <tr><th scope="col">Date</th><th scope="col">Value</th>@if (hasNotes()) {<th scope="col">Note</th>}</tr>
-    </thead>
-    <tbody>
-      @for (p of points(); track $index) {
-        <tr><td>{{ dateText(p.at) }}</td><td>{{ format()(p.value) }}</td>@if (hasNotes()) {<td>{{ p.note ?? '' }}</td>}</tr>
-      }
-    </tbody>
-  </table>
+  <!-- A table ignores .sr-only's 1 px height and would still make the page taller, so wrap it. -->
+  <div class="sr-only">
+    <table>
+      <caption>{{ label() }}</caption>
+      <thead>
+        <tr><th scope="col">Date</th><th scope="col">Value</th>@if (hasNotes()) {<th scope="col">Note</th>}</tr>
+      </thead>
+      <tbody>
+        @for (p of points(); track $index) {
+          <tr><td>{{ dateText(p.at) }}</td><td>{{ format()(p.value) }}</td>@if (hasNotes()) {<td>{{ p.note ?? '' }}</td>}</tr>
+        }
+      </tbody>
+    </table>
+  </div>
 }

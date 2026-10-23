@@ -209,8 +209,8 @@
         <tm-card heading="Check duration">
           <tm-time-chart label="Check duration" [points]="durationPoints()" [format]="formatDuration" />
         </tm-card>
-        <tm-card heading="Requests per day">
-          <tm-bar-chart label="Requests per day" [bars]="requestBars()" empty="No requests recorded in this range" />
+        <tm-card [heading]="requestsTitle()">
+          <tm-bar-chart [label]="requestsTitle()" [bars]="requestBars()" empty="No requests recorded in this range" />
           @if (healthStats(); as s) {
             @if (s.limited) {
               <p class="mt-3 flex items-center gap-1.5 text-sm text-attention" data-testid="limited">
@@ -235,7 +235,7 @@
               <li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3">
                 <a [routerLink]="['/containers', f.name]" class="font-medium">{{ f.name }}</a>
                 <span class="inline-flex items-center gap-1 text-sm text-attention">
-                  <tm-icon name="triangle-alert" [size]="14" />{{ f.kind ? capitalize(f.kind.replace('-', ' ')) : 'Failed' }}
+                  <tm-icon name="triangle-alert" [size]="14" />{{ f.kind ? failureLabel(f.kind) : 'Failed' }}
                 </span>
                 <span class="text-xs text-fg-subtle">since {{ ago(f.since) }}</span>
                 <span class="block w-full truncate font-mono text-xs text-fg-subtle">{{ f.error }}</span>
@@ -315,10 +315,10 @@
           <tm-stat label="Release notes read" [value]="d.lifetime.releasesStored" />
           <tm-stat label="Breaking releases flagged" [value]="d.lifetime.breakingFlagged" />
           @if (l.fastest; as u) {
-            <tm-stat label="Fastest update" [value]="span(u)" [hint]="u.name + ' to ' + u.to" />
+            <tm-stat label="Fastest update" [value]="span(u)" [hint]="u.name" />
           }
           @if (l.longestBehind; as u) {
-            <tm-stat label="Longest behind" [value]="span(u)" [hint]="u.name + ' to ' + u.to" />
+            <tm-stat label="Longest behind" [value]="span(u)" [hint]="u.name" />
           }
           @if (l.streak; as s) {
             <tm-stat label="Longest up-to-date streak" [value]="count(s.runs, 'run')" [hint]="l.streakHint" />

@@ -38,19 +38,28 @@ func (r *Requests) Wrap(rt http.RoundTripper, group func(*http.Request) string) 
 	return roundTripper{next: rt, reqs: r, group: group}
 }
 
-// Since returns the counts per group since the previous call (since the start for the
-// first) and makes now the new baseline. Groups without requests yet are left out.
-func (r *Requests) Since() map[string]Count {
+// Since returns the counts per group since the last commit (since the start before the
+// first). Calling commit makes those counts the new baseline, so counts that couldn't be
+// stored carry over to the next call; requests made in between stay counted either way.
+// Groups without requests yet are left out.
+func (r *Requests) Since() (counts map[string]Count, commit func()) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	out := make(map[string]Count, len(r.groups))
+	seen := make(map[string]Count, len(r.groups))
 	for g, c := range r.groups {
 		now := Count{Requests: c.requests.Load(), Limited: c.limited.Load()}
 		prev := r.base[g]
 		out[g] = Count{Requests: now.Requests - prev.Requests, Limited: now.Limited - prev.Limited}
-		r.base[g] = now
+		seen[g] = now
 	}
-	return out
+	return out, func() {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		for g, now := range seen {
+			r.base[g] = now
+		}
+	}
 }
 
 func (r *Requests) counter(group string) *counter {

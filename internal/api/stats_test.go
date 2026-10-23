@@ -284,8 +284,7 @@ func TestStatsFromHistory(t *testing.T) {
 	// Applied updates and time to update, in the last 30 days.
 	out = getStats(t, h, "30d")
 	a := out.Behind.Applied
-	if a.Total != 3 || !reflect.DeepEqual(a.PerStack, []stackCountJSON{{"web", 2}, {"", 1}}) ||
-		!reflect.DeepEqual(a.PerContainer, []containerCountJSON{{"app", "web", 2}, {"gone", "", 1}}) {
+	if a.Total != 3 || !reflect.DeepEqual(a.PerStack, []stackCountJSON{{"web", 2}, {"", 1}}) {
 		t.Errorf("applied = %+v", a)
 	}
 	weeks, sum := a.PerWeek, 0
@@ -302,10 +301,8 @@ func TestStatsFromHistory(t *testing.T) {
 		t.Errorf("per week = %+v", weeks)
 	}
 	ttu := out.Behind.TimeToUpdate
-	if ttu.Count != 2 || ttu.MedianMs == nil || *ttu.MedianMs != (3*day).Milliseconds() ||
-		ttu.Fastest == nil || ttu.Fastest.To != "2.0.0" || ttu.Fastest.Ms != day.Milliseconds() ||
-		ttu.Slowest == nil || ttu.Slowest.To != "1.2.0" || ttu.Slowest.From != "1.0.0" || ttu.Slowest.Ms != (5*day).Milliseconds() {
-		t.Errorf("time to update = %+v (fastest %+v, slowest %+v)", ttu, ttu.Fastest, ttu.Slowest)
+	if ttu.Count != 2 || ttu.MedianMs == nil || *ttu.MedianMs != (3*day).Milliseconds() {
+		t.Errorf("time to update = %+v", ttu)
 	}
 	runs := out.Health.Runs
 	if runs.Total != 4 || runs.Failed != 0 || runs.ByTrigger != (triggersJSON{Schedule: 2, Manual: 2}) ||
@@ -396,7 +393,7 @@ func TestTimeToUpdateSkipsImagesBeforeTheirRelease(t *testing.T) {
 		}
 	}
 	out := getStats(t, srv.Handler(fstest.MapFS{}), "30d")
-	if ttu := out.Behind.TimeToUpdate; ttu.Count != 0 || ttu.Fastest != nil || ttu.MedianMs != nil {
+	if ttu := out.Behind.TimeToUpdate; ttu.Count != 0 || ttu.MedianMs != nil {
 		t.Errorf("time to update = %+v", ttu)
 	}
 	if lt := out.Lifetime; lt.FastestUpdate != nil || lt.LongestBehind != nil {
@@ -404,6 +401,42 @@ func TestTimeToUpdateSkipsImagesBeforeTheirRelease(t *testing.T) {
 	}
 	if a := out.Behind.Applied; a.Total != 1 {
 		t.Errorf("applied total = %d, want 1 (still counted)", a.Total)
+	}
+}
+
+// Over a long span requests are summed per week, and runs that checked nothing don't make
+// an up-to-date streak.
+func TestStatsWeeklyRequestsAndEmptyRuns(t *testing.T) {
+	srv, _, db := statsServer(t, staticSource{})
+	ctx := context.Background()
+	first := dayOf(time.Now().Add(-200 * day))
+	for i := range 200 {
+		r := store.RunStats{RunID: int64(i + 1), At: first.Add(time.Duration(i)*day + time.Hour), Requests: map[string]stats.Count{"registry": {Requests: 1}}}
+		if i < 150 {
+			r.Checked = 3 // the last 50 runs checked nothing
+		}
+		if i%10 == 0 {
+			r.Updates = 1
+		}
+		if err := db.AddRunStats(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := getStats(t, srv.Handler(fstest.MapFS{}), "all")
+	h := out.Health
+	if h.RequestsPer != "week" || h.RequestTotals.Registry != 200 || mustDate(t, h.Requests[0].Day).Weekday() != time.Monday {
+		t.Errorf("requests per %s: %d entries, first %+v, totals %+v", h.RequestsPer, len(h.Requests), h.Requests[0], h.RequestTotals)
+	}
+	for i := 1; i < len(h.Requests); i++ {
+		if mustDate(t, h.Requests[i].Day).Sub(mustDate(t, h.Requests[i-1].Day)) != 7*day {
+			t.Fatalf("weeks not contiguous: %v", h.Requests)
+		}
+	}
+	if s := out.Lifetime.LongestStreak; s == nil || s.Runs != 9 {
+		t.Errorf("longest streak = %+v, want 9 runs (empty runs don't count)", s)
+	}
+	if got := getStats(t, srv.Handler(fstest.MapFS{}), "30d").Health.RequestsPer; got != "day" {
+		t.Errorf("30d requests per %q", got)
 	}
 }
 
@@ -459,7 +492,7 @@ func TestThinAndHelpers(t *testing.T) {
 	if w := weekOf(time.Date(2026, 10, 26, 0, 30, 0, 0, time.FixedZone("x", 2*3600))); w != "2026-10-19" { // still Sunday in UTC
 		t.Errorf("week across zones = %s", w)
 	}
-	streak := longestStreak([]store.RunStats{{Updates: 0, At: base}, {Updates: 1}, {Updates: 0, At: base.Add(1)}, {Updates: 0, At: base.Add(2)}})
+	streak := longestStreak([]store.RunStats{{Checked: 1, At: base}, {Checked: 1, Updates: 1}, {Checked: 1, At: base.Add(1)}, {Checked: 1, At: base.Add(2)}})
 	if streak == nil || streak.Runs != 2 || !streak.From.Equal(base.Add(1)) {
 		t.Errorf("streak = %+v", streak)
 	}

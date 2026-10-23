@@ -357,12 +357,17 @@ func recordRunStats(ctx context.Context, db *store.Store, apiSrv *api.Server, ru
 		return err
 	}
 	rs.RunID, rs.At, rs.Duration = run.ID, run.FinishedAt, run.FinishedAt.Sub(run.StartedAt)
-	rs.Requests = reqs.Since()
+	var commit func()
+	rs.Requests, commit = reqs.Since()
 	if q, ok := changelogs.LastQuota(); ok {
 		rs.GitHubRemaining, rs.GitHubLimit = &q.Remaining, &q.Limit
 	}
 	// The run's context may be cancelled at shutdown; the row is still worth keeping.
-	return db.AddRunStats(context.WithoutCancel(ctx), rs)
+	if err := db.AddRunStats(context.WithoutCancel(ctx), rs); err != nil {
+		return err
+	}
+	commit()
+	return nil
 }
 
 func dockerSource(cfg config.Config) (docker.Source, error) {

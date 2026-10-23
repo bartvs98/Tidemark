@@ -32,8 +32,8 @@ const (
 	defaultStatsRange = "90d"
 	// A time series with more points than this keeps one per UTC day.
 	maxSeriesPoints = 180
-	// Top-N lists.
-	topContainers = 10
+	// Requests over a longer span than this are summed per week instead of per day.
+	maxRequestDays = 92
 	// "all" starts the releases per month at the oldest release, at most this many months back.
 	maxReleaseMonths = 24
 )
@@ -71,20 +71,13 @@ type behindContainerJSON struct {
 }
 
 type appliedJSON struct {
-	Total        int                  `json:"total"`
-	PerStack     []stackCountJSON     `json:"perStack"`
-	PerContainer []containerCountJSON `json:"perContainer"`
-	PerWeek      []weekCountJSON      `json:"perWeek"`
+	Total    int              `json:"total"`
+	PerStack []stackCountJSON `json:"perStack"`
+	PerWeek  []weekCountJSON  `json:"perWeek"`
 }
 
 type stackCountJSON struct {
 	Stack string `json:"stack"`
-	Count int    `json:"count"`
-}
-
-type containerCountJSON struct {
-	Name  string `json:"name"`
-	Stack string `json:"stack,omitempty"`
 	Count int    `json:"count"`
 }
 
@@ -94,10 +87,8 @@ type weekCountJSON struct {
 }
 
 type timeToUpdateJSON struct {
-	Count    int                `json:"count"`
-	MedianMs *int64             `json:"medianMs,omitempty"`
-	Fastest  *appliedUpdateJSON `json:"fastest,omitempty"`
-	Slowest  *appliedUpdateJSON `json:"slowest,omitempty"`
+	Count    int    `json:"count"`
+	MedianMs *int64 `json:"medianMs,omitempty"`
 }
 
 // appliedUpdateJSON is an applied update (a history row with a previous image); Ms is
@@ -148,6 +139,7 @@ type healthJSON struct {
 	Failing        []failingJSON     `json:"failing"`
 	FailuresByKind []kindCountJSON   `json:"failuresByKind"`
 	Requests       []requestDayJSON  `json:"requests"`
+	RequestsPer    string            `json:"requestsPer"` // day | week: what each requests entry covers
 	RequestTotals  requestTotalsJSON `json:"requestTotals"`
 	GitHub         githubQuotaJSON   `json:"github"`
 }
@@ -556,15 +548,14 @@ func (s *Server) behindStats(ctx context.Context, d *statsData) behindJSON {
 }
 
 func appliedStats(d *statsData) appliedJSON {
-	out := appliedJSON{PerStack: []stackCountJSON{}, PerContainer: []containerCountJSON{}, PerWeek: []weekCountJSON{}}
-	perStack, perContainer, perWeek := map[string]int{}, map[string]int{}, map[string]int{}
+	out := appliedJSON{PerStack: []stackCountJSON{}, PerWeek: []weekCountJSON{}}
+	perStack, perWeek := map[string]int{}, map[string]int{}
 	for _, a := range d.applied {
 		if !d.inRange(a.h.DetectedAt) {
 			continue
 		}
 		out.Total++
 		perStack[a.stack]++
-		perContainer[a.h.ContainerName]++
 		perWeek[weekOf(a.h.DetectedAt)]++
 	}
 	for stack, n := range perStack {
@@ -573,13 +564,6 @@ func appliedStats(d *statsData) appliedJSON {
 	slices.SortFunc(out.PerStack, func(a, b stackCountJSON) int {
 		return cmp.Or(cmp.Compare(b.Count, a.Count), cmp.Compare(a.Stack, b.Stack))
 	})
-	for name, n := range perContainer {
-		out.PerContainer = append(out.PerContainer, containerCountJSON{Name: name, Stack: d.stackOf[name], Count: n})
-	}
-	slices.SortFunc(out.PerContainer, func(a, b containerCountJSON) int {
-		return cmp.Or(cmp.Compare(b.Count, a.Count), cmp.Compare(a.Name, b.Name))
-	})
-	out.PerContainer = out.PerContainer[:min(len(out.PerContainer), topContainers)]
 
 	// Every week in range, zeros included; "all" starts at the first history row.
 	start := d.since
@@ -603,14 +587,7 @@ func timeToUpdate(d *statsData) timeToUpdateJSON {
 		if !d.inRange(a.h.DetectedAt) || a.toUpdate == nil {
 			continue
 		}
-		v := a.toUpdate.Milliseconds()
-		ms = append(ms, v)
-		if out.Fastest == nil || v <= out.Fastest.Ms { // ties: the newer one
-			out.Fastest = a.update(v)
-		}
-		if out.Slowest == nil || v >= out.Slowest.Ms {
-			out.Slowest = a.update(v)
-		}
+		ms = append(ms, a.toUpdate.Milliseconds())
 	}
 	out.Count = len(ms)
 	out.MedianMs = median(ms)
@@ -756,7 +733,7 @@ type cachedLevel struct {
 // ── check health ─────────────────────────────────────────
 
 func (s *Server) healthStats(d *statsData) healthJSON {
-	out := healthJSON{Durations: []durationJSON{}, Failing: []failingJSON{}, FailuresByKind: []kindCountJSON{}, Requests: []requestDayJSON{}}
+	out := healthJSON{Durations: []durationJSON{}, Failing: []failingJSON{}, FailuresByKind: []kindCountJSON{}, Requests: []requestDayJSON{}, RequestsPer: "day"}
 
 	var finished []store.Run
 	var ms []int64
@@ -808,16 +785,25 @@ func (s *Server) healthStats(d *statsData) healthJSON {
 	days := map[string]*requestDayJSON{}
 	var firstDay time.Time
 	for _, r := range d.runStats {
+		if d.inRange(r.At) {
+			firstDay = dayOf(r.At)
+			break
+		}
+	}
+	// Per day, or per week (keyed by its Monday) when the span is too long for daily bars.
+	bucket, step := dayOf, 1
+	if !firstDay.IsZero() && d.now.Sub(firstDay) > maxRequestDays*24*time.Hour {
+		bucket, step, firstDay = mondayOf, 7, mondayOf(firstDay)
+		out.RequestsPer = "week"
+	}
+	for _, r := range d.runStats {
 		if !d.inRange(r.At) {
 			continue
 		}
 		for k, n := range r.Failures {
 			kinds[k] += n
 		}
-		if firstDay.IsZero() {
-			firstDay = dayOf(r.At)
-		}
-		key := r.At.UTC().Format(time.DateOnly)
+		key := bucket(r.At).Format(time.DateOnly)
 		day := days[key]
 		if day == nil {
 			day = &requestDayJSON{Day: key}
@@ -834,7 +820,7 @@ func (s *Server) healthStats(d *statsData) healthJSON {
 		return cmp.Or(cmp.Compare(b.Count, a.Count), cmp.Compare(a.Kind, b.Kind))
 	})
 	if !firstDay.IsZero() {
-		for day := firstDay; !day.After(d.now); day = day.AddDate(0, 0, 1) {
+		for day := firstDay; !day.After(d.now); day = day.AddDate(0, 0, step) {
 			key := day.Format(time.DateOnly)
 			rd := requestDayJSON{Day: key}
 			if v := days[key]; v != nil {
@@ -988,7 +974,8 @@ func longestStreak(rows []store.RunStats) *streakJSON {
 	var best *streakJSON
 	start := -1
 	for i, r := range rows {
-		if r.Updates != 0 {
+		// A run that checked nothing (say every check failed) says nothing about being up to date.
+		if r.Updates != 0 || r.Checked == 0 {
 			start = -1
 			continue
 		}

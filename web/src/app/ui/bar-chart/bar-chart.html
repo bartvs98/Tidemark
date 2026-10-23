@@ -46,39 +46,42 @@
   @if (tip(); as t) {
     <tm-chart-tip [id]="tipId" [heading]="t.heading" [rows]="t.rows" [note]="t.note" [anchor]="t.anchor" />
   }
-  <table class="sr-only">
-    <caption>{{ label() }}</caption>
-    <thead>
-      <tr>
-        <th scope="col"><span class="sr-only">Category</span></th>
-        @for (s of series(); track s.name) {
-          <th scope="col">{{ s.name }}</th>
-        }
-        @if (series().length > 1) {
-          <th scope="col">Total</th>
-        }
-        @if (hasNotes()) {
-          <th scope="col">Note</th>
-        }
-      </tr>
-    </thead>
-    <tbody>
-      @for (b of bars(); track $index; let i = $index) {
+  <!-- A table ignores .sr-only's 1 px height and would still make the page taller, so wrap it. -->
+  <div class="sr-only">
+    <table>
+      <caption>{{ label() }}</caption>
+      <thead>
         <tr>
-          <th scope="row">{{ b.label }}</th>
+          <th scope="col"><span class="sr-only">Category</span></th>
           @for (s of series(); track s.name) {
-            <td>{{ valueOf(b, s.name) }}</td>
+            <th scope="col">{{ s.name }}</th>
           }
           @if (series().length > 1) {
-            <td>{{ format()(totals()[i]) }}</td>
+            <th scope="col">Total</th>
           }
           @if (hasNotes()) {
-            <td>{{ b.note ?? '' }}</td>
+            <th scope="col">Note</th>
           }
         </tr>
-      }
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        @for (b of bars(); track $index; let i = $index) {
+          <tr>
+            <th scope="row">{{ b.label }}</th>
+            @for (s of series(); track s.name) {
+              <td>{{ valueOf(b, s.name) }}</td>
+            }
+            @if (series().length > 1) {
+              <td>{{ format()(totals()[i]) }}</td>
+            }
+            @if (hasNotes()) {
+              <td>{{ b.note ?? '' }}</td>
+            }
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
 } @else {
   <div class="flex items-center justify-center rounded-md text-sm text-fg-muted" [style.height.px]="height()">
     {{ empty() }}

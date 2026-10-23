@@ -33,7 +33,7 @@ describe('TmTimeChart', () => {
     expect(svg().getAttribute('role')).toBe('img');
     expect(svg().getAttribute('aria-label')).toBe('Up to date');
     expect(svg().getAttribute('tabindex')).toBe('0');
-    const table = el.querySelector('table.sr-only')!;
+    const table = el.querySelector('.sr-only > table')!;
     expect(table.querySelector('caption')!.textContent).toBe('Up to date');
     const rows = [...table.querySelectorAll('tbody tr')].map((r) => r.textContent);
     expect(rows).toEqual(['1 Oct50%', '8 Oct75%3 updates', '15 Oct100%']);

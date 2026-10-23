@@ -51,17 +51,31 @@ func TestRequestsCountsAndResets(t *testing.T) {
 	get("https://example.org/ok")          // not a forge: not counted
 
 	want := map[string]Count{"github": {Requests: 5, Limited: 2}, "gitlab": {Requests: 2}}
-	if got := reqs.Since(); !reflect.DeepEqual(got, want) {
+	got, commit := reqs.Since()
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("first Since = %v, want %v", got, want)
 	}
-	// The baseline moved: nothing new, so zeros for the groups seen so far.
-	if got, want := reqs.Since(), (map[string]Count{"github": {}, "gitlab": {}}); !reflect.DeepEqual(got, want) {
-		t.Errorf("second Since = %v, want %v", got, want)
+	// Not committed (the row wasn't stored): the same counts come back.
+	if again, _ := reqs.Since(); !reflect.DeepEqual(again, want) {
+		t.Errorf("Since without commit = %v, want %v", again, want)
 	}
+	// A request between Since and commit stays counted for the next row.
 	get("https://api.github.com/429")
-	if got := reqs.Since()["github"]; got != (Count{Requests: 1, Limited: 1}) {
-		t.Errorf("third Since github = %v", got)
+	commit()
+	if got := since(reqs); !reflect.DeepEqual(got, map[string]Count{"github": {Requests: 1, Limited: 1}, "gitlab": {}}) {
+		t.Errorf("after commit Since = %v", got)
 	}
+	// Committed: nothing new, so zeros for the groups seen so far.
+	if got, want := since(reqs), (map[string]Count{"github": {}, "gitlab": {}}); !reflect.DeepEqual(got, want) {
+		t.Errorf("Since after commit = %v, want %v", got, want)
+	}
+}
+
+// since takes the counts and commits them.
+func since(r *Requests) map[string]Count {
+	got, commit := r.Since()
+	commit()
+	return got
 }
 
 func TestWrapFixedGroup(t *testing.T) {
@@ -70,7 +84,7 @@ func TestWrapFixedGroup(t *testing.T) {
 	for range 3 {
 		_, _ = rt.RoundTrip(httptest.NewRequest(http.MethodGet, "https://index.docker.io/v2/", nil))
 	}
-	if got := reqs.Since(); got["registry"] != (Count{Requests: 3}) || len(got) != 1 {
+	if got := since(reqs); got["registry"] != (Count{Requests: 3}) || len(got) != 1 {
 		t.Errorf("Since = %v", got)
 	}
 }

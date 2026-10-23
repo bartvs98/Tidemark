@@ -97,11 +97,14 @@ func (s *Service) RateLimit(ctx context.Context) (RateLimit, error) {
 
 // LastQuota is the last-known quota, from the latest GitHub API response or /rate_limit
 // lookup, without asking GitHub; ok is false when none is known (since start, or since the
-// token changed).
+// token changed), or when it was reset since: the count would be stale then.
 func (s *Service) LastQuota() (rl RateLimit, ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.rateLimit, !s.rateLimitAt.IsZero()
+	if s.rateLimitAt.IsZero() || !s.rateLimit.ResetAt.After(time.Now()) {
+		return RateLimit{}, false
+	}
+	return s.rateLimit, true
 }
 
 // noteQuota caches the quota GitHub reports in a response's headers (also on 304 and

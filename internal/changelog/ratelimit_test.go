@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestRateLimit(t *testing.T) {
@@ -155,10 +157,11 @@ func TestSetToken(t *testing.T) {
 // LastQuota only reports what responses already said, and WithTransport carries every
 // request, so main can count them.
 func TestLastQuotaAndTransport(t *testing.T) {
+	reset := time.Now().Add(time.Hour).Unix()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-RateLimit-Limit", "60")
 		w.Header().Set("X-RateLimit-Remaining", "12")
-		w.Header().Set("X-RateLimit-Reset", "1792351465")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
 		_, _ = io.WriteString(w, `[]`)
 	}))
 	defer srv.Close()
@@ -175,11 +178,18 @@ func TestLastQuotaAndTransport(t *testing.T) {
 	if _, _, _, err := s.get(context.Background(), srv.URL+"/repos/a/b/releases", "", true); err != nil {
 		t.Fatal(err)
 	}
-	if rl, ok := s.LastQuota(); !ok || rl.Limit != 60 || rl.Remaining != 12 || rl.ResetAt.Unix() != 1792351465 {
+	if rl, ok := s.LastQuota(); !ok || rl.Limit != 60 || rl.Remaining != 12 || rl.ResetAt.Unix() != reset {
 		t.Errorf("LastQuota = %+v %v", rl, ok)
 	}
 	if sent.Load() != 1 {
 		t.Errorf("requests through the transport = %d, want 1 (LastQuota must not ask)", sent.Load())
+	}
+	// Once the reset time has passed, the remaining count is stale.
+	s.mu.Lock()
+	s.rateLimit.ResetAt = time.Now().Add(-time.Minute)
+	s.mu.Unlock()
+	if _, ok := s.LastQuota(); ok {
+		t.Error("a quota past its reset is still reported")
 	}
 	s.SetToken("ghp_x")
 	if _, ok := s.LastQuota(); ok {

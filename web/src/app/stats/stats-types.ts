@@ -33,15 +33,12 @@ export interface BehindStats {
   applied: {
     total: number;
     perStack: { stack: string; count: number }[]; // stack '' for containers without a Compose project; most first
-    perContainer: { name: string; stack?: string; count: number }[]; // top 10, most first
     perWeek: { week: string; count: number }[]; // ISO date of the week's Monday (UTC), every week in range incl. zeros
   };
   /** Per applied update in range whose new version has a published release in the stored notes: detected_at - published_at. */
   timeToUpdate: {
     count: number;
     medianMs?: number;
-    fastest?: AppliedUpdate;
-    slowest?: AppliedUpdate;
   };
   /** One point per run_stats row in range; if more than 180, the last row per UTC day. */
   tide: { at: string; checked: number; upToDate: number; updates: number; attention: number; breaking: number }[];
@@ -87,7 +84,9 @@ export interface HealthStats {
   /** Container-checks that failed over the range, per kind, most first. */
   failuresByKind: { kind: string; count: number }[];
   /** Requests per UTC day over the range (zeros included). */
+  /** Per day, or per week (`day` is then the Monday) when the span is over 92 days: see `requestsPer`. */
   requests: { day: string; registry: number; github: number; gitlab: number; limited: number }[];
+  requestsPer: 'day' | 'week';
   requestTotals: { registry: number; github: number; gitlab: number; limited: number };
   github: { token: boolean; limit?: number; remaining?: number; resetAt?: string }; // last-known, no request made
 }
