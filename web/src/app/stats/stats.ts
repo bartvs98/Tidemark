@@ -3,6 +3,7 @@ import { HttpErrorResponse, httpResource } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import {
   SegmentOption,
+  TmBadge,
   TmButton,
   TmCallout,
   TmCard,
@@ -11,14 +12,14 @@ import {
   TmSegmented,
   TmTooltip,
 } from '../ui';
-import { TmBarChart, TmBarList, TmStat, TmTimeChart } from '../ui/charts';
+import { BarListItem, ChartTone, TmBarChart, TmBarList, TmStat, TmTimeChart } from '../ui/charts';
 import { ErrorKind } from '../dashboard/containers';
 import { errorKindLabel } from '../dashboard/format';
 import { formatDuration, formatTokens } from '../detail/ai-format';
 import { shortDate, timeAgo } from '../detail/dates';
 import { behindFor, capitalize, count, dayLabel, longDuration, monthLabel, percent } from './stats-format';
 import { StatsSkeleton } from './stats-skeleton/stats-skeleton';
-import { AppliedUpdate, Stats as StatsData, StatsRange } from './stats-types';
+import { AppliedUpdate, KindMedian, Stats as StatsData, StatsRange } from './stats-types';
 
 const RANGE_KEY = 'tidemark.statsRange';
 const RANGES: SegmentOption<StatsRange>[] = [
@@ -36,6 +37,7 @@ const TOP_BEHIND = 5;
   imports: [
     RouterLink,
     StatsSkeleton,
+    TmBadge,
     TmBarChart,
     TmBarList,
     TmButton,
@@ -85,9 +87,11 @@ export class Stats {
   protected readonly behindStats = computed(() => {
     const d = this.data();
     if (!d) return undefined;
-    const last = d.behind.tide.at(-1);
+    const last = d.behind.now;
     const behindTotal = d.behind.containers.reduce((sum, c) => sum + c.releasesBehind, 0);
+    const partial = d.behind.containers.some((c) => c.releasesPartial);
     const median = d.behind.timeToUpdate.medianMs;
+    const fromMessage = d.behind.fromMessage;
     return {
       upToDate: last && last.checked ? percent(last.upToDate / last.checked) : '—',
       upToDateHint: last && last.checked ? `${last.upToDate} of ${count(last.checked, 'container')}` : 'No check yet',
@@ -97,8 +101,11 @@ export class Stats {
         d.behind.timeToUpdate.count > 0
           ? `from release to update, ${count(d.behind.timeToUpdate.count, 'update')}`
           : 'Needs release dates',
-      releasesBehind: behindTotal,
+      releasesBehind: partial ? `${behindTotal}+` : behindTotal,
       releasesHint: `across ${count(d.behind.containers.length, 'container')}`,
+      fromMessage:
+        fromMessage.count > 0 && fromMessage.medianMs !== undefined ? longDuration(fromMessage.medianMs) : undefined,
+      fromMessageHint: `after the last message, ${count(fromMessage.count, 'update')}`,
     };
   });
   protected readonly tidePoints = computed(
@@ -128,7 +135,10 @@ export class Stats {
   );
   protected readonly stackItems = computed(
     () =>
-      this.data()?.behind.applied.perStack.map((s) => ({ label: s.stack || 'Ungrouped', value: s.count })) ?? [],
+      this.data()?.behind.applied.perStack.map((s) => ({
+        label: s.removed ? 'Removed containers' : s.stack || 'Ungrouped',
+        value: s.count,
+      })) ?? [],
   );
   /** Current updates by how long ago the first newer release came out (needs release notes); top 5. */
   protected readonly behindItems = computed(() =>
@@ -139,10 +149,28 @@ export class Stats {
         label: c.name,
         value: this.now() - new Date(c.behindSince!).getTime(),
         display: behindFor(c.behindSince, this.now()),
-        hint: count(c.releasesBehind, 'release'),
+        hint: releasesText(c.releasesBehind, c.releasesPartial),
         href: `/containers/${encodeURIComponent(c.name)}`,
       })),
   );
+  /** Median time to update by class and by level, on one scale so the bars compare across both groups. */
+  protected readonly kindGroups = computed(() => {
+    const t = this.data()?.behind.timeToUpdate;
+    if (!t) return undefined;
+    const row = (k: KindMedian, label: string, tone: ChartTone = 'accent'): BarListItem => ({
+      label,
+      value: k.medianMs ?? 0,
+      display: k.medianMs === undefined ? '—' : longDuration(k.medianMs),
+      hint: count(k.count, 'update'),
+      tone,
+    });
+    const byClass = t.byClass.map((k) => row(k, capitalize(k.kind)));
+    const byLevel = t.byLevel.map((k) =>
+      row(k, k.kind === 'none' ? 'Calm' : capitalize(k.kind), k.kind === 'none' ? 'accent' : (k.kind as ChartTone)),
+    );
+    const hasData = [...t.byClass, ...t.byLevel].some((k) => k.count > 0);
+    return { byClass, byLevel, hasData, max: Math.max(0, ...byClass.map((i) => i.value), ...byLevel.map((i) => i.value)) };
+  });
 
   // ── Upstream ──
   protected readonly jumpItems = computed(
@@ -151,7 +179,7 @@ export class Stats {
         label: `${j.from} → ${j.to}`,
         mono: true,
         value: j.releases,
-        display: count(j.releases, 'release'),
+        display: releasesText(j.releases, j.partial),
         hint: j.name,
         href: `/containers/${encodeURIComponent(j.name)}`,
       })) ?? [],
@@ -170,6 +198,7 @@ export class Stats {
       note: m.partial ? 'Leaves out repos whose notes start later' : undefined,
     }));
   });
+  protected readonly quietRepos = computed(() => this.data()?.upstream.repos.filter((r) => r.quiet).length ?? 0);
   protected readonly partialMonths = computed(() => this.data()?.upstream.perMonth.some((m) => m.partial) ?? false);
 
   // ── Check health ──
@@ -295,6 +324,11 @@ export class Stats {
   protected ago(iso: string): string {
     return timeAgo(iso, this.locale, this.now());
   }
+  /** "No release in 11 months", for a quiet repo. */
+  protected quietFor(lastRelease: string): string {
+    const days = (this.now() - new Date(lastRelease).getTime()) / 86_400_000;
+    return `No release in ${count(Math.floor(days / 30.44), 'month')}`;
+  }
   protected span(u: AppliedUpdate): string {
     return longDuration(u.ms);
   }
@@ -303,6 +337,11 @@ export class Stats {
     if (days < 1) return 'more than daily';
     return days === 1 ? 'daily' : `every ${days} days`;
   }
+}
+
+/** "12 releases", or "100+ releases" when the stored notes only give a lower bound. */
+function releasesText(n: number, partial: boolean | undefined): string {
+  return partial ? `${n.toLocaleString('en-US')}+ releases` : count(n, 'release');
 }
 
 /** A failure kind as a label: "Rate limited", "Not found"; unknown kinds ("other") capitalised as they are. */

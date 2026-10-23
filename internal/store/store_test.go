@@ -575,8 +575,13 @@ func TestStatsReads(t *testing.T) {
 	_ = s.SaveReleases(ctx, "github.com/a/a", []Release{{Tag: "v1", PublishedAt: t0}, {Tag: "v2"}}, false)
 	_ = s.SaveReleases(ctx, "github.com/b/b", []Release{{Tag: "v9", Body: "notes"}}, false)
 	rels, err := s.AllReleases(ctx)
-	if err != nil || len(rels) != 2 || len(rels["github.com/a/a"]) != 2 || rels["github.com/b/b"][0].Body != "notes" {
+	if err != nil || len(rels) != 2 || len(rels["github.com/a/a"]) != 2 || rels["github.com/b/b"][0].Tag != "v9" || rels["github.com/b/b"][0].Body != "" {
 		t.Errorf("releases = %+v, %v", rels, err)
+	}
+	_ = s.SaveRepoState(ctx, RepoState{Repo: "github.com/a/a", Kind: "releases", HasMore: true, FetchedAt: t0})
+	states, err := s.AllRepoStates(ctx)
+	if st := states["github.com/a/a"]; err != nil || len(states) != 1 || !st.HasMore || !st.FetchedAt.Equal(t0) {
+		t.Errorf("repo states = %+v, %v", states, err)
 	}
 
 	_ = s.AddAICall(ctx, AICall{At: t0.Add(time.Hour), Provider: "openai", Trigger: "auto", Duration: 2 * time.Second})

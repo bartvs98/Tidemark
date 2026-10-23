@@ -796,6 +796,19 @@ export class Styleguide {
     { label: '4.0.8 → 4.0.14', value: 3, display: '3 releases', hint: 'sonarr', mono: true },
   ];
 
+  /** Two lists on one scale (`max`), as in "Time to update by kind". */
+  protected readonly kindClassItems: BarListItem[] = [
+    { label: 'Patch', value: 2, display: '2 days', hint: '14 updates' },
+    { label: 'Minor', value: 9, display: '9 days', hint: '6 updates' },
+    { label: 'Major', value: 0, display: '—', hint: '0 updates' },
+  ];
+  protected readonly kindLevelItems: BarListItem[] = [
+    { label: 'Calm', value: 3, display: '3 days', hint: '18 updates' },
+    { label: 'Attention', value: 12, display: '12 days', hint: '4 updates', tone: 'attention' },
+    { label: 'Breaking', value: 30, display: '30 days', hint: '1 update', tone: 'breaking' },
+  ];
+  protected readonly kindMax = 30;
+
   /** Sample rows and tiles link back here instead of to a detail page that doesn't exist. */
   protected readonly sampleLink: ContainerLink = () => ['/styleguide'];
 

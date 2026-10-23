@@ -4,7 +4,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"hash/maphash"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -71,10 +70,9 @@ type Server struct {
 	background context.Context
 	started    time.Time
 
-	// Release levels for the stats, by repo and tag (see releaseLevel).
-	levelSeed maphash.Seed
-	levelsMu  sync.Mutex
-	levels    map[string]cachedLevel
+	// Release levels for the stats, by repo key (see releaseLevels).
+	levelsMu sync.Mutex
+	levels   map[string]repoLevels
 }
 
 func New(d Deps) *Server {
@@ -88,7 +86,7 @@ func New(d Deps) *Server {
 	}
 	s := &Server{version: d.Version, log: d.Log, source: d.Source, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, notify: d.Notify,
 		settings: d.Settings, ai: d.AI, configFile: d.ConfigFile, background: bg, started: started,
-		levelSeed: maphash.MakeSeed(), levels: map[string]cachedLevel{}}
+		levels: map[string]repoLevels{}}
 	s.icons.Store(d.Icons)
 	return s
 }

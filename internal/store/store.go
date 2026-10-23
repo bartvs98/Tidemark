@@ -908,9 +908,10 @@ func (s *Store) AllHistory(ctx context.Context) ([]HistoryEntry, error) {
 		FROM history ORDER BY id`)
 }
 
-// AllReleases returns the stored release notes of every repo, by repo key.
+// AllReleases returns the stored releases of every repo, by repo key, without their
+// bodies (Releases has those).
 func (s *Store) AllReleases(ctx context.Context) (map[string][]Release, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT repo, tag, name, body, url, published_at, prerelease FROM releases`)
+	rows, err := s.db.QueryContext(ctx, `SELECT repo, tag, name, url, published_at, prerelease FROM releases`)
 	if err != nil {
 		return nil, err
 	}
@@ -919,11 +920,31 @@ func (s *Store) AllReleases(ctx context.Context) (map[string][]Release, error) {
 	for rows.Next() {
 		var repo, published string
 		var r Release
-		if err := rows.Scan(&repo, &r.Tag, &r.Name, &r.Body, &r.URL, &published, &r.Prerelease); err != nil {
+		if err := rows.Scan(&repo, &r.Tag, &r.Name, &r.URL, &published, &r.Prerelease); err != nil {
 			return nil, err
 		}
 		r.PublishedAt = parseTS(published)
 		out[repo] = append(out[repo], r)
+	}
+	return out, rows.Err()
+}
+
+// AllRepoStates returns every repo's fetch state, by repo key.
+func (s *Store) AllRepoStates(ctx context.Context) (map[string]RepoState, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT repo, kind, etag, has_more, fetched_at, error FROM repos`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]RepoState{}
+	for rows.Next() {
+		var st RepoState
+		var fetched string
+		if err := rows.Scan(&st.Repo, &st.Kind, &st.ETag, &st.HasMore, &fetched, &st.Error); err != nil {
+			return nil, err
+		}
+		st.FetchedAt = parseTS(fetched)
+		out[st.Repo] = st
 	}
 	return out, rows.Err()
 }

@@ -18,7 +18,8 @@ export interface BarListItem {
 
 /**
  * A ranked list with horizontal bars: label (and hint) left, value right, and under them a
- * bar proportional to the largest value (accent unless the item has a tone). For top-N lists
+ * bar proportional to the largest value, or to `max` so several lists share one scale (accent
+ * unless the item has a tone). For top-N lists
  * like "Updates per stack". The page sorts it. Plain text, so it's read as a list named
  * `label`; the bars are decoration.
  *
@@ -35,14 +36,16 @@ export class TmBarList {
   readonly label = input.required<string>();
   readonly items = input.required<BarListItem[]>();
   readonly empty = input('Nothing yet');
+  /** The value a full bar stands for; default: the largest value of `items`. */
+  readonly max = input<number>();
 
   protected readonly rows = computed(() => {
     const items = this.items();
-    const max = Math.max(0, ...items.map((i) => i.value));
+    const max = this.max() ?? Math.max(0, ...items.map((i) => i.value));
     return items.map((item) => ({
       ...item,
       text: item.display ?? item.value.toLocaleString(this.locale),
-      pct: max > 0 ? Math.max(0, item.value) / max * 100 : 0,
+      pct: max > 0 ? Math.min(100, Math.max(0, item.value) / max * 100) : 0,
       color: TONE_COLOR[item.tone ?? 'accent'],
       internal: !!item.href?.startsWith('/'),
     }));

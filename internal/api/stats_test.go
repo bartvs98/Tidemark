@@ -290,7 +290,7 @@ func TestStatsFromHistory(t *testing.T) {
 	// Applied updates and time to update, in the last 30 days.
 	out = getStats(t, h, "30d")
 	a := out.Behind.Applied
-	if a.Total != 3 || !reflect.DeepEqual(a.PerStack, []stackCountJSON{{"web", 2}, {"", 1}}) {
+	if a.Total != 3 || !reflect.DeepEqual(a.PerStack, []stackCountJSON{{Stack: "web", Count: 2}, {Removed: true, Count: 1}}) {
 		t.Errorf("applied = %+v", a)
 	}
 	weeks, sum := a.PerWeek, 0
@@ -496,6 +496,177 @@ func TestReleasesPerMonthOnlyCoveredMonths(t *testing.T) {
 	}
 }
 
+// Time to update per class and per level; a same-version rebuild isn't an update, and a
+// digest (or unparseable) update only counts overall.
+func TestTimeToUpdateByKind(t *testing.T) {
+	repoLabel := map[string]string{"tidemark.repo": "github.com/team/app"}
+	srv, _, db := statsServer(t, staticSource{ctrApp("app", "2.0.0", repoLabel), ctrApp("edge", "1.0.1", repoLabel)})
+	ctx := context.Background()
+	now := time.Now().UTC()
+	ago := func(d time.Duration) time.Time { return now.Add(-d) }
+	if err := db.SaveReleases(ctx, "github.com/team/app", []store.Release{
+		{Tag: "v1.0.0", PublishedAt: ago(80 * day)},
+		{Tag: "v1.0.1", Body: "fixes", PublishedAt: ago(50 * day)},
+		{Tag: "v1.1.0", Body: "Basic auth is now deprecated", PublishedAt: ago(40 * day)},
+		{Tag: "v2.0.0", Body: "more", PublishedAt: ago(10 * day)},
+	}, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, he := range []store.HistoryEntry{
+		{ContainerName: "app", ImageID: "1", Running: "1.0.0", DetectedAt: ago(70 * day)},
+		{ContainerName: "app", ImageID: "2", Running: "1.0.1", PrevImageID: "1", PrevRunning: "1.0.0", DetectedAt: ago(48 * day)}, // patch, 2 days
+		{ContainerName: "app", ImageID: "3", Running: "1.1.0", PrevImageID: "2", PrevRunning: "1.0.1", DetectedAt: ago(36 * day)}, // minor, attention, 4 days
+		{ContainerName: "app", ImageID: "4", Running: "1.1.0", PrevImageID: "3", PrevRunning: "1.1.0", DetectedAt: ago(20 * day)}, // rebuild
+		{ContainerName: "app", ImageID: "5", Running: "2.0.0", PrevImageID: "4", PrevRunning: "1.1.0", DetectedAt: ago(9 * day)},  // major, 1 day
+		{ContainerName: "edge", ImageID: "a", Running: "1.0.1", PrevImageID: "b", PrevRunning: "edge", DetectedAt: ago(44 * day)}, // digest, 6 days
+	} {
+		if err := db.AddHistory(ctx, he); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := getStats(t, srv.Handler(fstest.MapFS{}), "90d")
+	ms := func(d time.Duration) *int64 { v := d.Milliseconds(); return &v }
+	ttu := out.Behind.TimeToUpdate
+	if ttu.Count != 4 || ttu.MedianMs == nil || *ttu.MedianMs != *ms(3 * day) {
+		t.Errorf("time to update = %d, %v", ttu.Count, ttu.MedianMs)
+	}
+	if want := []kindMedianJSON{{"patch", 1, ms(2 * day)}, {"minor", 1, ms(4 * day)}, {"major", 1, ms(day)}}; !reflect.DeepEqual(ttu.ByClass, want) {
+		t.Errorf("by class = %s", kindsString(ttu.ByClass))
+	}
+	// edge's update scores from v1.0.1's notes alone ("fixes"): calm.
+	if want := []kindMedianJSON{{"none", 2, ms(4 * day)}, {"attention", 1, ms(4 * day)}, {"breaking", 1, ms(day)}}; !reflect.DeepEqual(ttu.ByLevel, want) {
+		t.Errorf("by level = %s", kindsString(ttu.ByLevel))
+	}
+	// The rebuild doesn't make the longest behind either (1.1.0 came out 40 days ago).
+	if lb := out.Lifetime.LongestBehind; lb == nil || lb.To != "1.1.0" || lb.Ms != (4*day).Milliseconds() {
+		t.Errorf("longest behind = %+v", lb)
+	}
+	if a := out.Behind.Applied; a.Total != 5 {
+		t.Errorf("applied total = %d, want 5 (the rebuild still counts)", a.Total)
+	}
+
+	// Without updates in range every bucket is still there, with a count of 0 and no median.
+	ttu = getStats(t, srv.Handler(fstest.MapFS{}), "30d").Behind.TimeToUpdate
+	if len(ttu.ByClass) != 3 || len(ttu.ByLevel) != 3 || ttu.ByClass[0].Count != 0 || ttu.ByClass[0].MedianMs != nil || ttu.ByLevel[2].Count != 1 {
+		t.Errorf("30d by class %s, by level %s", kindsString(ttu.ByClass), kindsString(ttu.ByLevel))
+	}
+}
+
+func kindsString(ks []kindMedianJSON) string {
+	b, _ := json.Marshal(ks)
+	return string(b)
+}
+
+// From the (last) message about an update to when it was seen running; a message sent
+// after that isn't counted, nor is a rebuild under a version that was messaged before.
+func TestFromMessage(t *testing.T) {
+	srv, _, db := statsServer(t, staticSource{})
+	ctx := context.Background()
+	now := time.Now().UTC()
+	ago := func(d time.Duration) time.Time { return now.Add(-d) }
+	for _, he := range []store.HistoryEntry{
+		{ContainerName: "a", ImageID: "2", Running: "1.2.0", PrevImageID: "1", PrevRunning: "1.0.0", DetectedAt: ago(20 * day)},
+		{ContainerName: "a", ImageID: "3", Running: "1.2.0", PrevImageID: "2", PrevRunning: "1.2.0", DetectedAt: ago(10 * day)}, // rebuild
+		{ContainerName: "b", ImageID: "2", Running: "2.0.0", PrevImageID: "1", PrevRunning: "1.0.0", DetectedAt: ago(15 * day)},
+		{ContainerName: "c", ImageID: "2", Running: "3.0.0", PrevImageID: "1", PrevRunning: "2.0.0", DetectedAt: ago(15 * day)},
+		{ContainerName: "d", ImageID: "2", Running: "1.1.0", PrevImageID: "1", PrevRunning: "1.0.0", DetectedAt: ago(5 * day)},  // only messaged about 1.2.0
+		{ContainerName: "e", ImageID: "2", Running: "1.1.0", PrevImageID: "1", PrevRunning: "1.0.0", DetectedAt: ago(60 * day)}, // out of range
+	} {
+		if err := db.AddHistory(ctx, he); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.MarkNotified(ctx, []store.Notified{
+		{ContainerName: "a", Key: "1.2.0", Level: "none", NotifiedAt: ago(22 * day)},     // 2 days
+		{ContainerName: "b", Key: "2.0.0", Level: "breaking", NotifiedAt: ago(21 * day)}, // 6 days
+		{ContainerName: "c", Key: "3.0.0", Level: "breaking", NotifiedAt: ago(14 * day)}, // after it was seen
+		{ContainerName: "d", Key: "1.2.0", Level: "none", NotifiedAt: ago(6 * day)},      // another version
+		{ContainerName: "e", Key: "1.1.0", Level: "none", NotifiedAt: ago(61 * day)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fm := getStats(t, srv.Handler(fstest.MapFS{}), "30d").Behind.FromMessage
+	if fm.Count != 2 || fm.MedianMs == nil || *fm.MedianMs != (4*day).Milliseconds() {
+		t.Errorf("from message = %d, %v", fm.Count, fm.MedianMs)
+	}
+	if fm := getStats(t, srv.Handler(fstest.MapFS{}), "all").Behind.FromMessage; fm.Count != 3 {
+		t.Errorf("all: from message count = %d, want 3", fm.Count)
+	}
+}
+
+// When the stored notes stop before the running version (more pages exist), releases
+// behind and a jump's releases are lower bounds; a repo without a release for 9 months is quiet.
+func TestStatsLowerBoundsAndQuiet(t *testing.T) {
+	full := map[string]string{"tidemark.repo": "github.com/team/full"}
+	short := map[string]string{"tidemark.repo": "github.com/team/short"}
+	srv, checks, db := statsServer(t, staticSource{
+		ctrApp("a", "1.0.0", full), ctrApp("b", "1.0.0", short),
+		ctrApp("c", "1.2.0", full), ctrApp("d", "1.2.0", short),
+	})
+	runChecks(t, checks)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	// full reaches back to 1.0.0 (more pages exist, but they're older); short stops at 1.2.0.
+	_ = db.SaveReleases(ctx, "github.com/team/full", []store.Release{
+		{Tag: "v1.0.0", PublishedAt: now.AddDate(0, -12, 0)}, {Tag: "v1.1.0", PublishedAt: now.AddDate(0, -11, 0)},
+		{Tag: "v1.2.0", PublishedAt: now.AddDate(0, -10, 0)}, {Tag: "v2.0.0", PublishedAt: now.AddDate(0, -10, 1)},
+	}, false)
+	_ = db.SaveRepoState(ctx, store.RepoState{Repo: "github.com/team/full", Kind: "releases", HasMore: true, FetchedAt: now})
+	_ = db.SaveReleases(ctx, "github.com/team/short", []store.Release{
+		{Tag: "v1.2.0", PublishedAt: now.AddDate(0, -8, 0)}, {Tag: "v2.0.0", PublishedAt: now.AddDate(0, -8, 1)},
+	}, false)
+	_ = db.SaveRepoState(ctx, store.RepoState{Repo: "github.com/team/short", Kind: "releases", HasMore: true, FetchedAt: now})
+	for _, he := range []store.HistoryEntry{
+		{ContainerName: "c", ImageID: "2", Running: "1.2.0", PrevImageID: "1", PrevRunning: "1.0.0", DetectedAt: now.Add(-2 * day)},
+		{ContainerName: "d", ImageID: "2", Running: "1.2.0", PrevImageID: "1", PrevRunning: "1.0.0", DetectedAt: now.Add(-day)},
+	} {
+		if err := db.AddHistory(ctx, he); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out := getStats(t, srv.Handler(fstest.MapFS{}), "all")
+	behind := map[string]behindContainerJSON{}
+	for _, b := range out.Behind.Containers {
+		behind[b.Name] = b
+	}
+	if a, b := behind["a"], behind["b"]; a.ReleasesBehind != 3 || a.ReleasesPartial || b.ReleasesBehind != 2 || !b.ReleasesPartial {
+		t.Errorf("behind a = %+v, b = %+v", a, b)
+	}
+	jumps := map[string]jumpJSON{}
+	for _, j := range out.Upstream.BiggestJumps {
+		jumps[j.Name] = j
+	}
+	if c, d := jumps["c"], jumps["d"]; c.Releases != 2 || c.Partial || d.Releases != 1 || !d.Partial {
+		t.Errorf("jumps = %+v", out.Upstream.BiggestJumps)
+	}
+	repos := map[string]repoStatsJSON{}
+	for _, r := range out.Upstream.Repos {
+		repos[r.Repo] = r
+	}
+	if !repos["team/full"].Quiet || repos["team/short"].Quiet {
+		t.Errorf("repos = %+v", out.Upstream.Repos)
+	}
+}
+
+// "now" is the newest run_stats row, also when it's older than the range.
+func TestStatsBehindNow(t *testing.T) {
+	srv, _, db := statsServer(t, staticSource{})
+	h := srv.Handler(fstest.MapFS{})
+	if out := getStats(t, h, "30d"); out.Behind.Now != nil {
+		t.Errorf("now without rows = %+v", out.Behind.Now)
+	}
+	ctx := context.Background()
+	old := time.Now().UTC().Add(-40 * day).Truncate(time.Second)
+	_ = db.AddRunStats(ctx, store.RunStats{RunID: 1, At: old.Add(-day), Checked: 2, UpToDate: 2})
+	_ = db.AddRunStats(ctx, store.RunStats{RunID: 2, At: old, Checked: 3, UpToDate: 1, Updates: 2, Attention: 1, ReleasesBehind: 7})
+	out := getStats(t, h, "30d")
+	if n := out.Behind.Now; len(out.Behind.Tide) != 0 || n == nil || !n.At.Equal(old) ||
+		n.Checked != 3 || n.UpToDate != 1 || n.Updates != 2 || n.Attention != 1 || n.Breaking != 0 || n.ReleasesBehind != 7 {
+		t.Errorf("tide %+v, now %+v", out.Behind.Tide, n)
+	}
+}
+
 func mustDate(t *testing.T, s string) time.Time {
 	t.Helper()
 	d, err := time.Parse(time.DateOnly, s)
@@ -524,6 +695,15 @@ func TestThinAndHelpers(t *testing.T) {
 	got := thin(many, at, func(kept, later pt) bool { return later.v > kept.v })
 	if len(got) != 8 || got[0].v != 23 || got[7].v != 179 {
 		t.Errorf("thinned = %v", got)
+	}
+	// Still too many per day (a year and a half of daily points): per week.
+	var daily []pt
+	for i := range 540 {
+		daily = append(daily, pt{base.AddDate(0, 0, i), i})
+	}
+	got = thin(daily, at, func(_, later pt) bool { return true })
+	if len(got) != 78 || got[0].v != 3 || got[len(got)-1].v != 539 { // 1 Jan 2026 is a Thursday: its week ends on Sunday, day 3
+		t.Errorf("thinned per week = %d points, %v … %v", len(got), got[0], got[len(got)-1])
 	}
 
 	if m := median([]int64{5, 1, 3}); *m != 3 {
@@ -554,5 +734,46 @@ func TestThinAndHelpers(t *testing.T) {
 	}
 	if longestStreak([]store.RunStats{{Updates: 1}}) != nil {
 		t.Error("streak without an up-to-date run")
+	}
+}
+
+func TestReleaseLevelsCache(t *testing.T) {
+	srv, _, db := statsServer(t, staticSource{})
+	ctx := context.Background()
+	repo := "github.com/team/app"
+	t0 := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v1", Body: "- Bug fixes"}}, false)
+	_ = db.SaveRepoState(ctx, store.RepoState{Repo: repo, Kind: "releases", FetchedAt: t0})
+	levels := func() map[string]analysis.Level {
+		t.Helper()
+		rels, _ := db.AllReleases(ctx)
+		states, _ := db.AllRepoStates(ctx)
+		out, err := srv.releaseLevels(ctx, rels, states)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out[repo]
+	}
+	if l := levels(); l["v1"] != analysis.None {
+		t.Errorf("levels = %v", l)
+	}
+	// A body changed without a new fetch time isn't seen (bodies are only read after a fetch)…
+	breaking := "## Breaking changes\n- The old API is removed"
+	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v1", Body: breaking}}, false)
+	if l := levels(); l["v1"] != analysis.None {
+		t.Errorf("levels re-read without a fetch: %v", l)
+	}
+	// …a new release is, and so is a new fetch.
+	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v2", Body: breaking}}, false)
+	if l := levels(); l["v1"] != analysis.Breaking || l["v2"] != analysis.Breaking {
+		t.Errorf("levels after a new release = %v", l)
+	}
+	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v2", Body: "- Bug fixes"}}, false)
+	_ = db.SaveRepoState(ctx, store.RepoState{Repo: repo, Kind: "releases", FetchedAt: t0.Add(time.Hour)})
+	if l := levels(); l["v2"] != analysis.None {
+		t.Errorf("levels after a fetch = %v", l)
+	}
+	if len(srv.levels) != 1 {
+		t.Errorf("cache = %v", srv.levels)
 	}
 }

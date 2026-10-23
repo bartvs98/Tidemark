@@ -74,7 +74,10 @@ WITH r(repo, tag, days_ago, body) AS (VALUES
   ('github.com/louislam/uptime-kuma', '2.0.0', 10, '## Breaking changes' || char(10) || '- The database layout changed; back up before updating'),
   ('github.com/prometheus/prometheus', 'v3.13.0', 58, '- Scrape improvements'),
   ('github.com/prometheus/prometheus', 'v3.14.0', 32, '- Bug fixes'),
-  ('github.com/prometheus/prometheus', 'v3.15.0', 9, '- Query engine updates')
+  ('github.com/prometheus/prometheus', 'v3.15.0', 9, '- Query engine updates'),
+  -- A quiet upstream: no release in over 9 months.
+  ('github.com/eclipse/mosquitto', 'v2.0.20', 420, '- Bug fixes'),
+  ('github.com/eclipse/mosquitto', 'v2.0.22', 310, '- Bug fixes')
 )
 INSERT OR IGNORE INTO releases (repo, tag, name, body, url, published_at, prerelease)
 SELECT repo, tag, tag, body, 'https://' || repo || '/releases/tag/' || tag,
@@ -105,7 +108,9 @@ WITH h(name, prev, running, days_ago) AS (VALUES
   ('homeassistant', '2026.6.0', '2026.7.0', 3),
   ('grafana', '11.4.0', '11.5.0', 62),
   ('nginx', '1.29.0-alpine', '1.29.3-alpine', 3),
-  ('mosquitto', '2.0.18', '2.0.20', 44)
+  ('mosquitto', '2.0.18', '2.0.20', 44),
+  -- A same-version rebuild: an applied image change, but not an update to time.
+  ('mosquitto', '2.0.22', '2.0.22', 6)
 )
 INSERT INTO history (id, container_name, image_id, running, prev_image_id, prev_running, detected_at, via)
 SELECT -(ROW_NUMBER() OVER ()), name,
@@ -114,6 +119,16 @@ SELECT -(ROW_NUMBER() OVER ()), name,
        strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-' || days_ago || ' days', '-' || ((days_ago * 37) % 11) || ' hours'),
        'check'
 FROM h;
+
+-- ── Telegram messages for some of those updates (the key is the latest version) ─────────────
+WITH m(name, key, days_ago) AS (VALUES
+  ('traefik', 'v3.7.0', 18),
+  ('prometheus', 'v3.15.0', 8),
+  ('homeassistant', '2026.9.0', 21),
+  ('vaultwarden', '1.37.2', 45)
+)
+INSERT OR REPLACE INTO notified (container_name, key, level, notified_at)
+SELECT name, key, 'none', strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-' || days_ago || ' days') FROM m;
 
 -- ── AI calls: 30 over about 45 days ──────────────────────────────────────────
 WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i < 29)

@@ -6,9 +6,10 @@ import { BarListItem, TmBarList } from './bar-list';
 describe('TmBarList', () => {
   @Component({
     imports: [TmBarList],
-    template: `<tm-bar-list label="Updates per stack" [items]="items()" />`,
+    template: `<tm-bar-list label="Updates per stack" [items]="items()" [max]="max()" />`,
   })
   class Host {
+    max = signal<number | undefined>(undefined);
     items = signal<BarListItem[]>([
       { label: 'media', value: 12, href: '/containers/jellyfin' },
       { label: 'immich-app/immich', value: 6, href: 'https://github.com/immich-app/immich', mono: true, hint: '2 containers' },
@@ -31,6 +32,14 @@ describe('TmBarList', () => {
     expect(bars[2].style.backgroundColor).toBe('var(--color-fg-subtle)');
     const values = [...el.querySelectorAll('li .tabular-nums')].map((v) => v.textContent);
     expect(values).toEqual(['12', '6', '3 updates']);
+  });
+
+  it('scales the bars to max when given, so lists can share a scale', async () => {
+    const { fixture, host, el } = await render();
+    host.max.set(24);
+    await fixture.whenStable();
+    const bars = [...el.querySelectorAll<HTMLElement>('[aria-hidden="true"] > div')];
+    expect(bars.map((b) => b.style.width)).toEqual(['50%', '25%', '12.5%']);
   });
 
   it('links router paths and external urls', async () => {

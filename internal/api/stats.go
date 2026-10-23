@@ -3,13 +3,13 @@ package api
 import (
 	"cmp"
 	"context"
-	"hash/maphash"
 	"math"
 	"net/http"
 	"slices"
 	"time"
 
 	"github.com/bartvs98/tidemark/internal/analysis"
+	"github.com/bartvs98/tidemark/internal/changelog"
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
 	"github.com/bartvs98/tidemark/internal/review"
@@ -38,6 +38,8 @@ const (
 	maxRequestDays = 92
 	// "all" starts the releases per month at the oldest release, at most this many months back.
 	maxReleaseMonths = 24
+	// A repo without a release for longer than this is quiet.
+	quietAfterMonths = 9
 )
 
 type statsJSON struct {
@@ -56,7 +58,11 @@ type behindJSON struct {
 	Containers   []behindContainerJSON `json:"containers"`
 	Applied      appliedJSON           `json:"applied"`
 	TimeToUpdate timeToUpdateJSON      `json:"timeToUpdate"`
-	Tide         []tideJSON            `json:"tide"`
+	// FromMessage: from the Telegram message about an update to when it was seen running.
+	FromMessage medianJSON `json:"fromMessage"`
+	Tide        []tideJSON `json:"tide"`
+	// Now is the newest run_stats row, whatever the range; absent without one.
+	Now *tideJSON `json:"now,omitempty"`
 }
 
 type behindContainerJSON struct {
@@ -70,6 +76,9 @@ type behindContainerJSON struct {
 	Review         string         `json:"review,omitempty"` // reviewed | snoozed, while it applies
 	ReleasesBehind int            `json:"releasesBehind"`
 	BehindSince    *time.Time     `json:"behindSince,omitempty"`
+	// ReleasesPartial: the stored notes stop before the running version, so ReleasesBehind
+	// and BehindSince are lower bounds.
+	ReleasesPartial bool `json:"releasesPartial,omitempty"`
 }
 
 type appliedJSON struct {
@@ -80,7 +89,9 @@ type appliedJSON struct {
 
 type stackCountJSON struct {
 	Stack string `json:"stack"`
-	Count int    `json:"count"`
+	// Removed: containers no longer on the host, whose stack isn't known any more.
+	Removed bool `json:"removed,omitempty"`
+	Count   int  `json:"count"`
 }
 
 type weekCountJSON struct {
@@ -89,6 +100,19 @@ type weekCountJSON struct {
 }
 
 type timeToUpdateJSON struct {
+	Count    int              `json:"count"`
+	MedianMs *int64           `json:"medianMs,omitempty"`
+	ByClass  []kindMedianJSON `json:"byClass"` // patch, minor, major
+	ByLevel  []kindMedianJSON `json:"byLevel"` // none, attention, breaking
+}
+
+type kindMedianJSON struct {
+	Kind     string `json:"kind"`
+	Count    int    `json:"count"`
+	MedianMs *int64 `json:"medianMs,omitempty"`
+}
+
+type medianJSON struct {
 	Count    int    `json:"count"`
 	MedianMs *int64 `json:"medianMs,omitempty"`
 }
@@ -132,6 +156,7 @@ type repoStatsJSON struct {
 	Attention     int        `json:"attention"`
 	LastRelease   *time.Time `json:"lastRelease,omitempty"`
 	MedianGapDays *float64   `json:"medianGapDays,omitempty"`
+	Quiet         bool       `json:"quiet,omitempty"` // no release for quietAfterMonths
 }
 
 type monthReleasesJSON struct {
@@ -148,6 +173,7 @@ type jumpJSON struct {
 	appliedUpdateJSON        // Ms: time to update, 0 when unknown
 	Releases          int    `json:"releases"`
 	Class             string `json:"class"`
+	Partial           bool   `json:"partial,omitempty"` // Releases is a lower bound (as releasesPartial)
 }
 
 type healthJSON struct {
@@ -282,7 +308,7 @@ func (s *Server) RunStats(ctx context.Context) (store.RunStats, error) {
 		if u := cj.Update; !rs.Ignore && u != nil && u.CheckedAt != nil && u.Class != string(version.None) {
 			ref, _ := imageref.Parse(c.ImageRef)
 			if repo, ok := s.notesRepo(c, ref, rs); ok {
-				n, _ := s.behindBy(ctx, repo, u)
+				n, _, _ := s.behindBy(ctx, repo, u)
 				behind += n
 			}
 		}
@@ -363,16 +389,18 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 // statsData is everything one stats response is built from.
 type statsData struct {
 	now, since time.Time
-	current    []currentContainer     // nil when Docker couldn't be listed
-	stackOf    map[string]string      // current container name → Compose project
-	repoOf     map[string]source.Repo // current, non-ignored container name → notes repo
-	releases   map[string][]store.Release
-	byTag      map[string]map[string]store.Release // repo key → tag → release
-	runStats   []store.RunStats                    // all, oldest first
-	runs       []store.Run                         // all, oldest first
-	history    []store.HistoryEntry                // all, oldest first
-	calls      []store.AICall                      // all, oldest first
-	applied    []appliedInfo                       // every history row with a previous image
+	current    []currentContainer                   // nil when Docker couldn't be listed
+	stackOf    map[string]string                    // current container name → Compose project
+	repoOf     map[string]source.Repo               // current, non-ignored container name → notes repo
+	releases   map[string][]store.Release           // without bodies
+	levels     map[string]map[string]analysis.Level // repo key → tag → the release's own level
+	byTag      map[string]map[string]store.Release  // repo key → tag → release
+	runStats   []store.RunStats                     // all, oldest first
+	runs       []store.Run                          // all, oldest first
+	history    []store.HistoryEntry                 // all, oldest first
+	calls      []store.AICall                       // all, oldest first
+	applied    []appliedInfo                        // every history row with a previous image
+	notified   map[store.NotifiedKey]store.Notified
 	// coveredFrom: per repo key, where its stored notes are complete from: the start of the
 	// month after its oldest stored release when older ones weren't fetched (has_more), zero
 	// when the whole history is stored.
@@ -428,6 +456,16 @@ func (s *Server) loadStats(ctx context.Context, now, since time.Time) (*statsDat
 	if d.releases, err = s.store.AllReleases(ctx); err != nil {
 		return nil, false, err
 	}
+	if d.notified, err = s.store.Notified(ctx); err != nil {
+		return nil, false, err
+	}
+	states, err := s.store.AllRepoStates(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	if d.levels, err = s.releaseLevels(ctx, d.releases, states); err != nil {
+		return nil, false, err
+	}
 	for key, rels := range d.releases {
 		m := make(map[string]store.Release, len(rels))
 		for _, r := range rels {
@@ -462,10 +500,7 @@ func (s *Server) loadStats(ctx context.Context, now, since time.Time) (*statsDat
 		if _, done := d.coveredFrom[key]; done {
 			continue
 		}
-		st, ok, err := s.store.RepoState(ctx, key)
-		if err != nil {
-			return nil, false, err
-		}
+		st, ok := states[key]
 		var from time.Time
 		if ok && st.HasMore {
 			// The oldest stored release's month is only partly there, so coverage starts after it.
@@ -485,12 +520,19 @@ type appliedInfo struct {
 	h     store.HistoryEntry
 	stack string
 	// toUpdate: detected − the new version's publication; behind: detected − the first
-	// release newer than the old version. nil without the notes, and when the image was seen
-	// before that release was published (images often land before their release notes), which
-	// would otherwise read as an instant update.
+	// release newer than the old version. nil without the notes, for a same-version rebuild
+	// (its release can be months old), and when the image was seen before that release was
+	// published (images often land before their release notes), which would otherwise read
+	// as an instant update.
 	toUpdate, behind *time.Duration
-	releases         int // releases after from up to and including to (0 without notes)
+	releases         int  // releases after from up to and including to (0 without notes)
+	partial          bool // the stored notes stop before from, so releases is a lower bound
 	class            string
+	// level: the update as the dashboard scores it from the stored notes (heuristics only:
+	// AI verdicts are per current range); None without notes.
+	level   analysis.Level
+	rebuild bool // the same version again (a new image under the same tag)
+	removed bool // the container is no longer on the host (false when Docker couldn't be listed)
 }
 
 func (i appliedInfo) update(ms int64) *appliedUpdateJSON {
@@ -503,14 +545,17 @@ func (s *Server) appliedUpdates(ctx context.Context, d *statsData) []appliedInfo
 		if h.PrevImageID == "" {
 			continue
 		}
-		info := appliedInfo{h: h, stack: d.stackOf[h.ContainerName], class: string(version.Digest)}
+		stack, here := d.stackOf[h.ContainerName]
+		info := appliedInfo{h: h, stack: stack, removed: d.current != nil && !here, class: string(version.Digest), rebuild: h.PrevRunning == h.Running}
 		from, to := parseVersion(h.PrevRunning), parseVersion(h.Running)
 		if from != nil && to != nil {
 			if c := version.Classify(*from, *to); c != version.None {
 				info.class = string(c)
+			} else {
+				info.rebuild = true
 			}
 		}
-		if repo, ok := d.repoOf[h.ContainerName]; ok && to != nil {
+		if repo, ok := d.repoOf[h.ContainerName]; ok && to != nil && !info.rebuild {
 			ch, err := s.changelogs.Changes(ctx, repo, from, to)
 			if err != nil {
 				s.log.Debug("stats: stored release notes unavailable", "repo", repo.Key(), "err", err)
@@ -520,10 +565,12 @@ func (s *Server) appliedUpdates(ctx context.Context, d *statsData) []appliedInfo
 				}
 				if from != nil {
 					info.releases = len(ch.Releases)
+					info.partial = notesStopBefore(ch)
 					if first, ok := oldestPublished(ch.Releases); ok {
 						info.behind = gap(first, h.DetectedAt)
 					}
 				}
+				info.level = assess(info.class, from, to, ch).Level
 			}
 		}
 		out = append(out, info)
@@ -541,23 +588,29 @@ func gap(from, to time.Time) *time.Duration {
 }
 
 // behindBy is how far an update is behind in the stored notes: the releases between running
-// and latest, and when the oldest of them came out (nil without a date). Zero for channel
-// tags and versions that don't parse.
-func (s *Server) behindBy(ctx context.Context, repo source.Repo, u *updateJSON) (int, *time.Time) {
+// and latest, and when the oldest of them came out (nil without a date); partial when the
+// notes stop before running, so both are lower bounds. Zero for channel tags and versions
+// that don't parse.
+func (s *Server) behindBy(ctx context.Context, repo source.Repo, u *updateJSON) (n int, since *time.Time, partial bool) {
 	running, latest := parseVersion(u.Running), parseVersion(u.Latest)
 	if running == nil || latest == nil || u.Channel != "" || s.changelogs == nil {
-		return 0, nil
+		return 0, nil, false
 	}
 	ch, err := s.changelogs.Changes(ctx, repo, running, latest)
 	if err != nil {
-		return 0, nil
+		return 0, nil, false
 	}
 	if first, ok := oldestPublished(ch.Releases); ok {
 		first = first.UTC()
-		return len(ch.Releases), &first
+		since = &first
 	}
-	return len(ch.Releases), nil
+	return len(ch.Releases), since, notesStopBefore(ch)
 }
+
+// notesStopBefore: older releases exist that weren't fetched and every stored one is newer
+// than the running version (so its tag isn't among them either): the releases in between
+// are missing from ch.Releases.
+func notesStopBefore(ch changelog.Changes) bool { return ch.Partial && ch.FromTag == "" }
 
 func oldestPublished(rels []store.Release) (time.Time, bool) {
 	var oldest time.Time
@@ -586,7 +639,7 @@ func (s *Server) behindStats(ctx context.Context, d *statsData) behindJSON {
 			b.Review = cc.json.Review.Kind
 		}
 		if repo, ok := d.repoOf[cc.c.Name]; ok {
-			b.ReleasesBehind, b.BehindSince = s.behindBy(ctx, repo, u)
+			b.ReleasesBehind, b.BehindSince, b.ReleasesPartial = s.behindBy(ctx, repo, u)
 		}
 		out.Containers = append(out.Containers, b)
 	}
@@ -605,6 +658,7 @@ func (s *Server) behindStats(ctx context.Context, d *statsData) behindJSON {
 
 	out.Applied = appliedStats(d)
 	out.TimeToUpdate = timeToUpdate(d)
+	out.FromMessage = fromMessage(d)
 
 	var tide []store.RunStats
 	for _, r := range d.runStats {
@@ -614,27 +668,39 @@ func (s *Server) behindStats(ctx context.Context, d *statsData) behindJSON {
 	}
 	tide = thin(tide, func(r store.RunStats) time.Time { return r.At }, func(_, _ store.RunStats) bool { return true })
 	for _, r := range tide {
-		out.Tide = append(out.Tide, tideJSON{At: r.At.UTC(), Checked: r.Checked, UpToDate: r.UpToDate, Updates: r.Updates, Attention: r.Attention, Breaking: r.Breaking, ReleasesBehind: r.ReleasesBehind})
+		out.Tide = append(out.Tide, toTide(r))
+	}
+	if len(d.runStats) > 0 {
+		now := toTide(d.runStats[len(d.runStats)-1])
+		out.Now = &now
 	}
 	return out
 }
 
+func toTide(r store.RunStats) tideJSON {
+	return tideJSON{At: r.At.UTC(), Checked: r.Checked, UpToDate: r.UpToDate, Updates: r.Updates, Attention: r.Attention, Breaking: r.Breaking, ReleasesBehind: r.ReleasesBehind}
+}
+
 func appliedStats(d *statsData) appliedJSON {
 	out := appliedJSON{PerStack: []stackCountJSON{}, PerWeek: []weekCountJSON{}}
-	perStack, perWeek := map[string]int{}, map[string]int{}
+	type stackKey struct {
+		stack   string
+		removed bool
+	}
+	perStack, perWeek := map[stackKey]int{}, map[string]int{}
 	for _, a := range d.applied {
 		if !d.inRange(a.h.DetectedAt) {
 			continue
 		}
 		out.Total++
-		perStack[a.stack]++
+		perStack[stackKey{a.stack, a.removed}]++
 		perWeek[weekOf(a.h.DetectedAt)]++
 	}
-	for stack, n := range perStack {
-		out.PerStack = append(out.PerStack, stackCountJSON{Stack: stack, Count: n})
+	for k, n := range perStack {
+		out.PerStack = append(out.PerStack, stackCountJSON{Stack: k.stack, Removed: k.removed, Count: n})
 	}
 	slices.SortFunc(out.PerStack, func(a, b stackCountJSON) int {
-		return cmp.Or(cmp.Compare(b.Count, a.Count), cmp.Compare(a.Stack, b.Stack))
+		return cmp.Or(cmp.Compare(b.Count, a.Count), compareBool(a.Removed, b.Removed), cmp.Compare(a.Stack, b.Stack))
 	})
 
 	// Every week in range, zeros included; "all" starts at the first history row.
@@ -652,18 +718,53 @@ func appliedStats(d *statsData) appliedJSON {
 	return out
 }
 
+// timeToUpdate is the median time to update overall, per class (patch, minor, major; a
+// digest or unparseable update only counts overall) and per level.
 func timeToUpdate(d *statsData) timeToUpdateJSON {
 	var out timeToUpdateJSON
 	var ms []int64
+	byClass, byLevel := map[string][]int64{}, map[string][]int64{}
 	for _, a := range d.applied {
 		if !d.inRange(a.h.DetectedAt) || a.toUpdate == nil {
 			continue
 		}
-		ms = append(ms, a.toUpdate.Milliseconds())
+		v := a.toUpdate.Milliseconds()
+		ms = append(ms, v)
+		byClass[a.class] = append(byClass[a.class], v)
+		byLevel[a.level.String()] = append(byLevel[a.level.String()], v)
 	}
 	out.Count = len(ms)
 	out.MedianMs = median(ms)
+	kinds := func(by map[string][]int64, order ...string) []kindMedianJSON {
+		list := make([]kindMedianJSON, 0, len(order))
+		for _, k := range order {
+			list = append(list, kindMedianJSON{Kind: k, Count: len(by[k]), MedianMs: median(by[k])})
+		}
+		return list
+	}
+	out.ByClass = kinds(byClass, string(version.Patch), string(version.Minor), string(version.Major))
+	out.ByLevel = kinds(byLevel, analysis.None.String(), analysis.Attention.String(), analysis.Breaking.String())
 	return out
+}
+
+// fromMessage is the median time from the message about an update to when that version was
+// seen running. notified_at is the last send (a resend, say after a snooze ended, overwrites
+// it), so this measures from the last message. A message sent after the update was seen
+// isn't what led to it; rebuilds are left out (their version's message was for the update
+// before them).
+func fromMessage(d *statsData) medianJSON {
+	var ms []int64
+	for _, a := range d.applied {
+		if !d.inRange(a.h.DetectedAt) || a.rebuild {
+			continue
+		}
+		n, ok := d.notified[store.NotifiedKey{Container: a.h.ContainerName, Key: a.h.Running}]
+		if !ok || n.NotifiedAt.After(a.h.DetectedAt) {
+			continue
+		}
+		ms = append(ms, a.h.DetectedAt.Sub(n.NotifiedAt).Milliseconds())
+	}
+	return medianJSON{Count: len(ms), MedianMs: median(ms)}
 }
 
 // ── upstream ─────────────────────────────────────────────
@@ -692,7 +793,7 @@ func (s *Server) upstreamStats(d *statsData) upstreamJSON {
 		rj := repoStatsJSON{Repo: repo.Path, URL: repo.URL(), Containers: names[key]}
 		var times []time.Time
 		for _, r := range rels {
-			lvl := s.releaseLevel(key, r)
+			lvl := d.levels[key][r.Tag]
 			if !r.PublishedAt.IsZero() {
 				all = append(all, dated{r.PublishedAt, lvl, key})
 				if rj.LastRelease == nil || r.PublishedAt.After(*rj.LastRelease) {
@@ -716,6 +817,7 @@ func (s *Server) upstreamStats(d *statsData) upstreamJSON {
 			}
 		}
 		rj.MedianGapDays = medianGapDays(times)
+		rj.Quiet = rj.LastRelease != nil && rj.LastRelease.Before(d.now.AddDate(0, -quietAfterMonths, 0))
 		if from := d.coveredFrom[key]; !from.IsZero() && (d.since.IsZero() || d.since.Before(from)) {
 			rj.Partial = true
 		}
@@ -782,7 +884,7 @@ func (s *Server) upstreamStats(d *statsData) upstreamJSON {
 		if a.toUpdate != nil {
 			ms = a.toUpdate.Milliseconds()
 		}
-		out.BiggestJumps = append(out.BiggestJumps, jumpJSON{appliedUpdateJSON: *a.update(ms), Releases: a.releases, Class: a.class})
+		out.BiggestJumps = append(out.BiggestJumps, jumpJSON{appliedUpdateJSON: *a.update(ms), Releases: a.releases, Class: a.class, Partial: a.partial})
 	}
 	slices.SortStableFunc(out.BiggestJumps, func(a, b jumpJSON) int { return cmp.Or(cmp.Compare(b.Releases, a.Releases), b.At.Compare(a.At)) })
 	out.BiggestJumps = out.BiggestJumps[:min(len(out.BiggestJumps), topJumps)]
@@ -809,28 +911,52 @@ func medianGapDays(times []time.Time) *float64 {
 	return &m
 }
 
-// releaseLevel is a stored release's level on its own, as the detail page flags its notes
-// (without a running release whose repeated lines it would skip). Cached by repo and tag
-// while the notes stay the same.
-func (s *Server) releaseLevel(repo string, r store.Release) analysis.Level {
-	key := repo + "\x00" + r.Tag
-	sum := maphash.String(s.levelSeed, r.Body)
+// releaseLevels is every stored release's level on its own, by repo key and tag, as the
+// detail page flags its notes (without a running release whose repeated lines it would
+// skip). A repo's levels are kept until it's fetched again (its fetched_at changes) or a
+// release shows up that they don't cover (a sync that failed partway keeps the pages it got),
+// so only then are its bodies read. Repos no longer stored drop out of the cache.
+func (s *Server) releaseLevels(ctx context.Context, releases map[string][]store.Release, states map[string]store.RepoState) (map[string]map[string]analysis.Level, error) {
 	s.levelsMu.Lock()
-	e, ok := s.levels[key]
-	s.levelsMu.Unlock()
-	if ok && e.sum == sum {
-		return e.level
+	defer s.levelsMu.Unlock()
+	next := make(map[string]repoLevels, len(releases))
+	for key, rels := range releases {
+		fetched := states[key].FetchedAt
+		if c, ok := s.levels[key]; ok && c.fetchedAt.Equal(fetched) && covers(c.byTag, rels) {
+			next[key] = c
+			continue
+		}
+		full, err := s.store.Releases(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		c := repoLevels{fetchedAt: fetched, byTag: make(map[string]analysis.Level, len(full))}
+		for _, r := range full {
+			c.byTag[r.Tag] = analysis.Analyze(r.Body, nil).Level
+		}
+		next[key] = c
 	}
-	lvl := analysis.Analyze(r.Body, nil).Level
-	s.levelsMu.Lock()
-	s.levels[key] = cachedLevel{sum: sum, level: lvl}
-	s.levelsMu.Unlock()
-	return lvl
+	s.levels = next
+	out := make(map[string]map[string]analysis.Level, len(next))
+	for key, c := range next {
+		out[key] = c.byTag
+	}
+	return out, nil
 }
 
-type cachedLevel struct {
-	sum   uint64 // of the body it was computed from
-	level analysis.Level
+// covers says whether levels has every release in rels.
+func covers(levels map[string]analysis.Level, rels []store.Release) bool {
+	for _, r := range rels {
+		if _, ok := levels[r.Tag]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+type repoLevels struct {
+	fetchedAt time.Time // the repo's fetched_at when the levels were computed
+	byTag     map[string]analysis.Level
 }
 
 // ── check health ─────────────────────────────────────────
@@ -1049,7 +1175,7 @@ func (s *Server) lifetimeStats(d *statsData) lifetimeJSON {
 	for key, rels := range d.releases {
 		out.ReleasesStored += len(rels)
 		for _, r := range rels {
-			if s.releaseLevel(key, r) == analysis.Breaking {
+			if d.levels[key][r.Tag] == analysis.Breaking {
 				out.BreakingFlagged++
 			}
 		}
@@ -1094,25 +1220,45 @@ func longestStreak(rows []store.RunStats) *streakJSON {
 
 // ── helpers ──────────────────────────────────────────────
 
-// thin keeps one item per UTC day when there are more than maxSeriesPoints: the first of
-// the day, replaced by a later one whenever replace(kept, later) says so. Items are oldest first.
+// thin keeps one item per UTC day when there are more than maxSeriesPoints, and per week,
+// then per month, while there are still too many: the first of each, replaced by a later
+// one whenever replace(kept, later) says so. Items are oldest first.
 func thin[T any](items []T, at func(T) time.Time, replace func(kept, later T) bool) []T {
-	if len(items) <= maxSeriesPoints {
-		return items
+	buckets := []func(time.Time) string{
+		func(t time.Time) string { return t.UTC().Format(time.DateOnly) },
+		weekOf,
+		func(t time.Time) string { return t.UTC().Format("2006-01") },
 	}
-	var out []T
-	var day string
-	for _, it := range items {
-		d := at(it).UTC().Format(time.DateOnly)
-		switch {
-		case len(out) == 0 || d != day:
-			out = append(out, it)
-			day = d
-		case replace(out[len(out)-1], it):
-			out[len(out)-1] = it
+	for _, bucket := range buckets {
+		if len(items) <= maxSeriesPoints {
+			break
 		}
+		var out []T
+		var cur string
+		for _, it := range items {
+			b := bucket(at(it))
+			switch {
+			case len(out) == 0 || b != cur:
+				out = append(out, it)
+				cur = b
+			case replace(out[len(out)-1], it):
+				out[len(out)-1] = it
+			}
+		}
+		items = out
 	}
-	return out
+	return items
+}
+
+// compareBool orders false before true.
+func compareBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case a:
+		return 1
+	}
+	return -1
 }
 
 // median of ms, the mean of the middle two for an even count; nil when empty.
