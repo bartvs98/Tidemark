@@ -75,7 +75,7 @@
                 </div>
               </div>
             } @else {
-              <p class="text-fg-muted" data-testid="time-by-kind-empty">Needs release dates</p>
+              <tm-bar-list label="Time to update by kind" [items]="[]" empty="Needs release dates" data-testid="time-by-kind-empty" />
             }
           }
         </tm-card>
