@@ -1,3 +1,4 @@
+<div [class]="fill() ? 'absolute inset-0 flex flex-col' : ''">
 @if (chart(); as c) {
   @if (showLegend()) {
     <ul class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted" aria-hidden="true">
@@ -8,10 +9,11 @@
       }
     </ul>
   }
+  <div #box [class.min-h-0]="fill()" [class.flex-1]="fill()">
   <svg
     #svg
     class="tm-chart-svg"
-    [attr.height]="height()"
+    [attr.height]="drawHeight()"
     role="img"
     [attr.aria-label]="label()"
     [attr.aria-describedby]="tip() ? tipId : null"
@@ -43,6 +45,7 @@
     <!-- Each bar's whole slot is its hit area. -->
     <rect [attr.x]="c.left" [attr.y]="0" [attr.width]="c.plotW" [attr.height]="c.base" fill="transparent" />
   </svg>
+  </div>
   @if (tip(); as t) {
     <tm-chart-tip [id]="tipId" [heading]="t.heading" [rows]="t.rows" [note]="t.note" [anchor]="t.anchor" />
   }
@@ -83,7 +86,8 @@
     </table>
   </div>
 } @else {
-  <div class="flex items-center justify-center rounded-md text-sm text-fg-muted" [style.height.px]="height()">
+  <div class="flex items-center justify-center rounded-md text-sm text-fg-muted" [class.flex-1]="fill()" [style.height.px]="fill() ? null : height()">
     {{ empty() }}
   </div>
 }
+</div>

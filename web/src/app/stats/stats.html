@@ -53,7 +53,7 @@
           <tm-time-chart label="Releases behind" [points]="debtPoints()" data-testid="debt-chart" />
         </tm-card>
         <tm-card heading="Updates applied per week">
-          <tm-bar-chart label="Updates applied per week" [bars]="weekBars()" empty="No updates applied in this range" />
+          <tm-bar-chart label="Updates applied per week" [bars]="weekBars()" [fill]="true" empty="No updates applied in this range" />
         </tm-card>
         <tm-card heading="Updates per stack">
           <tm-bar-list label="Updates per stack" [items]="stackItems()" empty="No updates applied in this range" />
