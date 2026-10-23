@@ -450,6 +450,52 @@ func TestStatsWeeklyRequestsAndEmptyRuns(t *testing.T) {
 	}
 }
 
+// A repo whose stored notes stop before its first release (more pages exist) only counts
+// in the months it fully covers; a repo with its whole history counts everywhere.
+func TestReleasesPerMonthOnlyCoveredMonths(t *testing.T) {
+	srv, _, db := statsServer(t, staticSource{
+		ctrApp("fast", "1.0.0", map[string]string{"tidemark.repo": "github.com/team/fast"}),
+		ctrApp("slow", "1.0.0", map[string]string{"tidemark.repo": "github.com/team/slow"}),
+	})
+	ctx := context.Background()
+	now := time.Now().UTC()
+	thisMonth := monthOf(now)
+	at := func(monthsBack int) time.Time { return thisMonth.AddDate(0, -monthsBack, 1) }
+	// fast: notes reach back 2 months, with more pages unfetched, so it covers from last month.
+	_ = db.SaveReleases(ctx, "github.com/team/fast", []store.Release{
+		{Tag: "v1.0.0", PublishedAt: at(2)}, {Tag: "v1.1.0", PublishedAt: at(1)}, {Tag: "v1.2.0", PublishedAt: at(0)},
+	}, false)
+	_ = db.SaveRepoState(ctx, store.RepoState{Repo: "github.com/team/fast", Kind: "releases", HasMore: true, FetchedAt: now})
+	// slow: its whole history, back 4 months.
+	_ = db.SaveReleases(ctx, "github.com/team/slow", []store.Release{
+		{Tag: "v0.9.0", PublishedAt: at(4)}, {Tag: "v1.0.0", PublishedAt: at(1)},
+	}, false)
+	_ = db.SaveRepoState(ctx, store.RepoState{Repo: "github.com/team/slow", Kind: "releases", FetchedAt: now})
+
+	out := getStats(t, srv.Handler(fstest.MapFS{}), "all")
+	got := map[string]monthReleasesJSON{}
+	for _, m := range out.Upstream.PerMonth {
+		got[m.Month] = m
+	}
+	month := func(back int) monthReleasesJSON { return got[thisMonth.AddDate(0, -back, 0).Format("2006-01")] }
+	if m := month(4); m.Releases != 1 || !m.Partial { // slow only
+		t.Errorf("4 months back = %+v", m)
+	}
+	if m := month(2); m.Releases != 0 || !m.Partial { // fast's oldest month is incomplete: left out
+		t.Errorf("2 months back = %+v", m)
+	}
+	if m := month(1); m.Releases != 2 || m.Partial {
+		t.Errorf("last month = %+v", m)
+	}
+	repos := map[string]repoStatsJSON{}
+	for _, r := range out.Upstream.Repos {
+		repos[r.Repo] = r
+	}
+	if !repos["team/fast"].Partial || repos["team/fast"].Releases != 3 || repos["team/slow"].Partial {
+		t.Errorf("repos = %+v", out.Upstream.Repos)
+	}
+}
+
 func mustDate(t *testing.T, s string) time.Time {
 	t.Helper()
 	d, err := time.Parse(time.DateOnly, s)

@@ -63,9 +63,11 @@ export interface UpstreamStats {
     attention: number; // of those, by analysis level (calm = releases - breaking - attention)
     lastRelease?: string; // newest published_at overall
     medianGapDays?: number; // median days between consecutive releases in range (needs 2+); one decimal
+    partial?: boolean; // the range reaches back past the stored notes: `releases` is a lower bound
   }[];
   /** All those repos together, per calendar month (UTC, 'YYYY-MM'), every month in range incl. zeros. */
-  perMonth: { month: string; releases: number; breaking: number; attention: number }[];
+  /** `partial`: some repos' stored notes don't reach back to this month, so they're left out of it. */
+  perMonth: { month: string; releases: number; breaking: number; attention: number; partial?: boolean }[];
   /** Applied updates in range with the most releases between from and to, top 5 (`ms`: time to update, 0 when unknown). */
   biggestJumps: (AppliedUpdate & { releases: number; class: UpdateKind })[];
 }

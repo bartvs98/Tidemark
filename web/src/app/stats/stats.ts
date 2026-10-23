@@ -9,6 +9,7 @@ import {
   TmIcon,
   TmSection,
   TmSegmented,
+  TmTooltip,
 } from '../ui';
 import { TmBarChart, TmBarList, TmStat, TmTimeChart } from '../ui/charts';
 import { ErrorKind } from '../dashboard/containers';
@@ -45,6 +46,7 @@ const TOP_BEHIND = 5;
     TmSegmented,
     TmStat,
     TmTimeChart,
+    TmTooltip,
   ],
   templateUrl: './stats.html',
   host: { class: 'block' },
@@ -164,8 +166,11 @@ export class Stats {
         { value: m.attention, tone: 'attention' as const, name: 'Attention' },
         { value: m.breaking, tone: 'breaking' as const, name: 'Breaking' },
       ],
+      faded: m.partial,
+      note: m.partial ? 'Leaves out repos whose notes start later' : undefined,
     }));
   });
+  protected readonly partialMonths = computed(() => this.data()?.upstream.perMonth.some((m) => m.partial) ?? false);
 
   // ── Check health ──
   protected readonly healthStats = computed(() => {

@@ -121,10 +121,13 @@ type upstreamJSON struct {
 }
 
 type repoStatsJSON struct {
-	Repo          string     `json:"repo"` // owner/name
-	URL           string     `json:"url"`
-	Containers    []string   `json:"containers"`
-	Releases      int        `json:"releases"` // published in range
+	Repo       string   `json:"repo"` // owner/name
+	URL        string   `json:"url"`
+	Containers []string `json:"containers"`
+	Releases   int      `json:"releases"` // published in range
+	// Partial: the range reaches back further than the stored notes, which stop before the
+	// repo's first release (more pages exist), so Releases is a lower bound.
+	Partial       bool       `json:"partial,omitempty"`
 	Breaking      int        `json:"breaking"`
 	Attention     int        `json:"attention"`
 	LastRelease   *time.Time `json:"lastRelease,omitempty"`
@@ -136,6 +139,9 @@ type monthReleasesJSON struct {
 	Releases  int    `json:"releases"`
 	Breaking  int    `json:"breaking"`
 	Attention int    `json:"attention"`
+	// Partial: some of the repos' stored notes don't reach back to this month, so they're
+	// left out of it (only repos covering the whole month count).
+	Partial bool `json:"partial,omitempty"`
 }
 
 type jumpJSON struct {
@@ -367,6 +373,10 @@ type statsData struct {
 	history    []store.HistoryEntry                // all, oldest first
 	calls      []store.AICall                      // all, oldest first
 	applied    []appliedInfo                       // every history row with a previous image
+	// coveredFrom: per repo key, where its stored notes are complete from: the start of the
+	// month after its oldest stored release when older ones weren't fetched (has_more), zero
+	// when the whole history is stored.
+	coveredFrom map[string]time.Time
 }
 
 type currentContainer struct {
@@ -445,6 +455,25 @@ func (s *Server) loadStats(ctx context.Context, now, since time.Time) (*statsDat
 				d.repoOf[c.Name] = repo
 			}
 		}
+	}
+	d.coveredFrom = map[string]time.Time{}
+	for _, repo := range d.repoOf {
+		key := repo.Key()
+		if _, done := d.coveredFrom[key]; done {
+			continue
+		}
+		st, ok, err := s.store.RepoState(ctx, key)
+		if err != nil {
+			return nil, false, err
+		}
+		var from time.Time
+		if ok && st.HasMore {
+			// The oldest stored release's month is only partly there, so coverage starts after it.
+			if oldest, ok := oldestPublished(d.releases[key]); ok {
+				from = monthOf(oldest).AddDate(0, 1, 0)
+			}
+		}
+		d.coveredFrom[key] = from
 	}
 	d.applied = s.appliedUpdates(ctx, d)
 	return d, partial, nil
@@ -651,6 +680,7 @@ func (s *Server) upstreamStats(d *statsData) upstreamJSON {
 	type dated struct {
 		at    time.Time
 		level analysis.Level
+		key   string
 	}
 	var all []dated // every dated release of these repos
 	for key, repo := range repos {
@@ -664,7 +694,7 @@ func (s *Server) upstreamStats(d *statsData) upstreamJSON {
 		for _, r := range rels {
 			lvl := s.releaseLevel(key, r)
 			if !r.PublishedAt.IsZero() {
-				all = append(all, dated{r.PublishedAt, lvl})
+				all = append(all, dated{r.PublishedAt, lvl, key})
 				if rj.LastRelease == nil || r.PublishedAt.After(*rj.LastRelease) {
 					t := r.PublishedAt.UTC()
 					rj.LastRelease = &t
@@ -686,6 +716,9 @@ func (s *Server) upstreamStats(d *statsData) upstreamJSON {
 			}
 		}
 		rj.MedianGapDays = medianGapDays(times)
+		if from := d.coveredFrom[key]; !from.IsZero() && (d.since.IsZero() || d.since.Before(from)) {
+			rj.Partial = true
+		}
 		out.Repos = append(out.Repos, rj)
 	}
 	slices.SortFunc(out.Repos, func(a, b repoStatsJSON) int {
@@ -711,9 +744,22 @@ func (s *Server) upstreamStats(d *statsData) upstreamJSON {
 			idx[m.Format("2006-01")] = len(out.PerMonth)
 			out.PerMonth = append(out.PerMonth, monthReleasesJSON{Month: m.Format("2006-01")})
 		}
+		// A month only counts the repos whose notes cover all of it, so older months aren't
+		// lower just because fast-moving repos' stored notes don't reach back that far.
+		for key := range repos {
+			if len(d.releases[key]) == 0 {
+				continue
+			}
+			from := d.coveredFrom[key]
+			for i := range out.PerMonth {
+				if m, _ := time.Parse("2006-01", out.PerMonth[i].Month); m.Before(from) {
+					out.PerMonth[i].Partial = true
+				}
+			}
+		}
 		for _, r := range all {
 			i, ok := idx[r.at.UTC().Format("2006-01")]
-			if !ok || !d.inRange(r.at) {
+			if !ok || !d.inRange(r.at) || r.at.Before(d.coveredFrom[r.key]) {
 				continue
 			}
 			pm := &out.PerMonth[i]

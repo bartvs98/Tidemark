@@ -31,7 +31,7 @@
       <text class="tm-chart-axis" data-axis="y" [attr.x]="c.left - 8" [attr.y]="g.y" text-anchor="end" dominant-baseline="middle">{{ g.label }}</text>
     }
     @for (col of c.columns; track $index) {
-      <g>
+      <g [attr.opacity]="col.faded ? 0.4 : null">
         @for (s of col.segments; track $index) {
           <path [attr.d]="s.d" [style.fill]="s.color" />
         }

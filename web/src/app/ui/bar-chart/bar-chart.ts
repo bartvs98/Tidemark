@@ -17,6 +17,8 @@ export interface ChartBar {
   segments: BarSegment[];
   /** Extra line in the tooltip and the table ("3 rate-limited"). */
   note?: string;
+  /** Drawn faded: the bar's data is incomplete (say what's missing in `note`). */
+  faded?: boolean;
 }
 
 const AXIS_H = 22;
@@ -117,7 +119,7 @@ export class TmBarChart {
         const d = columnPath(r(x), r(bottom - drawn), r(barW), r(drawn), j === top ? 4 : 0);
         return [{ d, color: TONE_COLOR[s.tone ?? 'accent'] }];
       });
-      return { x: left + i * band, center: left + i * band + band / 2, top: yOf(totals[i]), segments };
+      return { x: left + i * band, center: left + i * band + band / 2, top: yOf(totals[i]), segments, faded: !!b.faded };
     });
 
     // X labels: every n-th bar, counted back from the latest so it's always labelled.

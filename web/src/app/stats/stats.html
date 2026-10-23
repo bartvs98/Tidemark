@@ -70,6 +70,11 @@
       <div class="grid gap-4 sm:grid-cols-2 sm:gap-5">
         <tm-card heading="Releases per month">
           <tm-bar-chart label="Releases per month" [bars]="monthBars()" empty="No releases in this range" />
+          @if (partialMonths()) {
+            <p class="mt-2 text-xs text-fg-subtle" data-testid="partial-months">
+              Faded months leave out repos whose fetched release notes don't go back that far.
+            </p>
+          }
         </tm-card>
         <tm-card heading="Biggest jumps">
           <tm-bar-list label="Biggest jumps" [items]="jumpItems()" empty="No updates applied in this range" />
@@ -106,7 +111,9 @@
                       <a [href]="r.url" target="_blank" rel="noopener" class="block truncate font-mono text-sm">{{ r.repo }}</a>
                     </td>
                     <td data-stack="hide" class="truncate text-sm text-fg-muted sm:py-3">{{ r.containers.join(', ') }}</td>
-                    <td class="text-sm tabular-nums sm:py-3">{{ count(r.releases, 'release') }}</td>
+                    <td class="text-sm tabular-nums sm:py-3">
+                      <span [tmTooltip]="r.partial ? 'At least this many: older releases were not fetched' : null">{{ r.partial ? r.releases + '+ releases' : count(r.releases, 'release') }}</span>
+                    </td>
                     <td class="text-sm whitespace-nowrap sm:py-3" data-testid="repo-flagged">
                       @if (r.breaking || r.attention) {
                         <span class="inline-flex items-center gap-3">
