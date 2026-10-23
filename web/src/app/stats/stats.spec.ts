@@ -49,6 +49,7 @@ function fixture(overrides: Partial<StatsData> = {}): StatsData {
         },
       ],
       perMonth: [{ month: '2026-09', releases: 7, breaking: 1, attention: 1 }, { month: '2026-10', releases: 5, breaking: 1, attention: 0 }],
+      biggestJumps: [{ name: 'grafana', from: '10.4.0', to: '11.6.0', at: '2026-09-01T00:00:00Z', ms: 1, releases: 24, class: 'major' }],
     },
     health: {
       runs: { total: 60, failed: 2, byTrigger: { startup: 3, schedule: 55, manual: 2 }, medianMs: 4200, slowestMs: 31_000 },
@@ -114,9 +115,11 @@ describe('Stats', () => {
     for (const id of ['behind', 'upstream', 'health', 'ai', 'lifetime']) {
       expect(el.querySelector(`[data-testid="stats-${id}"]`), id).not.toBeNull();
     }
-    const rows = [...el.querySelectorAll('[data-testid="behind-row"]')];
-    expect(rows.map((r) => r.querySelector('a')?.textContent?.trim())).toEqual(['grafana', 'nginx']);
-    expect(rows[1].textContent).toContain('Reviewed');
+    // Longest behind: only containers with a known release date (nginx has no notes).
+    const behind = el.querySelector('[data-testid="longest-behind"]')!;
+    expect([...behind.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['grafana']);
+    expect(behind.textContent).toContain('9 releases');
+    expect(el.querySelector('[data-testid="repo-flagged"]')?.textContent).toMatch(/2 breaking\s+1 attention/);
     expect(el.querySelector('[data-testid="failing"]')?.textContent).toContain('mosquitto');
   });
 
@@ -144,7 +147,7 @@ describe('Stats', () => {
     const component = await render(fixture({ partial: true, behind: { ...fixture().behind, containers: [] } }));
     const el = component.nativeElement as HTMLElement;
     expect(el.querySelector('[data-testid="stats-partial"]')?.textContent).toContain("Docker couldn't be reached");
-    expect(el.querySelector('[data-testid="behind-empty"]')?.textContent).toContain('Not available without Docker');
+    expect(el.querySelector('[data-testid="longest-behind"]')?.textContent).toContain('Not available without Docker');
   });
 
   it('shows an error callout when the first load fails', async () => {

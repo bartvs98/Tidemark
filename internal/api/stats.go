@@ -32,6 +32,8 @@ const (
 	defaultStatsRange = "90d"
 	// A time series with more points than this keeps one per UTC day.
 	maxSeriesPoints = 180
+	// Top-N lists.
+	topJumps = 5
 	// Requests over a longer span than this are summed per week instead of per day.
 	maxRequestDays = 92
 	// "all" starts the releases per month at the oldest release, at most this many months back.
@@ -111,8 +113,9 @@ type tideJSON struct {
 }
 
 type upstreamJSON struct {
-	Repos    []repoStatsJSON     `json:"repos"`
-	PerMonth []monthReleasesJSON `json:"perMonth"`
+	Repos        []repoStatsJSON     `json:"repos"`
+	PerMonth     []monthReleasesJSON `json:"perMonth"`
+	BiggestJumps []jumpJSON          `json:"biggestJumps"`
 }
 
 type repoStatsJSON struct {
@@ -131,6 +134,12 @@ type monthReleasesJSON struct {
 	Releases  int    `json:"releases"`
 	Breaking  int    `json:"breaking"`
 	Attention int    `json:"attention"`
+}
+
+type jumpJSON struct {
+	appliedUpdateJSON        // Ms: time to update, 0 when unknown
+	Releases          int    `json:"releases"`
+	Class             string `json:"class"`
 }
 
 type healthJSON struct {
@@ -437,6 +446,8 @@ type appliedInfo struct {
 	// before that release was published (images often land before their release notes), which
 	// would otherwise read as an instant update.
 	toUpdate, behind *time.Duration
+	releases         int // releases after from up to and including to (0 without notes)
+	class            string
 }
 
 func (i appliedInfo) update(ms int64) *appliedUpdateJSON {
@@ -449,8 +460,13 @@ func (s *Server) appliedUpdates(ctx context.Context, d *statsData) []appliedInfo
 		if h.PrevImageID == "" {
 			continue
 		}
-		info := appliedInfo{h: h, stack: d.stackOf[h.ContainerName]}
+		info := appliedInfo{h: h, stack: d.stackOf[h.ContainerName], class: string(version.Digest)}
 		from, to := parseVersion(h.PrevRunning), parseVersion(h.Running)
+		if from != nil && to != nil {
+			if c := version.Classify(*from, *to); c != version.None {
+				info.class = string(c)
+			}
+		}
 		if repo, ok := d.repoOf[h.ContainerName]; ok && to != nil {
 			ch, err := s.changelogs.Changes(ctx, repo, from, to)
 			if err != nil {
@@ -460,6 +476,7 @@ func (s *Server) appliedUpdates(ctx context.Context, d *statsData) []appliedInfo
 					info.toUpdate = gap(rel.PublishedAt, h.DetectedAt)
 				}
 				if from != nil {
+					info.releases = len(ch.Releases)
 					if first, ok := oldestPublished(ch.Releases); ok {
 						info.behind = gap(first, h.DetectedAt)
 					}
@@ -597,7 +614,7 @@ func timeToUpdate(d *statsData) timeToUpdateJSON {
 // ── upstream ─────────────────────────────────────────────
 
 func (s *Server) upstreamStats(d *statsData) upstreamJSON {
-	out := upstreamJSON{Repos: []repoStatsJSON{}, PerMonth: []monthReleasesJSON{}}
+	out := upstreamJSON{Repos: []repoStatsJSON{}, PerMonth: []monthReleasesJSON{}, BiggestJumps: []jumpJSON{}}
 
 	repos := map[string]source.Repo{}
 	names := map[string][]string{}
@@ -683,6 +700,20 @@ func (s *Server) upstreamStats(d *statsData) upstreamJSON {
 			}
 		}
 	}
+
+	// Applied updates that skipped the most releases at once.
+	for _, a := range d.applied {
+		if !d.inRange(a.h.DetectedAt) || a.releases == 0 {
+			continue
+		}
+		var ms int64
+		if a.toUpdate != nil {
+			ms = a.toUpdate.Milliseconds()
+		}
+		out.BiggestJumps = append(out.BiggestJumps, jumpJSON{appliedUpdateJSON: *a.update(ms), Releases: a.releases, Class: a.class})
+	}
+	slices.SortStableFunc(out.BiggestJumps, func(a, b jumpJSON) int { return cmp.Or(cmp.Compare(b.Releases, a.Releases), b.At.Compare(a.At)) })
+	out.BiggestJumps = out.BiggestJumps[:min(len(out.BiggestJumps), topJumps)]
 	return out
 }
 

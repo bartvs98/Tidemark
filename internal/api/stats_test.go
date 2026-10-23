@@ -304,6 +304,10 @@ func TestStatsFromHistory(t *testing.T) {
 	if ttu.Count != 2 || ttu.MedianMs == nil || *ttu.MedianMs != (3*day).Milliseconds() {
 		t.Errorf("time to update = %+v", ttu)
 	}
+	if j := out.Upstream.BiggestJumps; len(j) != 2 || j[0].To != "1.2.0" || j[0].Releases != 2 || j[0].Class != "minor" ||
+		j[1].To != "2.0.0" || j[1].Releases != 1 || j[1].Class != "major" {
+		t.Errorf("biggest jumps = %+v", j)
+	}
 	runs := out.Health.Runs
 	if runs.Total != 4 || runs.Failed != 0 || runs.ByTrigger != (triggersJSON{Schedule: 2, Manual: 2}) ||
 		runs.MedianMs == nil || *runs.MedianMs != 3000 || runs.SlowestMs == nil || *runs.SlowestMs != 4000 {

@@ -65,6 +65,8 @@ export interface UpstreamStats {
   }[];
   /** All those repos together, per calendar month (UTC, 'YYYY-MM'), every month in range incl. zeros. */
   perMonth: { month: string; releases: number; breaking: number; attention: number }[];
+  /** Applied updates in range with the most releases between from and to, top 5 (`ms`: time to update, 0 when unknown). */
+  biggestJumps: (AppliedUpdate & { releases: number; class: UpdateKind })[];
 }
 
 export type FailureKind = 'rate-limit' | 'not-found' | 'timeout' | 'network' | 'registry';

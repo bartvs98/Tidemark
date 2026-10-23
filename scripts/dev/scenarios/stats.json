@@ -4,6 +4,7 @@
     { "sql": "scripts/dev/scenarios/stats.sql" },
 
     { "shot": "stats", "path": "/stats" },
-    { "shot": "stats-behind", "path": "/stats", "element": "[data-testid=stats-behind]" }
+    { "shot": "stats-behind", "path": "/stats", "element": "[data-testid=stats-behind]" },
+    { "shot": "stats-upstream", "path": "/stats", "element": "[data-testid=stats-upstream]" }
   ]
 }

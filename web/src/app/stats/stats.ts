@@ -3,19 +3,15 @@ import { HttpErrorResponse, httpResource } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import {
   SegmentOption,
-  TmAppIcon,
   TmButton,
   TmCallout,
   TmCard,
   TmIcon,
-  TmLevel,
   TmSection,
   TmSegmented,
-  TmUpdateClass,
-  TmVersionDiff,
 } from '../ui';
 import { TmBarChart, TmBarList, TmStat, TmTimeChart } from '../ui/charts';
-import { ErrorKind, REVIEW_ICONS } from '../dashboard/containers';
+import { ErrorKind } from '../dashboard/containers';
 import { errorKindLabel } from '../dashboard/format';
 import { formatDuration, formatTokens } from '../detail/ai-format';
 import { shortDate, timeAgo } from '../detail/dates';
@@ -31,7 +27,7 @@ const RANGES: SegmentOption<StatsRange>[] = [
   { value: 'all', label: 'All' },
 ];
 /** Rows of the "Behind" table shown before "Show all". */
-const BEHIND_ROWS = 10;
+const TOP_BEHIND = 5;
 
 /** The stats page: what Tidemark has seen over time (GET /api/stats). */
 @Component({
@@ -39,20 +35,16 @@ const BEHIND_ROWS = 10;
   imports: [
     RouterLink,
     StatsSkeleton,
-    TmAppIcon,
     TmBarChart,
     TmBarList,
     TmButton,
     TmCallout,
     TmCard,
     TmIcon,
-    TmLevel,
     TmSection,
     TmSegmented,
     TmStat,
     TmTimeChart,
-    TmUpdateClass,
-    TmVersionDiff,
   ],
   templateUrl: './stats.html',
   host: { class: 'block' },
@@ -86,7 +78,6 @@ export class Stats {
     return generated ? new Date(generated).getTime() : Date.now();
   });
 
-  protected readonly showAllBehind = signal(false);
 
   // ── Behind & updates ──
   protected readonly behindStats = computed(() => {
@@ -128,14 +119,32 @@ export class Stats {
     () =>
       this.data()?.behind.applied.perStack.map((s) => ({ label: s.stack || 'Ungrouped', value: s.count })) ?? [],
   );
-  protected readonly behindRows = computed(() => {
-    const rows = this.data()?.behind.containers ?? [];
-    return this.showAllBehind() ? rows : rows.slice(0, BEHIND_ROWS);
-  });
-  protected readonly behindHidden = computed(() => Math.max(0, (this.data()?.behind.containers.length ?? 0) - BEHIND_ROWS));
-  protected readonly reviewIcons = REVIEW_ICONS;
+  /** Current updates by how long ago the first newer release came out (needs release notes); top 5. */
+  protected readonly behindItems = computed(() =>
+    (this.data()?.behind.containers ?? [])
+      .filter((c) => c.behindSince)
+      .slice(0, TOP_BEHIND)
+      .map((c) => ({
+        label: c.name,
+        value: this.now() - new Date(c.behindSince!).getTime(),
+        display: behindFor(c.behindSince, this.now()),
+        hint: count(c.releasesBehind, 'release'),
+        href: `/containers/${encodeURIComponent(c.name)}`,
+      })),
+  );
 
   // ── Upstream ──
+  protected readonly jumpItems = computed(
+    () =>
+      this.data()?.upstream.biggestJumps.map((j) => ({
+        label: `${j.from} → ${j.to}`,
+        mono: true,
+        value: j.releases,
+        display: count(j.releases, 'release'),
+        hint: j.name,
+        href: `/containers/${encodeURIComponent(j.name)}`,
+      })) ?? [],
+  );
   protected readonly monthBars = computed(() => {
     const months = this.data()?.upstream.perMonth ?? [];
     const withYear = months.length > 12;
@@ -266,9 +275,6 @@ export class Stats {
   protected readonly longDuration = longDuration;
   protected readonly percentFormat = (v: number): string => percent(v);
 
-  protected behindText(since: string | undefined): string {
-    return behindFor(since, this.now());
-  }
   protected date(iso: string): string {
     return shortDate(iso, this.locale);
   }
@@ -280,7 +286,8 @@ export class Stats {
   }
   protected gapText(days: number | undefined): string {
     if (days === undefined) return '—';
-    return days < 1 ? 'under a day' : `${days} ${days === 1 ? 'day' : 'days'}`;
+    if (days < 1) return 'more than daily';
+    return days === 1 ? 'daily' : `every ${days} days`;
   }
 }
 
