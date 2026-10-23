@@ -33,10 +33,12 @@ import {
   TmVersionDiff,
   Toasts,
 } from '../ui';
+import { BarListItem, ChartBar, TimePoint, TmBarChart, TmBarList, TmStat, TmTimeChart } from '../ui/charts';
 import { MarkdownFlag, TmMarkdown } from '../ui/markdown/markdown';
 import { ContainerColumnBar } from '../dashboard/column-bar/column-bar';
 import { DashboardSkeleton } from '../dashboard/dashboard-skeleton/dashboard-skeleton';
 import { DetailSkeleton } from '../detail/detail-skeleton/detail-skeleton';
+import { StatsSkeleton } from '../stats/stats-skeleton/stats-skeleton';
 import { ContainerLink, ContainerTable } from '../dashboard/container-table/container-table';
 import { ContainerTile } from '../dashboard/container-tile/container-tile';
 import { SecretSetting } from '../settings/secret-setting/secret-setting';
@@ -113,6 +115,7 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
     ContainerColumnBar,
     DashboardSkeleton,
     DetailSkeleton,
+    StatsSkeleton,
     ContainerTable,
     ContainerTile,
     TmAppIcon,
@@ -143,6 +146,10 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
     TmThemeSwitch,
     TmTideGauge,
     TmTooltip,
+    TmBarChart,
+    TmBarList,
+    TmStat,
+    TmTimeChart,
     TmUpdateClass,
     TmVersionDiff,
     ...TM_TABS,
@@ -750,6 +757,44 @@ export class Styleguide {
     { level: 0.15, text: '12 releases behind' },
   ];
   protected readonly frameLevels = ['attention', 'breaking'] as const;
+
+  // ── Charts (stats page) ──
+  protected readonly percent = (v: number) => `${Math.round(v * 100)}%`;
+  /** Up to date ÷ checked, one check run every 6 hours for 30 days: dips when updates land, recovers as they're applied. */
+  protected readonly tidePoints: TimePoint[] = Array.from({ length: 120 }, (_, i) => {
+    const at = new Date(Date.UTC(2026, 8, 23, 6) + i * 6 * 3_600_000).toISOString();
+    const behind = Math.round(2 + 2 * Math.sin(i / 9) + (i % 17 < 4 ? 3 : 0));
+    return { at, value: (25 - Math.max(0, behind)) / 25, note: `${25 - Math.max(0, behind)} of 25 checked` };
+  });
+  protected readonly tideOnePoint: TimePoint[] = [this.tidePoints[0]];
+  /** Applied updates per week, 13 weeks. */
+  protected readonly appliedWeeks: ChartBar[] = [2, 0, 3, 5, 1, 0, 4, 2, 6, 1, 3, 0, 2].map((n, i) => ({
+    label: new Date(Date.UTC(2026, 6, 27) + i * 7 * 86_400_000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }),
+    segments: [{ name: 'Updates applied', value: n }],
+  }));
+  /** Releases per month across the watched repos, calm / attention / breaking. */
+  protected readonly releaseMonths: ChartBar[] = (
+    [['May', 14, 2, 0], ['Jun', 9, 1, 1], ['Jul', 17, 3, 0], ['Aug', 11, 0, 2], ['Sep', 21, 4, 1], ['Oct', 8, 1, 0]] as const
+  ).map(([label, calm, attention, breaking]) => ({
+    label,
+    segments: [
+      { name: 'Calm', value: calm },
+      { name: 'Attention', value: attention, tone: 'attention' as const },
+      { name: 'Breaking', value: breaking, tone: 'breaking' as const },
+    ],
+  }));
+  protected readonly emptyBars: ChartBar[] = [{ label: 'Oct', segments: [{ name: 'Updates applied', value: 0 }] }];
+  protected readonly stackItems: BarListItem[] = [
+    { label: 'media', value: 9, href: '/styleguide', hint: '5 containers' },
+    { label: 'immich', value: 6, href: '/styleguide', hint: '4 containers' },
+    { label: 'monitoring', value: 4, hint: '3 containers' },
+    { label: 'No stack', value: 2, tone: 'muted' },
+  ];
+  protected readonly jumpItems: BarListItem[] = [
+    { label: '1.118.2 → 1.132.0', value: 14, display: '14 releases', hint: 'immich-server', mono: true },
+    { label: '10.9.11 → 10.11.0', value: 6, display: '6 releases', hint: 'jellyfin', mono: true },
+    { label: '4.0.8 → 4.0.14', value: 3, display: '3 releases', hint: 'sonarr', mono: true },
+  ];
 
   /** Sample rows and tiles link back here instead of to a detail page that doesn't exist. */
   protected readonly sampleLink: ContainerLink = () => ['/styleguide'];

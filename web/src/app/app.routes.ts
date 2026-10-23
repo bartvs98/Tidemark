@@ -12,6 +12,11 @@ export const routes: Routes = [
     loadComponent: () => import('./detail/detail').then((m) => m.ContainerDetail),
   },
   {
+    path: 'stats',
+    title: 'Stats · Tidemark',
+    loadComponent: () => import('./stats/stats').then((m) => m.Stats),
+  },
+  {
     path: 'styleguide',
     title: 'Styleguide · Tidemark',
     loadComponent: () => import('./styleguide/styleguide').then((m) => m.Styleguide),

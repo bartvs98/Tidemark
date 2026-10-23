@@ -12,12 +12,13 @@
 - **Reviewed, snoozed, history.** Mark an update as read up to its latest version, or snooze it for a while or until a newer version; a History tab lists the image changes Tidemark has seen per container.
 - **AI summaries (opt-in, your own key):** a short "what changed / what you need to do" for the releases in between, with a verdict that can only raise the risk level. Anthropic, Gemini, or any OpenAI-compatible endpoint, including a local Ollama.
 - **Telegram notifications** for new updates only, breaking ones first, with an optional daily digest or a breaking-only mode.
+- **Stats:** how long containers stay behind, time from release to update, up to date over time, upstream release cadence and breaking releases, check health and AI usage.
 - **Per-container rules** via labels or a config file: ignore, pin to `1.4.x`, no majors, include pre-releases, custom tag pattern, source repo override.
 - **Read-only and private.** Tidemark never changes your containers. It talks to Docker through a read-only socket proxy and never reads container environment variables.
 
 ![The Tidemark dashboard in dark mode](docs/brand/screenshot.png)
 
-Status: **in daily use on a home server.** Checking, changelogs, breaking-change highlighting, rules, reviewing and snoozing, update history, Telegram notifications and AI summaries are done. Next on the [roadmap](docs/ROADMAP.md): stats. Only public images are supported.
+Status: **in daily use on a home server.** Checking, changelogs, breaking-change highlighting, rules, reviewing and snoozing, update history, Telegram notifications, AI summaries and stats are done. More ideas are on the [roadmap](docs/ROADMAP.md). Only public images are supported.
 
 ## Run it with Docker
 

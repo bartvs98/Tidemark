@@ -1,0 +1,9 @@
+{
+  "base": "scripts/dev/demo-snapshot.json",
+  "steps": [
+    { "sql": "scripts/dev/scenarios/stats.sql" },
+
+    { "shot": "stats", "path": "/stats" },
+    { "shot": "stats-behind", "path": "/stats", "element": "[data-testid=stats-behind]" }
+  ]
+}

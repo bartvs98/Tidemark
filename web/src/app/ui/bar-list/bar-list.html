@@ -1,0 +1,30 @@
+@if (rows().length) {
+  <ul class="flex flex-col gap-3" [attr.aria-label]="label()">
+    @for (row of rows(); track $index) {
+      <li>
+        <div class="flex items-baseline gap-3 text-sm">
+          <span class="min-w-0 flex-1 truncate">
+            @if (row.href && row.internal) {
+              <a class="text-fg hover:text-accent-text hover:underline" [class.font-mono]="row.mono" [routerLink]="row.href">{{ row.label }}</a>
+            } @else if (row.href) {
+              <a class="text-fg hover:text-accent-text hover:underline" [class.font-mono]="row.mono" [href]="row.href" target="_blank" rel="noopener noreferrer">{{ row.label }}</a>
+            } @else {
+              <span class="text-fg" [class.font-mono]="row.mono">{{ row.label }}</span>
+            }
+            @if (row.hint) {
+              <span class="ml-2 text-xs text-fg-muted">{{ row.hint }}</span>
+            }
+          </span>
+          <span class="shrink-0 font-medium text-fg tabular-nums">{{ row.text }}</span>
+        </div>
+        <div class="mt-1 h-2" aria-hidden="true">
+          @if (row.pct > 0) {
+            <div class="h-full min-w-0.5 rounded-r-sm" [style.width.%]="row.pct" [style.background-color]="row.color"></div>
+          }
+        </div>
+      </li>
+    }
+  </ul>
+} @else {
+  <p class="py-6 text-center text-sm text-fg-muted">{{ empty() }}</p>
+}

@@ -1,0 +1,363 @@
+<div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-4">
+  <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl" data-testid="stats-heading">Stats</h1>
+  <tm-segmented label="Range" size="md" [options]="ranges" [(value)]="range" data-testid="range" />
+</div>
+<p class="mt-2 min-h-5 text-fg-muted">
+  @if (data(); as d) {
+    @if (d.since) {
+      Since {{ date(d.since) }}
+    } @else {
+      Everything Tidemark has recorded
+    }
+  }
+</p>
+
+@if (data() && resource.error()) {
+  <tm-callout tone="attention" heading="Couldn't refresh" class="mt-6" data-testid="stats-refresh-error">
+    Showing the stats as last loaded.
+    <span class="mt-1 block font-mono text-xs break-all">{{ errorMessage() }}</span>
+  </tm-callout>
+}
+
+@if (data(); as d) {
+  @if (d.partial) {
+    <tm-callout tone="info" class="mt-6" data-testid="stats-partial">
+      Docker couldn't be reached, so current containers are missing.
+    </tm-callout>
+  }
+
+  <div class="mt-8 flex flex-col gap-12 transition-opacity sm:mt-10 sm:gap-14" [class.opacity-60]="loading()" data-testid="stats-body">
+    <!-- Behind & updates -->
+    <tm-section heading="Behind & updates" icon="clock" data-testid="stats-behind">
+      @if (behindStats(); as s) {
+        <div class="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
+          <tm-stat label="Up to date now" [value]="s.upToDate" [hint]="s.upToDateHint" icon="circle-check" />
+          <tm-stat label="Updates applied" [value]="s.applied" hint="in this range" />
+          <tm-stat label="Median time to update" [value]="s.median" [hint]="s.medianHint" />
+          <tm-stat label="Releases behind" [value]="s.releasesBehind" [hint]="s.releasesHint" />
+        </div>
+      }
+
+      <div class="mt-6 grid gap-4 sm:grid-cols-2 sm:gap-5">
+        <tm-card heading="Up to date">
+          <tm-time-chart label="Up to date" [points]="tidePoints()" [max]="1" [format]="percentFormat" />
+        </tm-card>
+        <tm-card heading="Updates applied per week">
+          <tm-bar-chart label="Updates applied per week" [bars]="weekBars()" empty="No updates applied in this range" />
+        </tm-card>
+      </div>
+
+      <div class="mt-4 sm:mt-5">
+        <tm-card heading="Updates per stack">
+          <tm-bar-list label="Updates per stack" [items]="stackItems()" empty="No updates applied in this range" />
+        </tm-card>
+      </div>
+
+      <h3 class="mt-8 mb-3 text-base font-semibold">Behind right now</h3>
+      @if (d.behind.containers.length) {
+        <tm-card flush>
+          <div class="overflow-x-auto">
+            <table class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]" data-testid="behind-table">
+              <colgroup>
+                <col class="w-[30%]" />
+                <col class="w-[28%]" />
+                <col class="w-[22%]" />
+                <col class="w-[20%]" />
+              </colgroup>
+              <thead class="sm:sr-only">
+                <tr>
+                  <th scope="col">Container</th>
+                  <th scope="col">Version</th>
+                  <th scope="col">Update</th>
+                  <th scope="col">Behind</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (c of behindRows(); track c.name) {
+                  <tr class="tm-row-link" [class.opacity-60]="c.review" data-testid="behind-row">
+                    <td data-stack="full" class="sm:py-3.5">
+                      <div class="flex items-center gap-3">
+                        <tm-app-icon [icon]="c.icon" [name]="c.name" [size]="20" />
+                        <div class="min-w-0">
+                          <a
+                            [routerLink]="['/containers', c.name]"
+                            class="block truncate font-medium text-fg no-underline after:absolute after:inset-0 hover:no-underline"
+                            >{{ c.name }}</a
+                          >
+                          @if (c.stack) {
+                            <div class="truncate text-xs text-fg-subtle">{{ c.stack }}</div>
+                          }
+                        </div>
+                      </div>
+                    </td>
+                    <td data-stack="indent" class="sm:py-3.5"><tm-version-diff [from]="c.running" [to]="c.latest" /></td>
+                    <td class="sm:py-3.5">
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        <tm-update-class [kind]="c.class" />
+                        <tm-level [level]="c.level" />
+                        @if (c.review) {
+                          <span class="inline-flex items-center gap-1 text-xs text-fg-muted">
+                            <tm-icon [name]="reviewIcons[c.review]" [size]="12" />{{ c.review === 'reviewed' ? 'Reviewed' : 'Snoozed' }}
+                          </span>
+                        }
+                      </div>
+                    </td>
+                    <td class="text-sm text-fg-muted sm:py-3.5">
+                      @if (behindText(c.behindSince); as since) {
+                        <span>{{ since }}</span>
+                        @if (c.releasesBehind) {
+                          <span class="block text-xs text-fg-subtle">{{ count(c.releasesBehind, 'release') }}</span>
+                        }
+                      } @else {
+                        <span class="text-fg-subtle">{{ c.releasesBehind ? count(c.releasesBehind, 'release') : 'No notes yet' }}</span>
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </tm-card>
+        @if (behindHidden() && !showAllBehind()) {
+          <button tmButton size="sm" class="mt-3" (click)="showAllBehind.set(true)">Show all {{ d.behind.containers.length }}</button>
+        }
+      } @else {
+        <tm-card>
+          <p class="text-fg-muted" data-testid="behind-empty">
+            {{ d.partial ? 'Not available without Docker.' : 'Nothing behind right now.' }}
+          </p>
+        </tm-card>
+      }
+    </tm-section>
+
+    <!-- Upstream -->
+    <tm-section heading="Upstream" icon="git-compare" data-testid="stats-upstream">
+      <div class="grid gap-4 sm:grid-cols-2 sm:gap-5">
+        <tm-card heading="Releases per month">
+          <tm-bar-chart label="Releases per month" [bars]="monthBars()" empty="No releases in this range" />
+        </tm-card>
+        <tm-card heading="Biggest jumps">
+          <tm-bar-list label="Biggest jumps" [items]="jumpItems()" empty="No updates applied in this range" />
+        </tm-card>
+      </div>
+
+      <h3 class="mt-8 mb-3 text-base font-semibold">Repositories</h3>
+      @if (d.upstream.repos.length) {
+        <tm-card flush>
+          <div class="overflow-x-auto">
+            <table class="tm-table tm-table-stack table-fixed sm:min-w-[40rem]" data-testid="repos-table">
+              <colgroup>
+                <col class="w-[26%]" />
+                <col class="w-[18%]" />
+                <col class="w-[20%]" />
+                <col class="w-[18%]" />
+                <col class="w-[18%]" />
+              </colgroup>
+              <thead class="sm:sr-only">
+                <tr>
+                  <th scope="col">Repository</th>
+                  <th scope="col">Containers</th>
+                  <th scope="col">Releases</th>
+                  <th scope="col">Gap between releases</th>
+                  <th scope="col">Last release</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (r of d.upstream.repos; track r.repo) {
+                  <tr>
+                    <td data-stack="full" class="sm:py-3">
+                      <a [href]="r.url" target="_blank" rel="noopener" class="block truncate font-mono text-sm">{{ r.repo }}</a>
+                    </td>
+                    <td data-stack="hide" class="truncate text-sm text-fg-muted sm:py-3">{{ r.containers.join(', ') }}</td>
+                    <td class="text-sm sm:py-3">
+                      <span class="tabular-nums">{{ count(r.releases, 'release') }}</span>
+                      @if (r.breaking) {
+                        <span class="ml-2 inline-flex items-center gap-1 text-breaking">
+                          <tm-icon name="octagon-alert" [size]="14" />{{ r.breaking }} breaking
+                        </span>
+                      }
+                      @if (r.attention) {
+                        <span class="ml-2 inline-flex items-center gap-1 text-attention">
+                          <tm-icon name="triangle-alert" [size]="14" />{{ r.attention }} attention
+                        </span>
+                      }
+                    </td>
+                    <td class="text-sm text-fg-muted sm:py-3">{{ gapText(r.medianGapDays) }}</td>
+                    <td class="text-sm text-fg-muted sm:py-3">{{ r.lastRelease ? date(r.lastRelease) : '—' }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </tm-card>
+      } @else {
+        <tm-card>
+          <p class="text-fg-muted" data-testid="repos-empty">
+            {{ d.partial ? 'Not available without Docker.' : 'No release notes stored yet.' }}
+          </p>
+        </tm-card>
+      }
+    </tm-section>
+
+    <!-- Check health -->
+    <tm-section heading="Check health" icon="refresh-cw" data-testid="stats-health">
+      @if (healthStats(); as s) {
+        <div class="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
+          <tm-stat label="Check runs" [value]="s.runs" [hint]="s.runsHint" />
+          <tm-stat label="Failed runs" [value]="s.failed" />
+          <tm-stat label="Median duration" [value]="s.median" [hint]="s.slowest" />
+          <tm-stat label="GitHub requests left" [value]="s.quota" [hint]="s.quotaHint" />
+        </div>
+      }
+
+      <div class="mt-6 grid gap-4 sm:grid-cols-2 sm:gap-5">
+        <tm-card heading="Check duration">
+          <tm-time-chart label="Check duration" [points]="durationPoints()" [format]="formatDuration" />
+        </tm-card>
+        <tm-card heading="Requests per day">
+          <tm-bar-chart label="Requests per day" [bars]="requestBars()" empty="No requests recorded in this range" />
+          @if (healthStats(); as s) {
+            @if (s.limited) {
+              <p class="mt-3 flex items-center gap-1.5 text-sm text-attention" data-testid="limited">
+                <tm-icon name="triangle-alert" [size]="14" />{{ count(s.limited, 'request') }} rate limited
+              </p>
+            }
+          }
+        </tm-card>
+      </div>
+
+      <div class="mt-4 sm:mt-5">
+        <tm-card heading="Failures by reason">
+          <tm-bar-list label="Failures by reason" [items]="failureItems()" empty="No failed checks in this range" />
+        </tm-card>
+      </div>
+
+      @if (d.health.failing.length) {
+        <h3 class="mt-8 mb-3 text-base font-semibold">Failing right now</h3>
+        <tm-card flush>
+          <ul class="divide-y divide-line" data-testid="failing">
+            @for (f of d.health.failing; track f.name) {
+              <li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3">
+                <a [routerLink]="['/containers', f.name]" class="font-medium">{{ f.name }}</a>
+                <span class="inline-flex items-center gap-1 text-sm text-attention">
+                  <tm-icon name="triangle-alert" [size]="14" />{{ f.kind ? capitalize(f.kind.replace('-', ' ')) : 'Failed' }}
+                </span>
+                <span class="text-xs text-fg-subtle">since {{ ago(f.since) }}</span>
+                <span class="block w-full truncate font-mono text-xs text-fg-subtle">{{ f.error }}</span>
+              </li>
+            }
+          </ul>
+        </tm-card>
+      }
+    </tm-section>
+
+    <!-- AI usage -->
+    @if (d.ai) {
+      <tm-section heading="AI usage" icon="sparkles" data-testid="stats-ai">
+        @if (aiStats(); as s) {
+          <div class="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
+            <tm-stat label="Summaries" [value]="s.calls" [hint]="s.callsHint" />
+            <tm-stat label="Tokens in" [value]="s.tokensIn" [hint]="s.tokensOut + ' out'" />
+            <tm-stat label="Failed" [value]="s.failed" />
+            <tm-stat label="Median duration" [value]="s.median" />
+          </div>
+        }
+
+        <div class="mt-6">
+          <tm-card heading="Tokens per month">
+            <tm-bar-chart label="Tokens per month" [bars]="tokenBars()" [format]="formatTokens" empty="No summaries in this range" />
+          </tm-card>
+        </div>
+
+        @if (d.ai.byModel.length) {
+          <h3 class="mt-8 mb-3 text-base font-semibold">By model</h3>
+          <tm-card flush>
+            <div class="overflow-x-auto">
+              <table class="tm-table tm-table-stack table-fixed sm:min-w-[36rem]" data-testid="models-table">
+                <colgroup>
+                  <col class="w-[40%]" />
+                  <col class="w-[15%]" />
+                  <col class="w-[15%]" />
+                  <col class="w-[15%]" />
+                  <col class="w-[15%]" />
+                </colgroup>
+                <thead class="sm:sr-only">
+                  <tr>
+                    <th scope="col">Model</th>
+                    <th scope="col">Summaries</th>
+                    <th scope="col">Failed</th>
+                    <th scope="col">Tokens in</th>
+                    <th scope="col">Tokens out</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (m of d.ai.byModel; track m.provider + m.model) {
+                    <tr>
+                      <td data-stack="full" class="sm:py-3">
+                        <span class="font-mono text-sm">{{ m.model }}</span>
+                        <span class="ml-2 text-xs text-fg-subtle">{{ m.provider }}</span>
+                      </td>
+                      <td class="text-sm tabular-nums sm:py-3">{{ count(m.calls, 'summary', 'summaries') }}</td>
+                      <td class="text-sm tabular-nums text-fg-muted sm:py-3">{{ m.failed }} failed</td>
+                      <td class="text-sm tabular-nums text-fg-muted sm:py-3">{{ formatTokens(m.inputTokens) }} in</td>
+                      <td class="text-sm tabular-nums text-fg-muted sm:py-3">{{ formatTokens(m.outputTokens) }} out</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </tm-card>
+        }
+
+        @if (d.ai.slowest.length) {
+          <h3 class="mt-8 mb-3 text-base font-semibold">Slowest summaries</h3>
+          <tm-card flush>
+            <ul class="divide-y divide-line" data-testid="slowest">
+              @for (c of d.ai.slowest; track c.at + c.repo + c.to) {
+                <li class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3">
+                  <span class="font-mono text-sm">{{ c.repo }}</span>
+                  <span class="font-mono text-sm text-fg-muted">{{ c.from }} → {{ c.to }}</span>
+                  <span class="text-xs text-fg-subtle">{{ c.model }} · {{ date(c.at) }}</span>
+                  <span class="ml-auto text-sm font-medium tabular-nums">{{ formatDuration(c.ms) }}</span>
+                </li>
+              }
+            </ul>
+          </tm-card>
+        }
+      </tm-section>
+    }
+
+    <!-- Lifetime -->
+    <tm-section heading="Lifetime" icon="history" meta="ignores the range" data-testid="stats-lifetime">
+      @if (lifetime(); as l) {
+        <div class="grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
+          <tm-stat label="Watching since" [value]="l.since" [hint]="l.sinceHint" />
+          <tm-stat label="Check runs" [value]="d.lifetime.checkRuns" />
+          <tm-stat label="Containers tracked" [value]="d.lifetime.containersTracked" />
+          <tm-stat label="Updates applied" [value]="d.lifetime.updatesApplied" />
+          <tm-stat label="Release notes read" [value]="d.lifetime.releasesStored" />
+          <tm-stat label="Breaking releases flagged" [value]="d.lifetime.breakingFlagged" />
+          <tm-stat label="AI summaries" [value]="d.lifetime.summaries" />
+          <tm-stat label="Mean time to update" [value]="l.meanTime" />
+          @if (l.fastest; as u) {
+            <tm-stat label="Fastest update" [value]="span(u)" [hint]="u.name + ' to ' + u.to" />
+          }
+          @if (l.longestBehind; as u) {
+            <tm-stat label="Longest behind" [value]="span(u)" [hint]="u.name + ' to ' + u.to" />
+          }
+          @if (l.streak; as s) {
+            <tm-stat label="Longest up-to-date streak" [value]="count(s.runs, 'run')" [hint]="l.streakHint" />
+          }
+          <tm-stat label="Uptime" [value]="l.uptime" hint="since Tidemark started" />
+        </div>
+      }
+    </tm-section>
+  </div>
+} @else if (resource.error()) {
+  <tm-callout tone="attention" heading="Couldn't load stats." class="mt-8" data-testid="stats-error">
+    <span class="block">{{ errorMessage() }}</span>
+    <button tmButton size="sm" icon="refresh-cw" class="mt-2" (click)="resource.reload()">Try again</button>
+  </tm-callout>
+} @else {
+  <div class="mt-8 sm:mt-10"><tm-stats-skeleton /></div>
+}

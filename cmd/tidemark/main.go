@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+
 	"github.com/bartvs98/tidemark/internal/ai"
 	"github.com/bartvs98/tidemark/internal/api"
 	"github.com/bartvs98/tidemark/internal/changelog"
@@ -31,6 +33,7 @@ import (
 	"github.com/bartvs98/tidemark/internal/rules"
 	"github.com/bartvs98/tidemark/internal/settings"
 	reposource "github.com/bartvs98/tidemark/internal/source"
+	"github.com/bartvs98/tidemark/internal/stats"
 	"github.com/bartvs98/tidemark/internal/store"
 	tmversion "github.com/bartvs98/tidemark/internal/version"
 	"github.com/bartvs98/tidemark/web"
@@ -68,6 +71,7 @@ func main() {
 }
 
 func run(cfg config.Config, log *slog.Logger) error {
+	started := time.Now()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -84,7 +88,11 @@ func run(cfg config.Config, log *slog.Logger) error {
 	}
 	defer db.Close()
 
-	reg := registry.New("tidemark/"+version, registry.WithTagCache(db))
+	// Outgoing requests are counted per group for the stats page; each run stores the
+	// counts since the previous one.
+	reqs := stats.NewRequests()
+	reg := registry.New("tidemark/"+version, registry.WithTagCache(db),
+		registry.WithTransport(reqs.Wrap(remote.DefaultTransport, func(*http.Request) string { return "registry" })))
 	checks := check.New(source, reg, db, log)
 	checks.UseRulesFile(cfg.ConfigFile)
 	log.Info("config file", "path", cfg.ConfigFile)
@@ -101,7 +109,7 @@ func run(cfg config.Config, log *slog.Logger) error {
 	// Prefetch release notes for containers with an update, so the detail page is instant
 	// and the notes can be scanned for breaking changes, then summarise them when automatic
 	// AI summaries are on. The token comes from settings.
-	changelogs := changelog.New(db, "", log)
+	changelogs := changelog.New(db, "", log, changelog.WithTransport(reqs.Wrap(http.DefaultTransport, stats.Forge)))
 	checks.SetAfterCheck(func(ctx context.Context, c docker.Container, rs rules.Rules, r resolve.Result) {
 		if r.Class == tmversion.None {
 			return
@@ -149,16 +157,19 @@ func run(cfg config.Config, log *slog.Logger) error {
 	// Notifications: one Telegram message per check run with the new updates, or a digest.
 	// The service always exists; settings turn it on and off.
 	// After a run: delete the stored AI summaries no container needs any more (AI on or
-	// off), then notify. apiSrv is set below, before the first run.
+	// off), record the run's stats, then notify. apiSrv is set below, before the first run.
 	notifier := notify.New(db, notify.Options{Log: log})
 	var apiSrv *api.Server
-	checks.SetAfterRun(func(ctx context.Context, _ string) {
+	checks.SetAfterRun(func(ctx context.Context, run check.Finished) {
 		if keys, err := apiSrv.AIKeys(ctx); err != nil {
 			log.Debug("AI summary cleanup skipped", "err", err)
 		} else if n, err := aiSvc.Prune(ctx, keys); err != nil {
 			log.Warn("AI summary cleanup failed", "err", err)
 		} else if n > 0 {
 			log.Info("AI summaries cleaned up", "deleted", n)
+		}
+		if err := recordRunStats(ctx, db, apiSrv, run, reqs, changelogs); err != nil {
+			log.Warn("recording the run's stats failed", "err", err)
 		}
 		notifier.AfterRun(ctx)
 	})
@@ -182,6 +193,7 @@ func run(cfg config.Config, log *slog.Logger) error {
 		AI:         aiSvc,
 		ConfigFile: cfg.ConfigFile,
 		Background: ctx,
+		Started:    started,
 	})
 	notifier.UseSource(apiSrv.Updates)
 
@@ -331,6 +343,26 @@ func appliers(ctx context.Context, cfg config.Config, log *slog.Logger, checks *
 			return nil
 		},
 	}
+}
+
+// recordRunStats stores what the dashboard showed at the end of run, with the requests
+// made since the previous row and the last-known GitHub quota (no request is made). When
+// the counts can't be taken, the requests stay counted for the next row.
+func recordRunStats(ctx context.Context, db *store.Store, apiSrv *api.Server, run check.Finished, reqs *stats.Requests, changelogs *changelog.Service) error {
+	if run.ID == 0 {
+		return errors.New("the run wasn't recorded")
+	}
+	rs, err := apiSrv.RunStats(ctx)
+	if err != nil {
+		return err
+	}
+	rs.RunID, rs.At, rs.Duration = run.ID, run.FinishedAt, run.FinishedAt.Sub(run.StartedAt)
+	rs.Requests = reqs.Since()
+	if q, ok := changelogs.LastQuota(); ok {
+		rs.GitHubRemaining, rs.GitHubLimit = &q.Remaining, &q.Limit
+	}
+	// The run's context may be cancelled at shutdown; the row is still worth keeping.
+	return db.AddRunStats(context.WithoutCancel(ctx), rs)
 }
 
 func dockerSource(cfg config.Config) (docker.Source, error) {

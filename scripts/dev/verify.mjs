@@ -238,7 +238,7 @@ async function fill(value) {
   return result;
 }
 
-// Setup steps (api, snapshot, check) run once, in order; shots are taken afterwards.
+// Setup steps (api, snapshot, sql, check) run once, in order; shots are taken afterwards.
 const shotSteps = [];
 for (const step of scenario?.steps ?? []) {
   if (step.shot) {
@@ -258,6 +258,15 @@ for (const step of scenario?.steps ?? []) {
   } else if (step.snapshot) {
     patchSnapshot(step.snapshot);
     console.log(`✓ snapshot patched (${step.snapshot.map((p) => p.container).join(', ')})`);
+  } else if (step.sql) {
+    // Seed history for the stats page: run a SQL file against the running server's database
+    // (WAL mode, so a second connection can write alongside it).
+    const { DatabaseSync } = await import('node:sqlite');
+    const db = new DatabaseSync(join(out, 'data', 'tidemark.db'));
+    db.exec('PRAGMA busy_timeout = 5000');
+    db.exec(readFileSync(resolve(ROOT, step.sql), 'utf8'));
+    db.close();
+    console.log(`✓ sql ${step.sql}`);
   } else if (step.check) {
     await fetch(`${base}/api/checks`, { method: 'POST', headers: { 'X-Tidemark': '1' } });
     await new Promise((r) => setTimeout(r, 300));

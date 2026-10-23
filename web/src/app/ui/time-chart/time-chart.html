@@ -1,0 +1,53 @@
+@if (chart(); as c) {
+  <svg
+    #svg
+    class="tm-chart-svg"
+    [attr.height]="height()"
+    role="img"
+    [attr.aria-label]="label()"
+    [attr.aria-describedby]="tip() ? tipId : null"
+    tabindex="0"
+    (pointermove)="onPointer($event, svg)"
+    (pointerdown)="onPointer($event, svg)"
+    (pointerleave)="onLeave($event)"
+    (keydown)="onKey($event)"
+    (focus)="onFocus(svg)"
+    (blur)="active.set(null)"
+  >
+    @for (g of c.grid; track $index) {
+      <line class="tm-chart-grid" [attr.x1]="c.left" [attr.x2]="c.left + c.plotW" [attr.y1]="g.y" [attr.y2]="g.y" />
+      <text class="tm-chart-axis" data-axis="y" [attr.x]="c.left - 8" [attr.y]="g.y" text-anchor="end" dominant-baseline="middle">{{ g.label }}</text>
+    }
+    <path class="tm-chart-area" [attr.d]="c.area" [style.fill]="color()" />
+    <path class="tm-chart-line" [attr.d]="c.line" [style.stroke]="color()" />
+    @for (l of c.xLabels; track $index) {
+      <text class="tm-chart-axis" data-axis="x" [attr.x]="l.x" [attr.y]="c.base + 16" [attr.text-anchor]="l.anchor">{{ l.text }}</text>
+    }
+    @if (tip(); as t) {
+      <line class="tm-chart-crosshair" [attr.x1]="t.x" [attr.x2]="t.x" [attr.y1]="c.top" [attr.y2]="c.base" />
+      <circle class="tm-chart-dot" [attr.cx]="t.x" [attr.cy]="t.y" r="4" [style.fill]="color()" />
+    }
+    <!-- The whole plot is the hit area: the crosshair snaps to the nearest point. -->
+    <rect [attr.x]="c.left" [attr.y]="0" [attr.width]="c.plotW" [attr.height]="c.base" fill="transparent" />
+  </svg>
+  @if (tip(); as t) {
+    <tm-chart-tip [id]="tipId" [heading]="t.heading" [rows]="t.rows" [note]="t.note" [anchor]="t.anchor" />
+  }
+} @else {
+  <div class="flex items-center justify-center rounded-md text-sm text-fg-muted" [style.height.px]="height()">
+    {{ empty() }}
+  </div>
+}
+@if (points().length) {
+  <table class="sr-only">
+    <caption>{{ label() }}</caption>
+    <thead>
+      <tr><th scope="col">Date</th><th scope="col">Value</th>@if (hasNotes()) {<th scope="col">Note</th>}</tr>
+    </thead>
+    <tbody>
+      @for (p of points(); track $index) {
+        <tr><td>{{ dateText(p.at) }}</td><td>{{ format()(p.value) }}</td>@if (hasNotes()) {<td>{{ p.note ?? '' }}</td>}</tr>
+      }
+    </tbody>
+  </table>
+}

@@ -445,6 +445,58 @@
     </p>
   </section>
 
+  <!-- ── Charts ─────────────────────────────────────────── -->
+  <section data-testid="charts">
+    <h2 class="mb-1 text-xl font-semibold">Charts</h2>
+    <p class="mb-4 text-fg-muted">
+      For the stats page. Our own SVG, sized to their container. Marks are
+      <span class="font-mono text-sm">accent</span> unless the data is about risk
+      (<span class="font-mono text-sm">attention</span>, <span class="font-mono text-sm">breaking</span>) or
+      "other" (<span class="font-mono text-sm">muted</span>), and every series is named in the legend and
+      tooltip. Hover or tap for a readout; Tab to a chart and use the arrow keys. Each chart is an
+      image named by its <span class="font-mono text-sm">label</span> with an
+      <span class="font-mono text-sm">sr-only</span> table of its data.
+    </p>
+    <tm-card>
+      <div class="grid grid-cols-2 gap-x-6 gap-y-5 md:grid-cols-5" data-testid="chart-stats">
+        <tm-stat label="Up to date now" value="84" unit="%" hint="21 of 25 checked" />
+        <tm-stat label="Updates applied" [value]="23" hint="last 90 days" />
+        <tm-stat label="Median time to update" value="3" unit="days" hint="12 updates" icon="clock" />
+        <tm-stat label="Releases behind" [value]="1284" hint="across 8 containers" />
+        <tm-stat label="Fastest update" value="1.6.0" mono hint="jellyfin · 2 h" />
+      </div>
+    </tm-card>
+    <p class="mt-1 mb-4 font-mono text-xs text-fg-muted">tm-stat · label, value, unit, hint, mono, icon</p>
+
+    <div class="grid gap-4 lg:grid-cols-2">
+      <tm-card heading="Up to date" data-testid="chart-time">
+        <tm-time-chart label="Up to date" [points]="tidePoints" [max]="1" [format]="percent" />
+      </tm-card>
+      <tm-card heading="Updates applied per week" data-testid="chart-bars">
+        <tm-bar-chart label="Updates applied per week" [bars]="appliedWeeks" />
+      </tm-card>
+      <tm-card heading="Releases per month" data-testid="chart-stacked">
+        <tm-bar-chart label="Releases per month" [bars]="releaseMonths" />
+      </tm-card>
+      <tm-card heading="Updates per stack" data-testid="chart-bar-list">
+        <tm-bar-list label="Updates per stack" [items]="stackItems" />
+      </tm-card>
+      <tm-card heading="Biggest jumps">
+        <tm-bar-list label="Biggest jumps" [items]="jumpItems" />
+      </tm-card>
+      <tm-card heading="Empty states" data-testid="chart-empty">
+        <div class="grid gap-4">
+          <tm-time-chart label="Check duration" [points]="tideOnePoint" [height]="96" />
+          <tm-bar-chart label="Updates applied per week" [bars]="emptyBars" [height]="96" />
+          <tm-bar-list label="Failures by reason" [items]="[]" />
+        </div>
+      </tm-card>
+    </div>
+    <p class="mt-1 font-mono text-xs text-fg-muted">
+      tm-time-chart · tm-bar-chart (stacked by segment tone) · tm-bar-list
+    </p>
+  </section>
+
   <!-- ── Severity frame ─────────────────────────────────── -->
   <section>
     <h2 class="mb-1 text-xl font-semibold">Severity frame</h2>
@@ -976,7 +1028,8 @@
     <p class="mb-4 text-fg-muted">
       <span class="font-mono text-sm">tm-dashboard-skeleton</span> (the toolbar and the list or
       tiles; the hero's headline, summary and figures are skeletons in the page itself) and
-      <span class="font-mono text-sm">tm-detail-skeleton</span> mirror the loaded pages box for box,
+      <span class="font-mono text-sm">tm-detail-skeleton</span> and
+      <span class="font-mono text-sm">tm-stats-skeleton</span> mirror the loaded pages box for box,
       so nothing jumps when data arrives. The dashboard one follows
       <span class="font-mono text-sm">view</span>.
     </p>
@@ -985,7 +1038,9 @@
     <h3 class="mb-2 font-semibold">Dashboard, tiles</h3>
     <div class="mb-8"><tm-dashboard-skeleton view="tiles" /></div>
     <h3 class="mb-2 font-semibold">Detail</h3>
-    <tm-detail-skeleton />
+    <div class="mb-8"><tm-detail-skeleton /></div>
+    <h3 class="mb-2 font-semibold">Stats</h3>
+    <tm-stats-skeleton />
   </section>
 
   <!-- ── App icons ─────────────────────────────────────── -->

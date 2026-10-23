@@ -4,11 +4,14 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"hash/maphash"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/bartvs98/tidemark/internal/ai"
 	"github.com/bartvs98/tidemark/internal/changelog"
@@ -48,6 +51,9 @@ type Deps struct {
 
 	// Context for background work started by requests (check runs); it outlives the request.
 	Background context.Context
+
+	// Started is when this process started (uptime on the stats page); zero means New's time.
+	Started time.Time
 }
 
 type Server struct {
@@ -63,6 +69,12 @@ type Server struct {
 	ai         *ai.Service
 	configFile string
 	background context.Context
+	started    time.Time
+
+	// Release levels for the stats, by repo and tag (see releaseLevel).
+	levelSeed maphash.Seed
+	levelsMu  sync.Mutex
+	levels    map[string]cachedLevel
 }
 
 func New(d Deps) *Server {
@@ -70,7 +82,13 @@ func New(d Deps) *Server {
 	if bg == nil {
 		bg = context.Background()
 	}
-	s := &Server{version: d.Version, log: d.Log, source: d.Source, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, notify: d.Notify, settings: d.Settings, ai: d.AI, configFile: d.ConfigFile, background: bg}
+	started := d.Started
+	if started.IsZero() {
+		started = time.Now()
+	}
+	s := &Server{version: d.Version, log: d.Log, source: d.Source, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, notify: d.Notify,
+		settings: d.Settings, ai: d.AI, configFile: d.ConfigFile, background: bg, started: started,
+		levelSeed: maphash.MakeSeed(), levels: map[string]cachedLevel{}}
 	s.icons.Store(d.Icons)
 	return s
 }
@@ -92,6 +110,7 @@ func (s *Server) Handler(spa fs.FS) http.Handler {
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PATCH /api/settings", s.patchSettings)
 	mux.HandleFunc("POST /api/notifications/test", s.testNotification)
+	mux.HandleFunc("GET /api/stats", s.getStats)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "no such endpoint")
 	})

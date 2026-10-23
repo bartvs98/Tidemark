@@ -71,7 +71,17 @@ type AfterCheck func(ctx context.Context, c docker.Container, rs rules.Rules, r 
 
 // AfterRun runs once a run has finished and recorded its end, unless the run itself failed
 // (Docker unreachable). It runs inside the run's goroutine, so Wait also waits for it.
-type AfterRun func(ctx context.Context, trigger string)
+type AfterRun func(ctx context.Context, run Finished)
+
+// Finished is the run an AfterRun hook follows. Status may already describe a newer run
+// by the time the hook looks, so the hook gets its own copy.
+type Finished struct {
+	ID         int64 // check_runs.id; 0 when the run couldn't be recorded
+	Trigger    string
+	StartedAt  time.Time
+	FinishedAt time.Time
+	Images     int
+}
 
 type Service struct {
 	source docker.Source
@@ -393,11 +403,11 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 	}
 	s.mu.Unlock()
 
-	s.finish(ctx, runID, len(order), "")
+	finished := s.finish(ctx, runID, len(order), "")
 	s.log.Info("check finished", "trigger", trigger, "images", len(order), "containers", len(list),
 		"ignored", len(list)-len(keep), "took", time.Since(started).Round(time.Millisecond))
 	if s.ran != nil {
-		s.ran(ctx, trigger)
+		s.ran(ctx, Finished{ID: runID, Trigger: trigger, StartedAt: started, FinishedAt: finished, Images: len(order)})
 	}
 }
 
@@ -467,7 +477,8 @@ func (s *Service) historyFor(name string, e Entry) (store.HistoryEntry, bool) {
 	return h, true
 }
 
-func (s *Service) finish(ctx context.Context, runID int64, images int, errMsg string) {
+// finish records the run's end and returns when that was.
+func (s *Service) finish(ctx context.Context, runID int64, images int, errMsg string) time.Time {
 	now := time.Now()
 	s.mu.Lock()
 	s.status.Running = false
@@ -480,6 +491,7 @@ func (s *Service) finish(ctx context.Context, runID int64, images int, errMsg st
 			s.log.Warn("check: can't record run end", "err", err)
 		}
 	}
+	return now
 }
 
 func toRow(name string, e Entry, runID int64) store.Result {

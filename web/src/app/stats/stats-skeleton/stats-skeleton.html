@@ -1,0 +1,19 @@
+<div aria-hidden="true">
+  <tm-skeleton width="10rem" height="1.75rem" class="mb-4" />
+  <div class="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
+    @for (i of items; track i) {
+      <div>
+        <tm-skeleton width="6rem" height="0.875rem" />
+        <tm-skeleton width="3.5rem" height="1.75rem" class="mt-2" />
+      </div>
+    }
+  </div>
+  <div class="mt-6 grid gap-4 sm:grid-cols-2 sm:gap-5">
+    @for (i of [1, 2]; track i) {
+      <tm-card>
+        <tm-skeleton width="9rem" height="1rem" />
+        <tm-skeleton height="10rem" class="mt-4" />
+      </tm-card>
+    }
+  </div>
+</div>
