@@ -788,6 +788,10 @@ export class Styleguide {
     { label: 'media', value: 9, href: '/styleguide', hint: '5 containers' },
     { label: 'immich', value: 6, href: '/styleguide', hint: '4 containers' },
     { label: 'monitoring', value: 4, hint: '3 containers' },
+    { label: 'proxy', value: 3, hint: '2 containers' },
+    { label: 'paperless', value: 3, hint: '3 containers' },
+    { label: 'homeassistant', value: 1 },
+    { label: 'vaultwarden', value: 1 },
     { label: 'No stack', value: 2, tone: 'muted' },
   ];
   protected readonly jumpItems: BarListItem[] = [

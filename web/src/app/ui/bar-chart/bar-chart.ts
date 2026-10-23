@@ -1,4 +1,4 @@
-import { Component, computed, ElementRef, inject, input, signal, viewChild } from '@angular/core';
+import { Component, computed, effect, ElementRef, inject, input, signal, viewChild } from '@angular/core';
 import { ChartTone, closeTipOn, columnPath, focusVisible, labelWidth, observeWidth, stepIndex, TONE_COLOR, yScale } from '../chart-tip/chart';
 import { ChartTipRow, TmChartTip } from '../chart-tip/chart-tip';
 
@@ -48,7 +48,12 @@ let nextId = 0;
   imports: [TmChartTip],
   templateUrl: './bar-chart.html',
   styleUrl: './bar-chart.css',
-  host: { class: 'block min-w-0' },
+  host: {
+    class: 'block min-w-0',
+    '[class.relative]': 'fill()',
+    '[class.h-full]': 'fill()',
+    '[style.min-height.px]': 'fill() ? height() : null',
+  },
 })
 export class TmBarChart {
   readonly label = input.required<string>();
@@ -57,6 +62,8 @@ export class TmBarChart {
   readonly format = input<(v: number) => string>((v) => String(v));
   /** Whole chart height in px, x labels included (the legend is extra). */
   readonly height = input(160);
+  /** Grow to the parent's height (at least `height`): for a card stretched by a taller neighbour. */
+  readonly fill = input(false);
   /** Label every n-th bar; default: as many as fit without colliding (the latest always). */
   readonly tickEvery = input<number>();
   readonly legend = input(true);
@@ -65,15 +72,27 @@ export class TmBarChart {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
   private readonly measured = observeWidth(this.host);
   private readonly svg = viewChild<ElementRef<SVGSVGElement>>('svg');
+  private readonly box = viewChild<ElementRef<HTMLElement>>('box');
+  private readonly boxHeight = signal(0);
   protected readonly active = signal<number | null>(null);
   protected readonly tipId = `tm-bar-chart-tip-${nextId++}`;
   protected readonly tone = TONE_COLOR;
 
   constructor() {
     closeTipOn(this.host, () => this.active.set(null));
+    // With fill, the plot is drawn in an absolute layer and takes the height that layer gets,
+    // so a taller chart can't make its card taller.
+    effect((onCleanup) => {
+      const el = this.box()?.nativeElement;
+      if (!el || !this.fill() || typeof ResizeObserver === 'undefined') return;
+      const ro = new ResizeObserver((entries) => this.boxHeight.set(Math.floor(entries[0].contentRect.height)));
+      ro.observe(el);
+      onCleanup(() => ro.disconnect());
+    });
   }
 
   protected readonly width = computed(() => this.measured() || FALLBACK_WIDTH);
+  protected readonly drawHeight = computed(() => (this.fill() && this.boxHeight()) || this.height());
   protected readonly totals = computed(() => this.bars().map((b) => b.segments.reduce((s, x) => s + Math.max(0, x.value), 0)));
   protected readonly isEmpty = computed(() => !this.totals().some((t) => t > 0));
 
@@ -97,7 +116,7 @@ export class TmBarChart {
     const left = Math.ceil(Math.max(...yLabels.map(labelWidth))) + 10;
     const w = this.width();
     const plotW = Math.max(1, w - left - RIGHT);
-    const plotH = Math.max(1, this.height() - TOP - AXIS_H);
+    const plotH = Math.max(1, this.drawHeight() - TOP - AXIS_H);
     const base = TOP + plotH;
     const band = plotW / bars.length;
     const barW = Math.max(1, Math.min(MAX_BAR, band - GAP));

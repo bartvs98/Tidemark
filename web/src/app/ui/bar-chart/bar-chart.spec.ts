@@ -15,11 +15,12 @@ describe('TmBarChart', () => {
 
   @Component({
     imports: [TmBarChart],
-    template: `<tm-bar-chart label="Releases per month" [bars]="bars()" [legend]="legend()" />`,
+    template: `<tm-bar-chart label="Releases per month" [bars]="bars()" [legend]="legend()" [fill]="fill()" />`,
   })
   class Host {
     bars = signal<ChartBar[]>([month('Aug', 4, 1, 0), month('Sep', 6, 0, 2, '1 pre-release'), month('Oct', 3, 2, 1)]);
     legend = signal(true);
+    fill = signal(false);
   }
 
   async function render() {
@@ -29,6 +30,21 @@ describe('TmBarChart', () => {
     return { fixture, host: fixture.componentInstance, el, svg: () => el.querySelector('svg')! };
   }
   const tip = () => document.body.querySelector<HTMLElement>('tm-chart-tip');
+
+  it('fills its parent with fill, keeping height as the minimum', async () => {
+    const { fixture, host, el, svg } = await render();
+    const chart = el.querySelector<HTMLElement>('tm-bar-chart')!;
+    expect(chart.classList.contains('h-full')).toBe(false);
+    expect(chart.style.minHeight).toBe('');
+    expect(svg().getAttribute('height')).toBe('160');
+    host.fill.set(true);
+    await fixture.whenStable();
+    expect(chart.classList.contains('h-full')).toBe(true);
+    expect(chart.style.minHeight).toBe('160px');
+    // No layout in the test DOM: until the plot area is measured it draws at height.
+    expect(svg().getAttribute('height')).toBe('160');
+    expect(svg().closest('.absolute.inset-0')).not.toBeNull();
+  });
 
   it('stacks non-zero segments, rounding only the top one', async () => {
     const { el } = await render();

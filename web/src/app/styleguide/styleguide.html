@@ -472,11 +472,11 @@
       <tm-card heading="Up to date" data-testid="chart-time">
         <tm-time-chart label="Up to date" [points]="tidePoints" [max]="1" [format]="percent" />
       </tm-card>
-      <tm-card heading="Updates applied per week" data-testid="chart-bars">
-        <tm-bar-chart label="Updates applied per week" [bars]="appliedWeeks" />
-      </tm-card>
       <tm-card heading="Releases per month" data-testid="chart-stacked">
         <tm-bar-chart label="Releases per month" [bars]="releaseMonths" />
+      </tm-card>
+      <tm-card heading="Updates applied per week" data-testid="chart-bars">
+        <tm-bar-chart label="Updates applied per week" [bars]="appliedWeeks" [fill]="true" />
       </tm-card>
       <tm-card heading="Updates per stack" data-testid="chart-bar-list">
         <tm-bar-list label="Updates per stack" [items]="stackItems" />
@@ -499,7 +499,7 @@
       </tm-card>
     </div>
     <p class="mt-1 font-mono text-xs text-fg-muted">
-      tm-time-chart · tm-bar-chart (stacked by segment tone) · tm-bar-list (optional max)
+      tm-time-chart · tm-bar-chart (stacked by segment tone; fill grows it with a stretched card) · tm-bar-list (optional max)
     </p>
   </section>
 
