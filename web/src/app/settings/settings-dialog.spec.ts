@@ -260,6 +260,7 @@ describe('SettingsDialog', () => {
       aiApiKey: { secret: true, set: false, source: 'default', env: 'TIDEMARK_AI_API_KEY' },
       aiModel: { value: '', source: 'default', env: 'TIDEMARK_AI_MODEL' },
       aiBaseUrl: { value: '', source: 'default', env: 'TIDEMARK_AI_BASE_URL' },
+      aiEffort: { value: '', source: 'default', env: 'TIDEMARK_AI_EFFORT' },
       aiAutoMinReleases: { value: '0', source: 'default', env: 'TIDEMARK_AI_AUTO_MIN_RELEASES' },
     };
     const EDITABLE: Settings = { ...SETTINGS, editable: true, fields: FIELDS };
@@ -389,6 +390,7 @@ describe('SettingsDialog', () => {
         expect(input('aiModel').placeholder).toBe('claude-haiku-5-5');
         expect(panel().querySelector('[data-testid="setting-aiApiKey"]')?.textContent).toContain('Not set');
         expect(input('aiBaseUrl')).toBeNull(); // only for the OpenAI-compatible provider
+        expect(panel().querySelector('[data-testid="setting-aiEffort"]')?.textContent).toContain('Default');
         expect(panel().textContent).toContain('Off, needs an API key');
 
         edit('aiProvider', 'gemini');
@@ -430,12 +432,13 @@ describe('SettingsDialog', () => {
         expect(panel().querySelector('[data-testid="setting-aiApiKey"]')?.textContent).toContain('Set');
         expect(panel().querySelector('input[type="password"]')).toBeNull();
         await type(input('aiAutoMinReleases'), '3');
+        (fixture.componentInstance as unknown as { edit(k: string, v: string): void }).edit('aiEffort', 'high');
         await click(button('Replace'));
         await type(panel().querySelector('tm-password-input input') as HTMLInputElement, 'sk-new');
         await click(button('Save'));
         const req = http.expectOne('/api/settings');
         expect(req.request.method).toBe('PATCH');
-        expect(req.request.body).toEqual({ aiApiKey: 'sk-new', aiAutoMinReleases: '3' });
+        expect(req.request.body).toEqual({ aiApiKey: 'sk-new', aiEffort: 'high', aiAutoMinReleases: '3' });
         req.flush(EDITABLE);
         await settle();
       });
@@ -449,6 +452,7 @@ describe('SettingsDialog', () => {
         expect(text).toContain('llama3.1:8b');
         expect(text).toContain('http://ollama:11434/v1');
         expect(text).toContain('From 5 releases behind');
+        expect(panel().querySelector('[data-testid="settings-ai-effort"]')?.textContent).toBe('Not sent'); // openai without one set
         expect(panel().querySelector('[data-testid="settings-ai-usage"]')?.textContent).toBe('14 summaries · 182k tokens in · 9.1k out · 2 failed');
         expect(panel().querySelector('[data-testid="settings-ai-note"]')?.textContent).toContain('5+ releases');
 

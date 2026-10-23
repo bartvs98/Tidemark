@@ -48,6 +48,7 @@ type aiSettingsJSON struct {
 	Provider        string `json:"provider"`          // anthropic | openai | gemini
 	Model           string `json:"model"`             // effective: the provider's default when none is set
 	BaseURL         string `json:"baseUrl,omitempty"` // openai only
+	Effort          string `json:"effort,omitempty"`  // effective reasoning effort; absent when none is sent (openai without one set)
 	AutoMinReleases int    `json:"autoMinReleases"`   // 0 = only on demand
 	// Usage is this month's provider calls; absent when it couldn't be read.
 	Usage *aiUsageJSON `json:"usage,omitempty"`
@@ -117,7 +118,7 @@ func (s *Server) settingsBody(ctx context.Context) settingsJSON {
 	}
 	if s.ai != nil {
 		if p, autoMin := s.ai.Status(); p != nil {
-			out.AI = &aiSettingsJSON{Provider: p.Name(), Model: p.Model(), AutoMinReleases: autoMin}
+			out.AI = &aiSettingsJSON{Provider: p.Name(), Model: p.Model(), Effort: p.Effort(), AutoMinReleases: autoMin}
 			if p.Name() == "openai" {
 				out.AI.BaseURL = ai.OpenAIBaseURL
 				if s.settings != nil && s.settings.Runtime().AIBaseURL != "" {

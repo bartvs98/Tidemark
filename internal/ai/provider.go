@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,20 +34,24 @@ type Usage struct{ InputTokens, OutputTokens int }
 // Provider runs one completion and returns the model's JSON object (raw) and its usage,
 // also on errors when the provider reported it.
 type Provider interface {
-	Name() string  // anthropic | openai | gemini
-	Model() string // effective model
+	Name() string   // anthropic | openai | gemini
+	Model() string  // effective model
+	Effort() string // effective reasoning effort (low | medium | high); "" = not sent
 	Complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error)
 }
 
 // NewProvider builds the provider for the settings. model "" = provider default; openai has no
-// default model. baseURL only applies to openai.
-func NewProvider(name, apiKey, model, baseURL string) (Provider, error) {
+// default model. baseURL only applies to openai. effort "" = provider default: low for
+// anthropic and gemini; for openai nothing is sent (not every compatible server knows it).
+func NewProvider(name, apiKey, model, baseURL, effort string) (Provider, error) {
 	switch name {
 	case "anthropic":
 		if apiKey == "" {
 			return nil, errors.New("set TIDEMARK_AI_API_KEY for the anthropic provider")
 		}
-		return newAnthropic(apiKey, model, anthropicBaseURL, 2), nil
+		c := newAnthropic(apiKey, model, anthropicBaseURL, 2)
+		c.effort = cmp.Or(effort, "low")
+		return c, nil
 	case "openai":
 		if model == "" {
 			return nil, errors.New("set TIDEMARK_AI_MODEL for the openai provider")
@@ -54,7 +59,9 @@ func NewProvider(name, apiKey, model, baseURL string) (Provider, error) {
 		if baseURL == "" {
 			baseURL = OpenAIBaseURL
 		}
-		return newOpenAI("openai", apiKey, model, baseURL), nil
+		c := newOpenAI("openai", apiKey, model, baseURL)
+		c.effort = effort
+		return c, nil
 	case "gemini":
 		if apiKey == "" {
 			return nil, errors.New("set TIDEMARK_AI_API_KEY for the gemini provider")
@@ -65,7 +72,7 @@ func NewProvider(name, apiKey, model, baseURL string) (Provider, error) {
 		c := newOpenAI("gemini", apiKey, model, GeminiBaseURL)
 		// Gemini thinks by default, which adds 20-30 s per call; with an overloaded model
 		// that pushed summaries past httpTimeout. Low effort answers in seconds.
-		c.effort = "low"
+		c.effort = cmp.Or(effort, "low")
 		return c, nil
 	}
 	return nil, fmt.Errorf("unknown AI provider %q (want anthropic, openai or gemini)", name)

@@ -31,6 +31,7 @@ const (
 	KeyAIAPIKey         Key = "ai_api_key"
 	KeyAIModel          Key = "ai_model"
 	KeyAIBaseURL        Key = "ai_base_url"
+	KeyAIEffort         Key = "ai_effort"
 	KeyAIAutoMin        Key = "ai_auto_min_releases"
 )
 
@@ -58,6 +59,7 @@ var Fields = []Field{
 	{Key: KeyAIAPIKey, JSON: "aiApiKey", Env: "TIDEMARK_AI_API_KEY", Secret: true},
 	{Key: KeyAIModel, JSON: "aiModel", Env: "TIDEMARK_AI_MODEL"},
 	{Key: KeyAIBaseURL, JSON: "aiBaseUrl", Env: "TIDEMARK_AI_BASE_URL"},
+	{Key: KeyAIEffort, JSON: "aiEffort", Env: "TIDEMARK_AI_EFFORT"},
 	{Key: KeyAIAutoMin, JSON: "aiAutoMinReleases", Env: "TIDEMARK_AI_AUTO_MIN_RELEASES", Default: "0"},
 }
 
@@ -142,6 +144,15 @@ func Normalize(k Key, raw string) (string, error) {
 			return "", errors.New("too long (at most 200 characters)")
 		}
 		return v, nil
+	case KeyAIEffort:
+		e := strings.ToLower(v)
+		switch e {
+		case "default":
+			return "", nil
+		case "low", "medium", "high":
+			return e, nil
+		}
+		return "", fmt.Errorf("unknown effort %q (use default, low, medium or high)", e)
 	case KeyAIAutoMin:
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 || n > 500 {
@@ -175,6 +186,7 @@ type Runtime struct {
 	AIAPIKey         string
 	AIModel          string // "" = the provider's default
 	AIBaseURL        string // openai only; "" = OpenAI itself
+	AIEffort         string // low | medium | high; "" = the provider's default
 	AIAutoMin        int    // summarise updates with at least this many releases after a check; 0 = off
 }
 
@@ -235,6 +247,7 @@ func Resolve(env, stored map[Key]string) (rt Runtime, sources map[Key]Source, va
 		AIAPIKey:         values[KeyAIAPIKey],
 		AIModel:          values[KeyAIModel],
 		AIBaseURL:        values[KeyAIBaseURL],
+		AIEffort:         values[KeyAIEffort],
 	}
 	if rt.Schedule == "off" {
 		rt.Schedule = ""

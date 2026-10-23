@@ -1,4 +1,4 @@
-import { DatePipe, DecimalPipe, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, DecimalPipe, NgTemplateOutlet, TitleCasePipe } from '@angular/common';
 import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
 import { afterNextRender, Component, computed, DestroyRef, DOCUMENT, effect, ElementRef, inject, Injector, model, signal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -36,6 +36,7 @@ export type SettingKey =
   | 'aiApiKey'
   | 'aiModel'
   | 'aiBaseUrl'
+  | 'aiEffort'
   | 'aiAutoMinReleases';
 
 /** One editable setting: its effective value (never for secrets: only `set`), where it comes from and its env var. */
@@ -81,6 +82,8 @@ export interface Settings {
     provider: 'anthropic' | 'openai' | 'gemini';
     model: string;
     baseUrl?: string;
+    /** Effective reasoning effort; absent when none is sent (OpenAI-compatible without one set). */
+    effort?: 'low' | 'medium' | 'high';
     autoMinReleases: number;
     /** This month's provider calls (since = start of the month). */
     usage?: { since: string; calls: number; failed: number; extended?: number; inputTokens: number; outputTokens: number };
@@ -114,7 +117,7 @@ const PAGE_KEYS: Record<SettingsPage, readonly SettingKey[]> = {
   general: ['icons', 'iconsUrl'],
   checks: ['schedule'],
   notifications: ['telegramBotToken', 'telegramChatId', 'notifyLevel', 'notifyDigest', 'publicUrl'],
-  ai: ['aiProvider', 'aiApiKey', 'aiModel', 'aiBaseUrl', 'aiAutoMinReleases'],
+  ai: ['aiProvider', 'aiApiKey', 'aiModel', 'aiBaseUrl', 'aiEffort', 'aiAutoMinReleases'],
   github: ['githubToken'],
 };
 const PAGES = Object.keys(PAGE_KEYS) as SettingsPage[];
@@ -143,6 +146,7 @@ type Patch = Partial<Record<SettingKey, string | null>>;
     DatePipe,
     DecimalPipe,
     NgTemplateOutlet,
+    TitleCasePipe,
     RouterLink,
     ...TM_TABS,
     SecretSetting,
@@ -309,6 +313,13 @@ export class SettingsDialog {
   /** The provider being edited (the pending edit, else what's in effect); "off" when none. */
   protected readonly aiProvider = computed(() => this.value('aiProvider') || 'off');
   protected readonly aiModelPlaceholder = computed(() => AI_DEFAULT_MODEL[this.aiProvider()] ?? '');
+  /** "default" stands for unset (the server's `ai.NewProvider` picks); its hint says what that is. */
+  protected readonly aiEffortOptions = computed<SelectOption[]>(() => [
+    { value: 'default', label: 'Default', hint: this.aiProvider() === 'openai' ? 'Not sent: not every server knows it' : 'Low' },
+    { value: 'low', label: 'Low', hint: 'Fastest, fewest tokens' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'high', label: 'High', hint: 'Slowest, most tokens' },
+  ]);
   /** The auto threshold as edited, 0 when unset or not a number. */
   protected readonly aiAuto = computed(() => {
     if (!this.fields()) return (this.settings.hasValue() && this.settings.value().ai?.autoMinReleases) || 0;

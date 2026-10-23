@@ -79,6 +79,13 @@ func TestAnthropicRequestAndSuccess(t *testing.T) {
 	if oc["effort"] != "low" || format["type"] != "json_schema" || format["schema"] == nil {
 		t.Errorf("output_config = %v", g["output_config"])
 	}
+	c.effort = "high"
+	if _, _, err := c.Complete(context.Background(), testPrompt); err != nil {
+		t.Fatal(err)
+	}
+	if oc, _ := (*got)["output_config"].(map[string]any); oc["effort"] != "high" {
+		t.Errorf("effort = %v, want high", oc["effort"])
+	}
 	msgs, _ := g["messages"].([]any)
 	if len(msgs) != 1 || !strings.Contains(mustJSON(g["system"]), "sys") || !strings.Contains(mustJSON(msgs[0]), "user msg") {
 		t.Errorf("system/messages: %v %v", g["system"], msgs)
@@ -242,7 +249,7 @@ func TestNewProvider(t *testing.T) {
 		{"gemini", "k", "", "http://ignored", "gemini", DefaultGeminiModel, ""},
 		{"off", "k", "", "", "", "", `unknown AI provider "off" (want anthropic, openai or gemini)`},
 	} {
-		p, err := NewProvider(tc.name, tc.key, tc.model, tc.base)
+		p, err := NewProvider(tc.name, tc.key, tc.model, tc.base, "")
 		if tc.wantErr != "" {
 			if err == nil || err.Error() != tc.wantErr {
 				t.Errorf("%s: err = %v, want %q", tc.name, err, tc.wantErr)
@@ -253,13 +260,28 @@ func TestNewProvider(t *testing.T) {
 			t.Errorf("%s: %v %v", tc.name, p, err)
 		}
 	}
-	p, _ := NewProvider("openai", "", "m", "")
+	p, _ := NewProvider("openai", "", "m", "", "")
 	if p.(*openAIClient).base != OpenAIBaseURL {
 		t.Error("openai default base URL")
 	}
-	p, _ = NewProvider("gemini", "k", "", "http://ignored")
-	if c := p.(*openAIClient); c.base != GeminiBaseURL || c.effort != "low" {
-		t.Errorf("gemini base URL %q, effort %q", c.base, c.effort)
+	p, _ = NewProvider("gemini", "k", "", "http://ignored", "")
+	if c := p.(*openAIClient); c.base != GeminiBaseURL {
+		t.Errorf("gemini base URL %q", c.base)
+	}
+
+	// Effort: "" is the provider's default (nothing sent for openai), a set one always goes.
+	for _, tc := range []struct{ name, key, model, effort, want string }{
+		{"anthropic", "k", "", "", "low"},
+		{"anthropic", "k", "", "high", "high"},
+		{"gemini", "k", "", "", "low"},
+		{"gemini", "k", "", "medium", "medium"},
+		{"openai", "", "m", "", ""},
+		{"openai", "", "m", "low", "low"},
+	} {
+		p, err := NewProvider(tc.name, tc.key, tc.model, "", tc.effort)
+		if err != nil || p.Effort() != tc.want {
+			t.Errorf("%s effort %q: got %q (%v), want %q", tc.name, tc.effort, p.Effort(), err, tc.want)
+		}
 	}
 }
 

@@ -30,8 +30,9 @@ type fakeProvider struct {
 	last    Prompt // the last prompt sent
 }
 
-func (f *fakeProvider) Name() string  { return "anthropic" }
-func (f *fakeProvider) Model() string { return "m1" }
+func (f *fakeProvider) Name() string   { return "anthropic" }
+func (f *fakeProvider) Model() string  { return "m1" }
+func (f *fakeProvider) Effort() string { return "low" }
 func (f *fakeProvider) Complete(ctx context.Context, p Prompt) (json.RawMessage, Usage, error) {
 	f.calls.Add(1)
 	f.mu.Lock()

@@ -25,7 +25,7 @@ type Appliers struct {
 	GitHubToken func(token string)
 	Icons       func(on bool, url string)
 	Notify      func(rt config.Runtime) error // uses Telegram(), TelegramBotToken/ChatID, NotifyLevel, NotifyDigest, PublicURL
-	AI          func(rt config.Runtime) error // uses AI(), AIProvider, AIAPIKey, AIModel, AIBaseURL, AIAutoMin
+	AI          func(rt config.Runtime) error // uses AI(), AIProvider, AIAPIKey, AIModel, AIBaseURL, AIEffort, AIAutoMin
 }
 
 // ErrReadOnly is returned by Update unless TIDEMARK_SETTINGS_EDITABLE is on.

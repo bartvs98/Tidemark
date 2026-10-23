@@ -144,6 +144,9 @@ func TestNormalize(t *testing.T) {
 		{KeyAIAutoMin, "0", "0"},
 		{KeyAIAutoMin, "007", "7"},
 		{KeyAIAutoMin, "500", "500"},
+		{KeyAIEffort, "Medium", "medium"},
+		{KeyAIEffort, "high", "high"},
+		{KeyAIEffort, "default", ""}, // the same as unset
 	}
 	for _, tt := range ok {
 		got, err := Normalize(tt.key, tt.raw)
@@ -172,6 +175,7 @@ func TestNormalize(t *testing.T) {
 		{KeyAIModel, "gpt 5", "must not contain spaces"},
 		{KeyAIModel, strings.Repeat("m", 201), "too long"},
 		{KeyAIBaseURL, "ollama:11434", "not an absolute http(s) URL"},
+		{KeyAIEffort, "max", `unknown effort "max" (use default, low, medium or high)`},
 		{KeyAIAutoMin, "501", "must be a whole number from 0 to 500"},
 		{KeyAIAutoMin, "-1", "must be a whole number"},
 		{KeyAIAutoMin, "3.5", "must be a whole number"},
@@ -189,7 +193,7 @@ func TestNormalize(t *testing.T) {
 }
 
 func TestFields(t *testing.T) {
-	if len(Fields) != 14 {
+	if len(Fields) != 15 {
 		t.Fatalf("%d fields", len(Fields))
 	}
 	for _, f := range Fields {

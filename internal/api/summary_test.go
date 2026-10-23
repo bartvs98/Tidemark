@@ -32,8 +32,9 @@ type fakeProvider struct {
 	calls int
 }
 
-func (p *fakeProvider) Name() string  { return "anthropic" }
-func (p *fakeProvider) Model() string { return "claude-test" }
+func (p *fakeProvider) Name() string   { return "anthropic" }
+func (p *fakeProvider) Model() string  { return "claude-test" }
+func (p *fakeProvider) Effort() string { return "low" }
 func (p *fakeProvider) Complete(context.Context, ai.Prompt) (json.RawMessage, ai.Usage, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
