@@ -484,6 +484,12 @@
       <tm-card heading="Biggest jumps">
         <tm-bar-list label="Biggest jumps" [items]="jumpItems" />
       </tm-card>
+      <tm-card heading="Shared max" data-testid="chart-bar-list-max">
+        <div class="grid gap-4">
+          <tm-bar-list label="By class" [items]="kindClassItems" [max]="kindMax" />
+          <tm-bar-list label="By level" [items]="kindLevelItems" [max]="kindMax" />
+        </div>
+      </tm-card>
       <tm-card heading="Empty states" data-testid="chart-empty">
         <div class="grid gap-4">
           <tm-time-chart label="Check duration" [points]="tideOnePoint" [height]="96" />
@@ -493,7 +499,7 @@
       </tm-card>
     </div>
     <p class="mt-1 font-mono text-xs text-fg-muted">
-      tm-time-chart · tm-bar-chart (stacked by segment tone) · tm-bar-list
+      tm-time-chart · tm-bar-chart (stacked by segment tone) · tm-bar-list (optional max)
     </p>
   </section>
 

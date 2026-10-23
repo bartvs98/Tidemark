@@ -30,10 +30,17 @@
     <!-- Behind & updates -->
     <tm-section heading="Behind & updates" icon="clock" data-testid="stats-behind">
       @if (behindStats(); as s) {
-        <div class="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
+        <div
+          class="grid grid-cols-2 gap-x-6 gap-y-5"
+          [class]="s.fromMessage ? 'sm:grid-cols-3 lg:grid-cols-5' : 'sm:grid-cols-4'"
+          data-testid="behind-tiles"
+        >
           <tm-stat label="Up to date now" [value]="s.upToDate" [hint]="s.upToDateHint" icon="circle-check" />
           <tm-stat label="Updates applied" [value]="s.applied" hint="in this range" />
           <tm-stat label="Median time to update" [value]="s.median" [hint]="s.medianHint" />
+          @if (s.fromMessage; as fromMessage) {
+            <tm-stat label="From message to update" [value]="fromMessage" [hint]="s.fromMessageHint" />
+          }
           <tm-stat label="Releases behind" [value]="s.releasesBehind" [hint]="s.releasesHint" />
         </div>
       }
@@ -53,7 +60,25 @@
         </tm-card>
       </div>
 
-      <div class="mt-4 sm:mt-5">
+      <div class="mt-4 grid gap-4 sm:mt-5 sm:grid-cols-2 sm:gap-5">
+        <tm-card heading="Time to update by kind">
+          @if (kindGroups(); as g) {
+            @if (g.hasData) {
+              <div class="flex flex-col gap-5" data-testid="time-by-kind">
+                <div>
+                  <h4 class="mb-2 text-xs font-medium text-fg-muted">By class</h4>
+                  <tm-bar-list label="Time to update by class" [items]="g.byClass" [max]="g.max" />
+                </div>
+                <div>
+                  <h4 class="mb-2 text-xs font-medium text-fg-muted">By level</h4>
+                  <tm-bar-list label="Time to update by level" [items]="g.byLevel" [max]="g.max" />
+                </div>
+              </div>
+            } @else {
+              <p class="text-fg-muted" data-testid="time-by-kind-empty">Needs release dates</p>
+            }
+          }
+        </tm-card>
         <tm-card heading="Longest behind">
           <tm-bar-list
             label="Longest behind"
@@ -81,7 +106,12 @@
         </tm-card>
       </div>
 
-      <h3 class="mt-8 mb-3 text-base font-semibold">Repositories</h3>
+      <h3 class="mt-8 text-base font-semibold" [class.mb-3]="!quietRepos()">Repositories</h3>
+      @if (quietRepos()) {
+        <p class="mt-1 mb-3 text-sm text-fg-muted" data-testid="quiet-repos">
+          {{ count(quietRepos(), 'repo') }} quiet for 9+ months
+        </p>
+      }
       @if (d.upstream.repos.length) {
         <tm-card flush>
           <div class="overflow-x-auto">
@@ -105,7 +135,7 @@
                 </tr>
               </thead>
               <tbody>
-                @for (r of d.upstream.repos; track r.repo) {
+                @for (r of d.upstream.repos; track r.url) {
                   <tr>
                     <td data-stack="full" class="sm:py-3">
                       <a [href]="r.url" target="_blank" rel="noopener" class="block truncate font-mono text-sm">{{ r.repo }}</a>
@@ -133,7 +163,14 @@
                       }
                     </td>
                     <td class="text-sm text-fg-muted sm:py-3">{{ gapText(r.medianGapDays) }}</td>
-                    <td class="text-sm text-fg-muted sm:py-3">{{ r.lastRelease ? date(r.lastRelease) : '—' }}</td>
+                    <td class="text-sm text-fg-muted sm:py-3">
+                      <span class="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+                        {{ r.lastRelease ? date(r.lastRelease) : '—' }}
+                        @if (r.quiet && r.lastRelease) {
+                          <tm-badge icon="moon" [tmTooltip]="quietFor(r.lastRelease)">Quiet</tm-badge>
+                        }
+                      </span>
+                    </td>
                   </tr>
                 }
               </tbody>

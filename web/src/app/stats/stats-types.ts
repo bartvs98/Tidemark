@@ -27,6 +27,7 @@ export interface BehindStats {
     level: 'none' | 'attention' | 'breaking';
     review?: 'reviewed' | 'snoozed';
     releasesBehind: number; // releases in range running→latest from the stored notes (0 without notes)
+    releasesPartial?: boolean; // the stored notes stop before the running version: releasesBehind and behindSince are lower bounds
     behindSince?: string; // published_at of the oldest release newer than running (needs notes)
   }[];
   /** history rows with a previous image (prev_image_id != '') detected in range. */
@@ -39,10 +40,32 @@ export interface BehindStats {
   timeToUpdate: {
     count: number;
     medianMs?: number;
+    /** Always patch, minor, major in this order; medianMs absent when count is 0. */
+    byClass: KindMedian[];
+    /** Always none, attention, breaking in this order (the level the notes give the update). */
+    byLevel: KindMedian[];
   };
+  /** From the last Telegram message about an update to when that version was seen running; count 0 when nothing matches. */
+  fromMessage: { count: number; medianMs?: number };
+  /** The newest run_stats row overall, whatever the range; absent without one. */
+  now?: TidePoint;
   /** One point per run_stats row in range; if more than 180, the last row per UTC day. */
   /** One point per run; `releasesBehind` is the update debt: releases between running and latest over all updates. */
-  tide: { at: string; checked: number; upToDate: number; updates: number; attention: number; breaking: number; releasesBehind: number }[];
+  tide: TidePoint[];
+}
+export interface TidePoint {
+  at: string;
+  checked: number;
+  upToDate: number;
+  updates: number;
+  attention: number;
+  breaking: number;
+  releasesBehind: number;
+}
+export interface KindMedian {
+  kind: string;
+  count: number;
+  medianMs?: number;
 }
 export interface AppliedUpdate {
   name: string;
@@ -64,12 +87,13 @@ export interface UpstreamStats {
     lastRelease?: string; // newest published_at overall
     medianGapDays?: number; // median days between consecutive releases in range (needs 2+); one decimal
     partial?: boolean; // the range reaches back past the stored notes: `releases` is a lower bound
+    quiet?: boolean; // lastRelease is more than 9 months before generatedAt
   }[];
   /** All those repos together, per calendar month (UTC, 'YYYY-MM'), every month in range incl. zeros. */
   /** `partial`: some repos' stored notes don't reach back to this month, so they're left out of it. */
   perMonth: { month: string; releases: number; breaking: number; attention: number; partial?: boolean }[];
   /** Applied updates in range with the most releases between from and to, top 5 (`ms`: time to update, 0 when unknown). */
-  biggestJumps: (AppliedUpdate & { releases: number; class: UpdateKind })[];
+  biggestJumps: (AppliedUpdate & { releases: number; class: UpdateKind; partial?: boolean })[];
 }
 
 export type FailureKind = 'rate-limit' | 'not-found' | 'timeout' | 'network' | 'registry';
