@@ -290,7 +290,7 @@ func TestStatsFromHistory(t *testing.T) {
 	// Applied updates and time to update, in the last 30 days.
 	out = getStats(t, h, "30d")
 	a := out.Behind.Applied
-	if a.Total != 3 || !reflect.DeepEqual(a.PerStack, []stackCountJSON{{"web", 2}, {"", 1}}) {
+	if a.Total != 3 || !reflect.DeepEqual(a.PerStack, []stackCountJSON{{Stack: "web", Count: 2}, {Removed: true, Count: 1}}) {
 		t.Errorf("applied = %+v", a)
 	}
 	weeks, sum := a.PerWeek, 0
@@ -696,6 +696,15 @@ func TestThinAndHelpers(t *testing.T) {
 	if len(got) != 8 || got[0].v != 23 || got[7].v != 179 {
 		t.Errorf("thinned = %v", got)
 	}
+	// Still too many per day (a year and a half of daily points): per week.
+	var daily []pt
+	for i := range 540 {
+		daily = append(daily, pt{base.AddDate(0, 0, i), i})
+	}
+	got = thin(daily, at, func(_, later pt) bool { return true })
+	if len(got) != 78 || got[0].v != 3 || got[len(got)-1].v != 539 { // 1 Jan 2026 is a Thursday: its week ends on Sunday, day 3
+		t.Errorf("thinned per week = %d points, %v … %v", len(got), got[0], got[len(got)-1])
+	}
 
 	if m := median([]int64{5, 1, 3}); *m != 3 {
 		t.Errorf("odd median = %d", *m)
@@ -725,5 +734,46 @@ func TestThinAndHelpers(t *testing.T) {
 	}
 	if longestStreak([]store.RunStats{{Updates: 1}}) != nil {
 		t.Error("streak without an up-to-date run")
+	}
+}
+
+func TestReleaseLevelsCache(t *testing.T) {
+	srv, _, db := statsServer(t, staticSource{})
+	ctx := context.Background()
+	repo := "github.com/team/app"
+	t0 := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v1", Body: "- Bug fixes"}}, false)
+	_ = db.SaveRepoState(ctx, store.RepoState{Repo: repo, Kind: "releases", FetchedAt: t0})
+	levels := func() map[string]analysis.Level {
+		t.Helper()
+		rels, _ := db.AllReleases(ctx)
+		states, _ := db.AllRepoStates(ctx)
+		out, err := srv.releaseLevels(ctx, rels, states)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out[repo]
+	}
+	if l := levels(); l["v1"] != analysis.None {
+		t.Errorf("levels = %v", l)
+	}
+	// A body changed without a new fetch time isn't seen (bodies are only read after a fetch)…
+	breaking := "## Breaking changes\n- The old API is removed"
+	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v1", Body: breaking}}, false)
+	if l := levels(); l["v1"] != analysis.None {
+		t.Errorf("levels re-read without a fetch: %v", l)
+	}
+	// …a new release is, and so is a new fetch.
+	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v2", Body: breaking}}, false)
+	if l := levels(); l["v1"] != analysis.Breaking || l["v2"] != analysis.Breaking {
+		t.Errorf("levels after a new release = %v", l)
+	}
+	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v2", Body: "- Bug fixes"}}, false)
+	_ = db.SaveRepoState(ctx, store.RepoState{Repo: repo, Kind: "releases", FetchedAt: t0.Add(time.Hour)})
+	if l := levels(); l["v2"] != analysis.None {
+		t.Errorf("levels after a fetch = %v", l)
+	}
+	if len(srv.levels) != 1 {
+		t.Errorf("cache = %v", srv.levels)
 	}
 }

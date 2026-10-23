@@ -26,7 +26,7 @@ function fixture(overrides: Partial<StatsData> = {}): StatsData {
       ],
       applied: {
         total: 14,
-        perStack: [{ stack: 'home', count: 8 }, { stack: '', count: 6 }],
+        perStack: [{ stack: 'home', count: 8 }, { stack: '', count: 6 }, { stack: '', removed: true, count: 2 }],
         perWeek: [{ week: '2026-10-12', count: 3 }, { week: '2026-10-19', count: 0 }],
       },
       timeToUpdate: {
@@ -134,6 +134,7 @@ describe('Stats', () => {
     const behind = el.querySelector('[data-testid="longest-behind"]')!;
     expect([...behind.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['grafana']);
     expect(behind.textContent).toContain('9 releases');
+    expect(el.textContent).toMatch(/Ungrouped\s*6\s*Removed containers\s*2/);
     expect(el.querySelector('[data-testid="repo-flagged"]')?.textContent).toMatch(/2 breaking\s+1 attention/);
     expect(el.querySelector('[data-testid="failing"]')?.textContent).toContain('mosquitto');
   });

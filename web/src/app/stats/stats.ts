@@ -135,7 +135,10 @@ export class Stats {
   );
   protected readonly stackItems = computed(
     () =>
-      this.data()?.behind.applied.perStack.map((s) => ({ label: s.stack || 'Ungrouped', value: s.count })) ?? [],
+      this.data()?.behind.applied.perStack.map((s) => ({
+        label: s.removed ? 'Removed containers' : s.stack || 'Ungrouped',
+        value: s.count,
+      })) ?? [],
   );
   /** Current updates by how long ago the first newer release came out (needs release notes); top 5. */
   protected readonly behindItems = computed(() =>

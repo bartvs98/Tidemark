@@ -3,7 +3,6 @@ package api
 import (
 	"cmp"
 	"context"
-	"hash/maphash"
 	"math"
 	"net/http"
 	"slices"
@@ -90,7 +89,9 @@ type appliedJSON struct {
 
 type stackCountJSON struct {
 	Stack string `json:"stack"`
-	Count int    `json:"count"`
+	// Removed: containers no longer on the host, whose stack isn't known any more.
+	Removed bool `json:"removed,omitempty"`
+	Count   int  `json:"count"`
 }
 
 type weekCountJSON struct {
@@ -388,16 +389,17 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 // statsData is everything one stats response is built from.
 type statsData struct {
 	now, since time.Time
-	current    []currentContainer     // nil when Docker couldn't be listed
-	stackOf    map[string]string      // current container name → Compose project
-	repoOf     map[string]source.Repo // current, non-ignored container name → notes repo
-	releases   map[string][]store.Release
-	byTag      map[string]map[string]store.Release // repo key → tag → release
-	runStats   []store.RunStats                    // all, oldest first
-	runs       []store.Run                         // all, oldest first
-	history    []store.HistoryEntry                // all, oldest first
-	calls      []store.AICall                      // all, oldest first
-	applied    []appliedInfo                       // every history row with a previous image
+	current    []currentContainer                   // nil when Docker couldn't be listed
+	stackOf    map[string]string                    // current container name → Compose project
+	repoOf     map[string]source.Repo               // current, non-ignored container name → notes repo
+	releases   map[string][]store.Release           // without bodies
+	levels     map[string]map[string]analysis.Level // repo key → tag → the release's own level
+	byTag      map[string]map[string]store.Release  // repo key → tag → release
+	runStats   []store.RunStats                     // all, oldest first
+	runs       []store.Run                          // all, oldest first
+	history    []store.HistoryEntry                 // all, oldest first
+	calls      []store.AICall                       // all, oldest first
+	applied    []appliedInfo                        // every history row with a previous image
 	notified   map[store.NotifiedKey]store.Notified
 	// coveredFrom: per repo key, where its stored notes are complete from: the start of the
 	// month after its oldest stored release when older ones weren't fetched (has_more), zero
@@ -457,6 +459,13 @@ func (s *Server) loadStats(ctx context.Context, now, since time.Time) (*statsDat
 	if d.notified, err = s.store.Notified(ctx); err != nil {
 		return nil, false, err
 	}
+	states, err := s.store.AllRepoStates(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	if d.levels, err = s.releaseLevels(ctx, d.releases, states); err != nil {
+		return nil, false, err
+	}
 	for key, rels := range d.releases {
 		m := make(map[string]store.Release, len(rels))
 		for _, r := range rels {
@@ -491,10 +500,7 @@ func (s *Server) loadStats(ctx context.Context, now, since time.Time) (*statsDat
 		if _, done := d.coveredFrom[key]; done {
 			continue
 		}
-		st, ok, err := s.store.RepoState(ctx, key)
-		if err != nil {
-			return nil, false, err
-		}
+		st, ok := states[key]
 		var from time.Time
 		if ok && st.HasMore {
 			// The oldest stored release's month is only partly there, so coverage starts after it.
@@ -526,6 +532,7 @@ type appliedInfo struct {
 	// AI verdicts are per current range); None without notes.
 	level   analysis.Level
 	rebuild bool // the same version again (a new image under the same tag)
+	removed bool // the container is no longer on the host (false when Docker couldn't be listed)
 }
 
 func (i appliedInfo) update(ms int64) *appliedUpdateJSON {
@@ -538,7 +545,8 @@ func (s *Server) appliedUpdates(ctx context.Context, d *statsData) []appliedInfo
 		if h.PrevImageID == "" {
 			continue
 		}
-		info := appliedInfo{h: h, stack: d.stackOf[h.ContainerName], class: string(version.Digest), rebuild: h.PrevRunning == h.Running}
+		stack, here := d.stackOf[h.ContainerName]
+		info := appliedInfo{h: h, stack: stack, removed: d.current != nil && !here, class: string(version.Digest), rebuild: h.PrevRunning == h.Running}
 		from, to := parseVersion(h.PrevRunning), parseVersion(h.Running)
 		if from != nil && to != nil {
 			if c := version.Classify(*from, *to); c != version.None {
@@ -675,20 +683,24 @@ func toTide(r store.RunStats) tideJSON {
 
 func appliedStats(d *statsData) appliedJSON {
 	out := appliedJSON{PerStack: []stackCountJSON{}, PerWeek: []weekCountJSON{}}
-	perStack, perWeek := map[string]int{}, map[string]int{}
+	type stackKey struct {
+		stack   string
+		removed bool
+	}
+	perStack, perWeek := map[stackKey]int{}, map[string]int{}
 	for _, a := range d.applied {
 		if !d.inRange(a.h.DetectedAt) {
 			continue
 		}
 		out.Total++
-		perStack[a.stack]++
+		perStack[stackKey{a.stack, a.removed}]++
 		perWeek[weekOf(a.h.DetectedAt)]++
 	}
-	for stack, n := range perStack {
-		out.PerStack = append(out.PerStack, stackCountJSON{Stack: stack, Count: n})
+	for k, n := range perStack {
+		out.PerStack = append(out.PerStack, stackCountJSON{Stack: k.stack, Removed: k.removed, Count: n})
 	}
 	slices.SortFunc(out.PerStack, func(a, b stackCountJSON) int {
-		return cmp.Or(cmp.Compare(b.Count, a.Count), cmp.Compare(a.Stack, b.Stack))
+		return cmp.Or(cmp.Compare(b.Count, a.Count), compareBool(a.Removed, b.Removed), cmp.Compare(a.Stack, b.Stack))
 	})
 
 	// Every week in range, zeros included; "all" starts at the first history row.
@@ -781,7 +793,7 @@ func (s *Server) upstreamStats(d *statsData) upstreamJSON {
 		rj := repoStatsJSON{Repo: repo.Path, URL: repo.URL(), Containers: names[key]}
 		var times []time.Time
 		for _, r := range rels {
-			lvl := s.releaseLevel(key, r)
+			lvl := d.levels[key][r.Tag]
 			if !r.PublishedAt.IsZero() {
 				all = append(all, dated{r.PublishedAt, lvl, key})
 				if rj.LastRelease == nil || r.PublishedAt.After(*rj.LastRelease) {
@@ -899,28 +911,52 @@ func medianGapDays(times []time.Time) *float64 {
 	return &m
 }
 
-// releaseLevel is a stored release's level on its own, as the detail page flags its notes
-// (without a running release whose repeated lines it would skip). Cached by repo and tag
-// while the notes stay the same.
-func (s *Server) releaseLevel(repo string, r store.Release) analysis.Level {
-	key := repo + "\x00" + r.Tag
-	sum := maphash.String(s.levelSeed, r.Body)
+// releaseLevels is every stored release's level on its own, by repo key and tag, as the
+// detail page flags its notes (without a running release whose repeated lines it would
+// skip). A repo's levels are kept until it's fetched again (its fetched_at changes) or a
+// release shows up that they don't cover (a sync that failed partway keeps the pages it got),
+// so only then are its bodies read. Repos no longer stored drop out of the cache.
+func (s *Server) releaseLevels(ctx context.Context, releases map[string][]store.Release, states map[string]store.RepoState) (map[string]map[string]analysis.Level, error) {
 	s.levelsMu.Lock()
-	e, ok := s.levels[key]
-	s.levelsMu.Unlock()
-	if ok && e.sum == sum {
-		return e.level
+	defer s.levelsMu.Unlock()
+	next := make(map[string]repoLevels, len(releases))
+	for key, rels := range releases {
+		fetched := states[key].FetchedAt
+		if c, ok := s.levels[key]; ok && c.fetchedAt.Equal(fetched) && covers(c.byTag, rels) {
+			next[key] = c
+			continue
+		}
+		full, err := s.store.Releases(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		c := repoLevels{fetchedAt: fetched, byTag: make(map[string]analysis.Level, len(full))}
+		for _, r := range full {
+			c.byTag[r.Tag] = analysis.Analyze(r.Body, nil).Level
+		}
+		next[key] = c
 	}
-	lvl := analysis.Analyze(r.Body, nil).Level
-	s.levelsMu.Lock()
-	s.levels[key] = cachedLevel{sum: sum, level: lvl}
-	s.levelsMu.Unlock()
-	return lvl
+	s.levels = next
+	out := make(map[string]map[string]analysis.Level, len(next))
+	for key, c := range next {
+		out[key] = c.byTag
+	}
+	return out, nil
 }
 
-type cachedLevel struct {
-	sum   uint64 // of the body it was computed from
-	level analysis.Level
+// covers says whether levels has every release in rels.
+func covers(levels map[string]analysis.Level, rels []store.Release) bool {
+	for _, r := range rels {
+		if _, ok := levels[r.Tag]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+type repoLevels struct {
+	fetchedAt time.Time // the repo's fetched_at when the levels were computed
+	byTag     map[string]analysis.Level
 }
 
 // ── check health ─────────────────────────────────────────
@@ -1139,7 +1175,7 @@ func (s *Server) lifetimeStats(d *statsData) lifetimeJSON {
 	for key, rels := range d.releases {
 		out.ReleasesStored += len(rels)
 		for _, r := range rels {
-			if s.releaseLevel(key, r) == analysis.Breaking {
+			if d.levels[key][r.Tag] == analysis.Breaking {
 				out.BreakingFlagged++
 			}
 		}
@@ -1184,25 +1220,45 @@ func longestStreak(rows []store.RunStats) *streakJSON {
 
 // ── helpers ──────────────────────────────────────────────
 
-// thin keeps one item per UTC day when there are more than maxSeriesPoints: the first of
-// the day, replaced by a later one whenever replace(kept, later) says so. Items are oldest first.
+// thin keeps one item per UTC day when there are more than maxSeriesPoints, and per week,
+// then per month, while there are still too many: the first of each, replaced by a later
+// one whenever replace(kept, later) says so. Items are oldest first.
 func thin[T any](items []T, at func(T) time.Time, replace func(kept, later T) bool) []T {
-	if len(items) <= maxSeriesPoints {
-		return items
+	buckets := []func(time.Time) string{
+		func(t time.Time) string { return t.UTC().Format(time.DateOnly) },
+		weekOf,
+		func(t time.Time) string { return t.UTC().Format("2006-01") },
 	}
-	var out []T
-	var day string
-	for _, it := range items {
-		d := at(it).UTC().Format(time.DateOnly)
-		switch {
-		case len(out) == 0 || d != day:
-			out = append(out, it)
-			day = d
-		case replace(out[len(out)-1], it):
-			out[len(out)-1] = it
+	for _, bucket := range buckets {
+		if len(items) <= maxSeriesPoints {
+			break
 		}
+		var out []T
+		var cur string
+		for _, it := range items {
+			b := bucket(at(it))
+			switch {
+			case len(out) == 0 || b != cur:
+				out = append(out, it)
+				cur = b
+			case replace(out[len(out)-1], it):
+				out[len(out)-1] = it
+			}
+		}
+		items = out
 	}
-	return out
+	return items
+}
+
+// compareBool orders false before true.
+func compareBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case a:
+		return 1
+	}
+	return -1
 }
 
 // median of ms, the mean of the middle two for an even count; nil when empty.

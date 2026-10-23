@@ -33,7 +33,7 @@ export interface BehindStats {
   /** history rows with a previous image (prev_image_id != '') detected in range. */
   applied: {
     total: number;
-    perStack: { stack: string; count: number }[]; // stack '' for containers without a Compose project; most first
+    perStack: { stack: string; removed?: boolean; count: number }[]; // stack '' for containers without a Compose project or no longer on the host (removed); most first
     perWeek: { week: string; count: number }[]; // ISO date of the week's Monday (UTC), every week in range incl. zeros
   };
   /** Per applied update in range whose new version has a published release in the stored notes: detected_at - published_at. */
