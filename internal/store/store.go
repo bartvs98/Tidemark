@@ -19,6 +19,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/bartvs98/tidemark/internal/stats"
 )
 
 //go:embed migrations/*.sql
@@ -768,4 +770,186 @@ func nonNil[T any](s []T) []T {
 		return []T{}
 	}
 	return s
+}
+
+// AICalls returns every recorded provider call, oldest first.
+func (s *Store) AICalls(ctx context.Context) ([]AICall, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT at, provider, model, trigger, mode, repo, from_version, to_version, releases,
+			input_tokens, output_tokens, duration_ms, error
+		FROM ai_calls ORDER BY at, id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AICall
+	for rows.Next() {
+		var c AICall
+		var at string
+		var ms int64
+		if err := rows.Scan(&at, &c.Provider, &c.Model, &c.Trigger, &c.Mode, &c.Repo, &c.From, &c.To, &c.Releases,
+			&c.InputTokens, &c.OutputTokens, &ms, &c.Error); err != nil {
+			return nil, err
+		}
+		c.At, c.Duration = parseTS(at), time.Duration(ms)*time.Millisecond
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// ── Stats ────────────────────────────────────────────────
+
+// RunStats is what the dashboard showed at the end of a check run, counted like its hero
+// (ignored containers only in Containers and Ignored; open = not reviewed or snoozed),
+// plus the requests made since the previous row.
+type RunStats struct {
+	RunID    int64
+	At       time.Time // the run's finish
+	Duration time.Duration
+
+	Containers, Ignored, Checked, UpToDate int
+	Updates, Attention, Breaking           int // open updates
+	Reviewed, Snoozed, Failed              int
+	ReleasesBehind                         int // releases in range over all updates, from the stored notes
+
+	Classes  map[string]int // updates per class (patch | minor | major | digest), open or not
+	Failures map[string]int // failing containers per error kind, "other" when unclassified
+	Requests map[string]stats.Count
+
+	GitHubRemaining, GitHubLimit *int // last-known quota; nil when unknown
+}
+
+// AddRunStats stores a run's stats, replacing an earlier row for the same run.
+func (s *Store) AddRunStats(ctx context.Context, r RunStats) error {
+	classes, _ := json.Marshal(nonZero(r.Classes))
+	failures, _ := json.Marshal(nonZero(r.Failures))
+	reqs := r.Requests
+	if reqs == nil {
+		reqs = map[string]stats.Count{}
+	}
+	requests, _ := json.Marshal(reqs)
+	_, err := s.db.ExecContext(ctx, `
+		INSERT OR REPLACE INTO run_stats (run_id, at, duration_ms, containers, ignored, checked, up_to_date,
+			updates, attention, breaking, reviewed, snoozed, failed, releases_behind, classes, failures, requests,
+			github_remaining, github_limit)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.RunID, tsSortable(r.At), r.Duration.Milliseconds(), r.Containers, r.Ignored, r.Checked, r.UpToDate,
+		r.Updates, r.Attention, r.Breaking, r.Reviewed, r.Snoozed, r.Failed, r.ReleasesBehind,
+		string(classes), string(failures), string(requests), intOrNil(r.GitHubRemaining), intOrNil(r.GitHubLimit))
+	return err
+}
+
+// RunStatsSince returns the rows at or after since (all for a zero since), oldest first.
+func (s *Store) RunStatsSince(ctx context.Context, since time.Time) ([]RunStats, error) {
+	from := ""
+	if !since.IsZero() {
+		from = tsSortable(since)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT run_id, at, duration_ms, containers, ignored, checked, up_to_date, updates, attention, breaking,
+			reviewed, snoozed, failed, releases_behind, classes, failures, requests, github_remaining, github_limit
+		FROM run_stats WHERE at >= ? ORDER BY at, run_id`, from)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RunStats
+	for rows.Next() {
+		var r RunStats
+		var at, classes, failures, requests string
+		var ms int64
+		var remaining, limit sql.NullInt64
+		if err := rows.Scan(&r.RunID, &at, &ms, &r.Containers, &r.Ignored, &r.Checked, &r.UpToDate, &r.Updates,
+			&r.Attention, &r.Breaking, &r.Reviewed, &r.Snoozed, &r.Failed, &r.ReleasesBehind, &classes, &failures, &requests,
+			&remaining, &limit); err != nil {
+			return nil, err
+		}
+		if err := errors.Join(json.Unmarshal([]byte(classes), &r.Classes), json.Unmarshal([]byte(failures), &r.Failures),
+			json.Unmarshal([]byte(requests), &r.Requests)); err != nil {
+			return nil, fmt.Errorf("store: run stats %d: %w", r.RunID, err)
+		}
+		r.At, r.Duration = parseTS(at), time.Duration(ms)*time.Millisecond
+		r.GitHubRemaining, r.GitHubLimit = nullInt(remaining), nullInt(limit)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// Runs returns every check run, oldest first (FinishedAt nil while one is running or
+// when it never recorded its end).
+func (s *Store) Runs(ctx context.Context) ([]Run, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, trigger, started_at, COALESCE(finished_at, ''), images, error FROM check_runs ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Run
+	for rows.Next() {
+		var r Run
+		var started, finished string
+		if err := rows.Scan(&r.ID, &r.Trigger, &started, &finished, &r.Images, &r.Error); err != nil {
+			return nil, err
+		}
+		r.StartedAt = parseTS(started)
+		if finished != "" {
+			f := parseTS(finished)
+			r.FinishedAt = &f
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// AllHistory returns every history row of every container, oldest first.
+func (s *Store) AllHistory(ctx context.Context) ([]HistoryEntry, error) {
+	return s.queryHistory(ctx, `
+		SELECT id, container_name, image_id, running, prev_image_id, prev_running, detected_at, via
+		FROM history ORDER BY id`)
+}
+
+// AllReleases returns the stored release notes of every repo, by repo key.
+func (s *Store) AllReleases(ctx context.Context) (map[string][]Release, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT repo, tag, name, body, url, published_at, prerelease FROM releases`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]Release{}
+	for rows.Next() {
+		var repo, published string
+		var r Release
+		if err := rows.Scan(&repo, &r.Tag, &r.Name, &r.Body, &r.URL, &published, &r.Prerelease); err != nil {
+			return nil, err
+		}
+		r.PublishedAt = parseTS(published)
+		out[repo] = append(out[repo], r)
+	}
+	return out, rows.Err()
+}
+
+// nonZero drops zero counts, so the stored JSON only names what occurred.
+func nonZero(m map[string]int) map[string]int {
+	out := map[string]int{}
+	for k, v := range m {
+		if v != 0 {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+func intOrNil(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}
+
+func nullInt(n sql.NullInt64) *int {
+	if !n.Valid {
+		return nil
+	}
+	v := int(n.Int64)
+	return &v
 }

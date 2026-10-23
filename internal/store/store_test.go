@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/bartvs98/tidemark/internal/stats"
 )
 
 func open(t *testing.T) (*Store, string) {
@@ -484,5 +487,103 @@ func TestAICallsUsage(t *testing.T) {
 	// Sub-second precision orders correctly against a whole-second bound.
 	if u, _ := s.AIUsageSince(ctx, month.Add(time.Second)); u.Calls != 2 {
 		t.Errorf("since +1s: %+v", u)
+	}
+}
+
+func TestRunStatsRoundTrip(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	day := time.Date(2026, 10, 1, 6, 0, 0, 0, time.UTC)
+	if got, err := s.RunStatsSince(ctx, time.Time{}); err != nil || len(got) != 0 {
+		t.Fatalf("empty: %+v %v", got, err)
+	}
+	remaining, limit := 4812, 5000
+	full := RunStats{
+		RunID: 2, At: day.Add(500 * time.Millisecond).In(time.FixedZone("x", 3600)), Duration: 1234 * time.Millisecond,
+		Containers: 10, Ignored: 1, Checked: 8, UpToDate: 5, Updates: 2, Attention: 1, Breaking: 1, Reviewed: 1, Snoozed: 0, Failed: 1, ReleasesBehind: 17,
+		Classes:         map[string]int{"minor": 2, "major": 1, "patch": 0},
+		Failures:        map[string]int{"rate-limit": 1},
+		Requests:        map[string]stats.Count{"registry": {Requests: 40, Limited: 1}, "github": {Requests: 3}},
+		GitHubRemaining: &remaining, GitHubLimit: &limit,
+	}
+	for _, r := range []RunStats{
+		{RunID: 1, At: day.Add(-time.Hour)}, // nil maps, unknown quota
+		full,
+		{RunID: 3, At: day.Add(time.Hour), Updates: 9},
+	} {
+		if err := s.AddRunStats(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := s.RunStatsSince(ctx, time.Time{})
+	if err != nil || len(all) != 3 || all[0].RunID != 1 || all[2].RunID != 3 {
+		t.Fatalf("all = %+v, %v", all, err)
+	}
+	if r := all[0]; r.GitHubRemaining != nil || r.GitHubLimit != nil || len(r.Classes) != 0 || r.Requests == nil {
+		t.Errorf("sparse row = %+v", r)
+	}
+	got := all[1]
+	want := full
+	want.At = full.At.UTC()
+	want.Classes = map[string]int{"minor": 2, "major": 1} // zero counts aren't stored
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("row =\n %+v\nwant\n %+v", got, want)
+	}
+
+	// Sub-second precision against a whole-second bound: the bound is inclusive.
+	since, err := s.RunStatsSince(ctx, day)
+	if err != nil || len(since) != 2 || since[0].RunID != 2 {
+		t.Errorf("since = %+v, %v", since, err)
+	}
+	// Storing a run again replaces its row.
+	if err := s.AddRunStats(ctx, RunStats{RunID: 3, At: day.Add(time.Hour), Updates: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := s.RunStatsSince(ctx, day.Add(time.Minute)); len(again) != 1 || again[0].Updates != 1 {
+		t.Errorf("replaced = %+v", again)
+	}
+}
+
+func TestStatsReads(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	t0 := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+
+	id1, _ := s.StartRun(ctx, "startup", t0)
+	_ = s.FinishRun(ctx, id1, t0.Add(time.Minute), 4, "")
+	id2, _ := s.StartRun(ctx, "manual", t0.Add(time.Hour))
+	runs, err := s.Runs(ctx)
+	if err != nil || len(runs) != 2 || runs[0].ID != id1 || runs[0].FinishedAt == nil || runs[0].Images != 4 ||
+		runs[1].ID != id2 || runs[1].FinishedAt != nil || runs[1].Trigger != "manual" {
+		t.Errorf("runs = %+v, %v", runs, err)
+	}
+
+	for _, h := range []HistoryEntry{
+		{ContainerName: "b", ImageID: "1", Running: "1.0", DetectedAt: t0},
+		{ContainerName: "a", ImageID: "2", Running: "2.0", DetectedAt: t0},
+		{ContainerName: "b", ImageID: "3", Running: "1.1", PrevImageID: "1", PrevRunning: "1.0", DetectedAt: t0.Add(time.Hour)},
+	} {
+		if err := s.AddHistory(ctx, h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hist, err := s.AllHistory(ctx)
+	if err != nil || len(hist) != 3 || hist[0].ContainerName != "b" || hist[2].PrevRunning != "1.0" {
+		t.Errorf("history = %+v, %v", hist, err)
+	}
+
+	_ = s.SaveReleases(ctx, "github.com/a/a", []Release{{Tag: "v1", PublishedAt: t0}, {Tag: "v2"}}, false)
+	_ = s.SaveReleases(ctx, "github.com/b/b", []Release{{Tag: "v9", Body: "notes"}}, false)
+	rels, err := s.AllReleases(ctx)
+	if err != nil || len(rels) != 2 || len(rels["github.com/a/a"]) != 2 || rels["github.com/b/b"][0].Body != "notes" {
+		t.Errorf("releases = %+v, %v", rels, err)
+	}
+
+	_ = s.AddAICall(ctx, AICall{At: t0.Add(time.Hour), Provider: "openai", Trigger: "auto", Duration: 2 * time.Second})
+	_ = s.AddAICall(ctx, AICall{At: t0, Provider: "anthropic", Trigger: "manual", Mode: "extended", Error: "boom"})
+	calls, err := s.AICalls(ctx)
+	if err != nil || len(calls) != 2 || calls[0].Provider != "anthropic" || calls[0].Mode != "extended" || calls[0].Error != "boom" ||
+		calls[1].Duration != 2*time.Second || calls[1].Mode != "full" || !calls[1].At.Equal(t0.Add(time.Hour)) {
+		t.Errorf("calls = %+v, %v", calls, err)
 	}
 }

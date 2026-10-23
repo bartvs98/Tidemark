@@ -1,0 +1,37 @@
+/* Chart chrome; tm-bar-chart keeps a copy (styles are scoped per component). */
+.tm-chart-svg {
+  display: block;
+  /* Geometry follows the measured host width; 100% keeps it from holding a grid track open. */
+  width: 100%;
+  overflow: visible;
+  border-radius: var(--radius-sm);
+  touch-action: pan-y;
+}
+.tm-chart-grid {
+  stroke: var(--color-line);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.tm-chart-axis {
+  fill: var(--color-fg-subtle);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+.tm-chart-area {
+  fill-opacity: 0.1;
+}
+.tm-chart-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.tm-chart-crosshair {
+  stroke: var(--color-line-strong);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.tm-chart-dot {
+  stroke: var(--color-surface);
+  stroke-width: 2;
+}

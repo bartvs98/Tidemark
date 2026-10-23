@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestRateLimit(t *testing.T) {
@@ -151,3 +153,50 @@ func TestSetToken(t *testing.T) {
 		t.Errorf("Authorization after clearing = %q", auth.Load())
 	}
 }
+
+// LastQuota only reports what responses already said, and WithTransport carries every
+// request, so main can count them.
+func TestLastQuotaAndTransport(t *testing.T) {
+	reset := time.Now().Add(time.Hour).Unix()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Limit", "60")
+		w.Header().Set("X-RateLimit-Remaining", "12")
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+		_, _ = io.WriteString(w, `[]`)
+	}))
+	defer srv.Close()
+	var sent atomic.Int32
+	rt := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		sent.Add(1)
+		return http.DefaultTransport.RoundTrip(r)
+	})
+	s := New(nil, "", slog.New(slog.NewTextHandler(io.Discard, nil)), WithBaseURLs(srv.URL, srv.URL, srv.URL), WithTransport(rt))
+
+	if _, ok := s.LastQuota(); ok {
+		t.Error("a quota is known before any request")
+	}
+	if _, _, _, err := s.get(context.Background(), srv.URL+"/repos/a/b/releases", "", true); err != nil {
+		t.Fatal(err)
+	}
+	if rl, ok := s.LastQuota(); !ok || rl.Limit != 60 || rl.Remaining != 12 || rl.ResetAt.Unix() != reset {
+		t.Errorf("LastQuota = %+v %v", rl, ok)
+	}
+	if sent.Load() != 1 {
+		t.Errorf("requests through the transport = %d, want 1 (LastQuota must not ask)", sent.Load())
+	}
+	// Once the reset time has passed, the remaining count is stale.
+	s.mu.Lock()
+	s.rateLimit.ResetAt = time.Now().Add(-time.Minute)
+	s.mu.Unlock()
+	if _, ok := s.LastQuota(); ok {
+		t.Error("a quota past its reset is still reported")
+	}
+	s.SetToken("ghp_x")
+	if _, ok := s.LastQuota(); ok {
+		t.Error("the old token's quota is still known")
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

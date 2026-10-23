@@ -636,22 +636,28 @@ func TestWait(t *testing.T) {
 }
 
 func TestAfterRun(t *testing.T) {
-	var triggers []string
-	s := New(listSource{list: []docker.Container{ctr("a", "team/app:1.0.0", "sha256:1")}}, &countingRegistry{calls: map[string]int{}}, openStore(t, filepath.Join(t.TempDir(), "t.db")), quiet)
-	s.SetAfterRun(func(_ context.Context, trigger string) { triggers = append(triggers, trigger) })
+	var runs []Finished
+	db := openStore(t, filepath.Join(t.TempDir(), "t.db"))
+	s := New(listSource{list: []docker.Container{ctr("a", "team/app:1.0.0", "sha256:1")}}, &countingRegistry{calls: map[string]int{}}, db, quiet)
+	s.SetAfterRun(func(_ context.Context, run Finished) { runs = append(runs, run) })
 	runOnce(t, s)
 	if err := s.Wait(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(triggers) != 1 || triggers[0] != TriggerManual {
-		t.Errorf("hook calls = %v", triggers)
+	if len(runs) != 1 || runs[0].Trigger != TriggerManual || runs[0].Images != 1 {
+		t.Fatalf("hook calls = %+v", runs)
+	}
+	// The hook gets the run as recorded.
+	last, ok, err := db.LastFinishedRun(context.Background())
+	if r := runs[0]; err != nil || !ok || r.ID != last.ID || !r.StartedAt.Equal(last.StartedAt) || !r.FinishedAt.Equal(*last.FinishedAt) {
+		t.Errorf("hook run = %+v, recorded %+v (%v)", r, last, err)
 	}
 }
 
 func TestAfterRunNotCalledOnRunError(t *testing.T) {
 	called := false
 	s := New(listSource{err: errors.New("can't reach Docker")}, &countingRegistry{calls: map[string]int{}}, openStore(t, filepath.Join(t.TempDir(), "t.db")), quiet)
-	s.SetAfterRun(func(context.Context, string) { called = true })
+	s.SetAfterRun(func(context.Context, Finished) { called = true })
 	if st := runOnce(t, s); st.Err == "" {
 		t.Fatalf("status = %+v", st)
 	}

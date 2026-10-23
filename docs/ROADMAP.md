@@ -42,12 +42,11 @@ From the owner's notes after the MVP. One PR each; the release comes last so v1.
 - [x] **9b. Form pieces**: `input[tmInput]`, `tm-password-input`, `tm-select` (a listbox on Angular Aria), `tm-switch` and `tm-field` (label, hint, error, locked), all Signal Forms controls, on `/styleguide` and in [DESIGN-SYSTEM.md](DESIGN-SYSTEM.md#forms).
 - [x] **9c. Settings editable in the UI**: opt-in with `TIDEMARK_SETTINGS_EDITABLE=true`. Schedule, GitHub token, icons and all Telegram settings save per page and apply without a restart; an env var wins and locks its field, tokens are write-only, and env vars and the dialog share one validation ([FEATURES §7](FEATURES.md#7-checks-failures-and-settings)). The rules file stays hand-edited (parked below).
 - [x] **10. AI changelog summary**: opt-in summaries of the notes in range (what changed, what to do) with a verdict that can only raise the level, everywhere; a newer release extends the stored summary instead of starting over. Anthropic (Haiku 5.5), Gemini or any OpenAI-compatible endpoint (Ollama too); on demand from the detail page or automatically for updates with ≥ N releases; one stored summary per (repo, from, to); an AI settings page ([FEATURES §11](FEATURES.md#11-ai-summaries)). New in the design system: `tm-ai-marker` and the summary card.
-- [ ] **11. Stats** (later; brainstorm first, builds on step 8's history). Ideas so far:
-  - _Behind:_ how long each container has been behind (age of the running version vs. the latest), updates per container and stack over time, an up-to-date ratio over time (the tide as a history chart).
-  - _Upstream:_ release cadence per image/repo, breaking vs. calm releases per repo, biggest version jumps.
-  - _Check health:_ failures per container and reason, check durations, registry and GitHub requests, GitHub quota used.
-  - _AI usage:_ summaries and tokens per month, provider and model, on demand vs. automatic, failures, slowest calls (every call is recorded in `ai_calls` since step 10; the settings dialog shows this month's totals).
-  - _Lifetime (for fun):_ containers ever tracked, updates applied (running version changed), breaking changes caught, release notes read, check runs, longest-behind container ever, fastest update after a release, longest fully-up-to-date streak, mean time to update, Tidemark's own uptime.
+- [x] **11. Stats**: a `/stats` page (header chart icon) with a range: behind & updates (up to date and releases behind over time, updates applied, time to update, longest behind), upstream (releases per month by level, cadence, biggest jumps), check health (durations, failures, requests, GitHub quota) and AI usage per month and model, plus lifetime numbers. Each check run now records one row of counts (`run_stats`) and outgoing requests are counted ([FEATURES §12](FEATURES.md#12-stats)). New in the design system: `tm-stat`, `tm-time-chart`, `tm-bar-chart`, `tm-bar-list` (from `ui/charts`).
+- [ ] **12. Stats, second round** (no new recording needed; builds on step 11's page and data):
+  - **Time to update by kind:** the median time to update split by class (patch / minor / major) and by level (calm / attention / breaking), to show whether breaking updates sit much longer than patches.
+  - **From notification to update:** how long after the Telegram message an update gets applied (`notified.notified_at` → the `history` row whose version matches the notified key); only with notifications on.
+  - **Quiet upstreams:** repos of current containers with no release in a long while (say 9 months), flagged in the repositories table, since a project going quiet is often the first sign it's been abandoned.
 
 ## Ideas parked
 
@@ -64,3 +63,4 @@ From the owner's notes after the MVP. One PR each; the release comes last so v1.
 - Homepage/Homarr widget-compatible endpoint, Prometheus metrics
 - Multi-host via multiple Docker endpoints
 - Release-notes links for official images whose GitHub repo has no releases (postgres, mongo, mariadb, mysql, nginx: link to the project's own release notes)
+- More stats (after step 12): oldest software running (the age of the release each container runs, up to date or not), a tide calendar (a heatmap of each day's up-to-date ratio), release notes read in pages (from their word count), the most breaking upstream ("Grafana flagged breaking 6 times this year")

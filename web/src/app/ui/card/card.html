@@ -4,4 +4,5 @@
     <div class="flex items-center gap-2"><ng-content select="[tmCardActions]" /></div>
   </header>
 }
-<div [class.p-4]="!flush()"><ng-content /></div>
+<!-- flex-1: when a grid stretches the card, the body fills it (so content can centre in it). -->
+<div class="flex-1" [class.p-4]="!flush()"><ng-content /></div>

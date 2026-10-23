@@ -31,6 +31,9 @@ export * from './toaster/toasts';
 export * from './toaster/toaster';
 export * from './tooltip/tooltip';
 
+// Not re-exported: the charts (stat, time-chart, bar-chart, bar-list) are only used by lazy routes,
+// and the barrel would put them in the main bundle. Import them from ./charts.
+//
 // Not re-exported: ./markdown/markdown pulls in marked + DOMPurify and registers a sanitiser hook,
 // so it would land in the main bundle. Import it directly (from lazy routes only).
 

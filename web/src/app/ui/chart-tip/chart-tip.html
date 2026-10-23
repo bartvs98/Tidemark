@@ -1,0 +1,15 @@
+<div class="text-fg-muted">{{ heading() }}</div>
+@for (row of rows(); track $index) {
+  <div class="flex items-center gap-1.5">
+    @if (row.tone; as t) {
+      <span class="inline-block h-0.5 w-2.5 shrink-0 rounded-full" [style.background-color]="tone[t]" aria-hidden="true"></span>
+    }
+    <span class="font-semibold text-fg tabular-nums">{{ row.value }}</span>
+    @if (row.name) {
+      <span class="text-fg-muted">{{ row.name }}</span>
+    }
+  </div>
+}
+@if (note()) {
+  <div class="text-fg-muted">{{ note() }}</div>
+}

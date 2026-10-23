@@ -76,6 +76,11 @@ func WithBaseURLs(githubAPI, githubRaw, gitlab string) Option {
 	return func(s *Service) { s.githubAPI, s.githubRaw, s.gitlab = githubAPI, githubRaw, gitlab }
 }
 
+// WithTransport sends every request through rt (main counts them for the stats page).
+func WithTransport(rt http.RoundTripper) Option {
+	return func(s *Service) { s.http.Transport = rt }
+}
+
 func New(st *store.Store, githubToken string, log *slog.Logger, opts ...Option) *Service {
 	s := &Service{
 		store:     st,

@@ -1,0 +1,89 @@
+@if (chart(); as c) {
+  @if (showLegend()) {
+    <ul class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted" aria-hidden="true">
+      @for (s of series(); track s.name) {
+        <li class="flex items-center gap-1.5">
+          <span class="inline-block size-2 rounded-[2px]" [style.background-color]="tone[s.tone]"></span>{{ s.name }}
+        </li>
+      }
+    </ul>
+  }
+  <svg
+    #svg
+    class="tm-chart-svg"
+    [attr.height]="height()"
+    role="img"
+    [attr.aria-label]="label()"
+    [attr.aria-describedby]="tip() ? tipId : null"
+    tabindex="0"
+    (pointermove)="onPointer($event, svg)"
+    (pointerdown)="onPointer($event, svg)"
+    (pointerleave)="onLeave($event)"
+    (keydown)="onKey($event)"
+    (focus)="onFocus(svg)"
+    (blur)="active.set(null)"
+  >
+    @if (active() !== null) {
+      <rect class="tm-chart-band" [attr.x]="c.columns[active()!].x" [attr.y]="c.top" [attr.width]="c.band" [attr.height]="c.plotH" rx="4" />
+    }
+    @for (g of c.grid; track $index) {
+      <line class="tm-chart-grid" [attr.x1]="c.left" [attr.x2]="c.left + c.plotW" [attr.y1]="g.y" [attr.y2]="g.y" />
+      <text class="tm-chart-axis" data-axis="y" [attr.x]="c.left - 8" [attr.y]="g.y" text-anchor="end" dominant-baseline="middle">{{ g.label }}</text>
+    }
+    @for (col of c.columns; track $index) {
+      <g [attr.opacity]="col.faded ? 0.4 : null">
+        @for (s of col.segments; track $index) {
+          <path [attr.d]="s.d" [style.fill]="s.color" />
+        }
+      </g>
+    }
+    @for (l of c.xLabels; track $index) {
+      <text class="tm-chart-axis" data-axis="x" [attr.x]="l.x" [attr.y]="c.base + 16" [attr.text-anchor]="l.anchor">{{ l.text }}</text>
+    }
+    <!-- Each bar's whole slot is its hit area. -->
+    <rect [attr.x]="c.left" [attr.y]="0" [attr.width]="c.plotW" [attr.height]="c.base" fill="transparent" />
+  </svg>
+  @if (tip(); as t) {
+    <tm-chart-tip [id]="tipId" [heading]="t.heading" [rows]="t.rows" [note]="t.note" [anchor]="t.anchor" />
+  }
+  <!-- A table ignores .sr-only's 1 px height and would still make the page taller, so wrap it. -->
+  <div class="sr-only">
+    <table>
+      <caption>{{ label() }}</caption>
+      <thead>
+        <tr>
+          <th scope="col"><span class="sr-only">Category</span></th>
+          @for (s of series(); track s.name) {
+            <th scope="col">{{ s.name }}</th>
+          }
+          @if (series().length > 1) {
+            <th scope="col">Total</th>
+          }
+          @if (hasNotes()) {
+            <th scope="col">Note</th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (b of bars(); track $index; let i = $index) {
+          <tr>
+            <th scope="row">{{ b.label }}</th>
+            @for (s of series(); track s.name) {
+              <td>{{ valueOf(b, s.name) }}</td>
+            }
+            @if (series().length > 1) {
+              <td>{{ format()(totals()[i]) }}</td>
+            }
+            @if (hasNotes()) {
+              <td>{{ b.note ?? '' }}</td>
+            }
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+} @else {
+  <div class="flex items-center justify-center rounded-md text-sm text-fg-muted" [style.height.px]="height()">
+    {{ empty() }}
+  </div>
+}

@@ -16,6 +16,7 @@ Committed scenarios use the made-up demo host (`"base": "scripts/dev/demo-snapsh
     { "api": "PUT /api/containers/grafana/review", "body": { "kind": "reviewed", "version": "{latest:grafana}" } },
     { "snapshot": [{ "container": "traefik", "newImage": true }] },   // takes effect at the next check
     { "check": true },                                                 // run a check and wait for it
+    { "sql": "scripts/dev/scenarios/stats.sql" },                      // run a SQL file (path from the repo root) against the data dir's tidemark.db, e.g. to seed history
     // shots are taken after all setup steps, per browser × theme × width: <browser>-<shot>-<theme>-<width>.png
     { "shot": "history", "path": "/containers/traefik",
       "view": "list",                          // dashboard view (list | tiles), for path "/"
@@ -27,3 +28,5 @@ Committed scenarios use the made-up demo host (`"base": "scripts/dev/demo-snapsh
 ```
 
 Placeholders in step bodies: `{latest:<container>}` is that container's latest version at that moment, `{in:7d}` / `{in:12h}` an ISO time from now. A click target that isn't found, or a missing `element`, is reported as a `scenario` problem.
+
+`sql` steps run with `node:sqlite` while the server is up, so they see the schema the migrations made. Use SQLite date functions relative to `'now'` so seeded history stays recent; put the step after the startup check (before `check`, if the next check should see it). `stats.json` + `stats.sql` seed about 60 days of check runs, run stats, update history and AI calls for the stats page.
