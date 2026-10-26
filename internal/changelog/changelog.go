@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/bartvs98/tidemark/internal/analysis"
@@ -42,6 +43,9 @@ const (
 	maxBodyBytes = 32 << 20
 )
 
+// cacheIdle is how long a cached Changes entry may go unused before it is evicted (a var for tests).
+var cacheIdle = 24 * time.Hour
+
 var changelogFiles = []string{"CHANGELOG.md", "CHANGES.md", "changelog.md"}
 
 // ErrRateLimited means GitHub refused the request until its rate limit resets.
@@ -59,21 +63,30 @@ type Service struct {
 	gitlab    string
 
 	mu           sync.Mutex
-	token        string                 // GitHub token, "" for none; see SetToken
-	locks        map[string]*sync.Mutex // one sync per repo at a time
-	limitedUntil time.Time              // GitHub rate limit reset; no API calls before it
-	rateLimit    RateLimit              // last quota lookup (settings), see RateLimit
+	token        string               // GitHub token, "" for none; see SetToken
+	locks        map[string]*repoLock // one sync per repo at a time; only repos being synced
+	limitedUntil time.Time            // GitHub rate limit reset; no API calls before it
+	rateLimit    RateLimit            // last quota lookup (settings), see RateLimit
 	rateLimitAt  time.Time
 
 	// Changes results by repo, then by running→latest, with their analyses. The dashboard
 	// asks for every container on each poll; a repo's entry is dropped whenever Sync
 	// stores something.
 	cache map[string]map[string]*cached
+
+	generation atomic.Uint64 // see Generation
+}
+
+// repoLock is a repo's sync mutex with the number of holders and waiters, so the last one out removes it.
+type repoLock struct {
+	mu   sync.Mutex
+	refs int // guarded by Service.mu
 }
 
 type cached struct {
 	ch       Changes
 	analyses map[version.Class]analysis.Result // filled by Assess
+	used     time.Time                         // last hit, for eviction
 }
 
 type Option func(*Service)
@@ -97,7 +110,7 @@ func New(st *store.Store, githubToken string, log *slog.Logger, opts ...Option) 
 		githubAPI: "https://api.github.com",
 		githubRaw: "https://raw.githubusercontent.com",
 		gitlab:    "https://gitlab.com",
-		locks:     map[string]*sync.Mutex{},
+		locks:     map[string]*repoLock{},
 		cache:     map[string]map[string]*cached{},
 	}
 	for _, o := range opts {
@@ -396,14 +409,22 @@ func (s *Service) get(ctx context.Context, u, etag string, githubAPI bool) (body
 
 func (s *Service) lock(key string) func() {
 	s.mu.Lock()
-	m, ok := s.locks[key]
+	l, ok := s.locks[key]
 	if !ok {
-		m = &sync.Mutex{}
-		s.locks[key] = m
+		l = &repoLock{}
+		s.locks[key] = l
 	}
+	l.refs++
 	s.mu.Unlock()
-	m.Lock()
-	return m.Unlock
+	l.mu.Lock()
+	return func() {
+		l.mu.Unlock()
+		s.mu.Lock()
+		if l.refs--; l.refs == 0 {
+			delete(s.locks, key)
+		}
+		s.mu.Unlock()
+	}
 }
 
 // ── selecting ────────────────────────────────────────────
@@ -473,6 +494,9 @@ func (s *Service) entry(ctx context.Context, repo source.Repo, running, latest *
 	rangeKey := versionKey(running) + "→" + versionKey(latest)
 	s.mu.Lock()
 	c, ok := s.cache[key][rangeKey]
+	if ok {
+		c.used = time.Now()
+	}
 	s.mu.Unlock()
 	if ok {
 		return c, nil
@@ -481,8 +505,18 @@ func (s *Service) entry(ctx context.Context, repo source.Repo, running, latest *
 	if err != nil {
 		return nil, err
 	}
-	c = &cached{ch: ch, analyses: map[version.Class]analysis.Result{}}
+	c = &cached{ch: ch, analyses: map[version.Class]analysis.Result{}, used: time.Now()}
 	s.mu.Lock()
+	for k, byRange := range s.cache { // entries nobody asked for lately (a repo no container uses any more)
+		for rk, e := range byRange {
+			if time.Since(e.used) >= cacheIdle {
+				delete(byRange, rk)
+			}
+		}
+		if len(byRange) == 0 {
+			delete(s.cache, k)
+		}
+	}
 	if s.cache[key] == nil {
 		s.cache[key] = map[string]*cached{}
 	}
@@ -491,10 +525,17 @@ func (s *Service) entry(ctx context.Context, repo source.Repo, running, latest *
 	return c, nil
 }
 
+// Forget drops everything cached for repo (its key), e.g. after its notes were pruned.
+func (s *Service) Forget(key string) { s.forget(key) }
+
+// Generation changes whenever stored notes may have changed (every forget/Forget).
+func (s *Service) Generation() uint64 { return s.generation.Load() }
+
 func (s *Service) forget(repo string) {
 	s.mu.Lock()
 	delete(s.cache, repo)
 	s.mu.Unlock()
+	s.generation.Add(1)
 }
 
 func versionKey(v *version.Version) string {

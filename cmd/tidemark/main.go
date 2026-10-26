@@ -1,7 +1,8 @@
 // Command tidemark runs the Tidemark server.
 //
-//	tidemark              start the server
-//	tidemark healthcheck  exit 0 if the local server answers /api/health (for Docker HEALTHCHECK)
+//	tidemark                start the server
+//	tidemark healthcheck    exit 0 if the local server answers /api/health (for Docker HEALTHCHECK)
+//	tidemark backup <path>  write a consistent copy of the database to path (works while the server runs)
 package main
 
 import (
@@ -65,6 +66,9 @@ func main() {
 
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck(cfg.Addr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "backup" {
+		os.Exit(backup(cfg.DataDir, os.Args[2:]))
 	}
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
@@ -182,9 +186,15 @@ func run(cfg config.Config, log *slog.Logger) error {
 		} else if n > 0 {
 			log.Info("AI summaries cleaned up", "deleted", n)
 		}
+		if repos, tagLists, err := apiSrv.PruneUnused(ctx); err != nil {
+			log.Warn("pruning unused notes and tag lists failed", "err", err)
+		} else if repos+tagLists > 0 {
+			log.Info("unused notes and tag lists pruned", "repos", repos, "tagLists", tagLists)
+		}
 		if err := recordRunStats(ctx, db, apiSrv, run, reqs, changelogs); err != nil {
 			log.Warn("recording the run's stats failed", "err", err)
 		}
+		apiSrv.InvalidateStats() // after the run's stats row, so a rebuilt response has it
 		notifier.AfterRun(ctx)
 	})
 
@@ -393,6 +403,27 @@ func dockerSource(cfg config.Config) (docker.Source, error) {
 		return docker.NewSnapshot(cfg.DockerSnapshot), nil
 	}
 	return docker.NewClient(cfg.DockerHost)
+}
+
+// backup copies the database with VACUUM INTO, which is consistent even while the server
+// writes (a plain file copy of a WAL database isn't).
+func backup(dataDir string, args []string) int {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, "usage: tidemark backup <path>")
+		return 2
+	}
+	db, err := store.Open(filepath.Join(dataDir, "tidemark.db"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	defer db.Close()
+	if err := db.Backup(context.Background(), args[0]); err != nil {
+		fmt.Fprintln(os.Stderr, "backup:", err)
+		return 1
+	}
+	fmt.Println("backup written to", args[0])
+	return 0
 }
 
 func healthcheck(addr string) int {

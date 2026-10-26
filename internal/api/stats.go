@@ -44,6 +44,9 @@ const (
 	maxReleaseMonths = 24
 	// A repo without a release for longer than this is quiet.
 	quietAfterMonths = 9
+	// A cached stats response is rebuilt after this even when nothing it reads was invalidated
+	// (the container list and the range boundary move on their own).
+	statsMaxAge = 5 * time.Minute
 )
 
 type statsJSON struct {
@@ -411,6 +414,11 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "range must be 30d, 90d, 1y or all")
 		return
 	}
+	gen := s.statsGeneration()
+	if out, ok := s.cachedStatsFor(rng, gen); ok {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
 	now := time.Now().UTC()
 	var since time.Time
 	if span > 0 {
@@ -421,8 +429,48 @@ func (s *Server) getStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// Without Docker the response is missing parts, so the next request tries again.
+	if !out.Partial {
+		s.statsMu.Lock()
+		s.statsCache[rng] = cachedStats{gen: gen, built: time.Now(), out: out}
+		s.statsMu.Unlock()
+	}
 	writeJSON(w, http.StatusOK, out)
 }
+
+// cachedStats is a stats response and the generation it was built at; gen is read before
+// building, so a change during the build leaves it stale.
+type cachedStats struct {
+	gen   statsGen
+	built time.Time
+	out   statsJSON
+}
+
+// statsGen changes whenever what the stats read may have changed: the api's own counter
+// (InvalidateStats) and the stored notes' (changelog.Service.Generation).
+type statsGen struct{ api, notes uint64 }
+
+func (s *Server) statsGeneration() statsGen {
+	g := statsGen{api: s.statsGen.Load()}
+	if s.changelogs != nil {
+		g.notes = s.changelogs.Generation()
+	}
+	return g
+}
+
+func (s *Server) cachedStatsFor(rng string, gen statsGen) (statsJSON, bool) {
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+	c, ok := s.statsCache[rng]
+	if !ok || c.gen != gen || time.Since(c.built) >= statsMaxAge {
+		return statsJSON{}, false
+	}
+	return c.out, true
+}
+
+// InvalidateStats makes the next stats request rebuild its response; the after-run hook
+// calls it, as does every API write the stats read.
+func (s *Server) InvalidateStats() { s.statsGen.Add(1) }
 
 // statsData is everything one stats response is built from.
 type statsData struct {
@@ -440,6 +488,7 @@ type statsData struct {
 	calls      []store.AICall                       // all, oldest first
 	applied    []appliedInfo                        // every history row with a previous image
 	notified   map[store.NotifiedKey]store.Notified
+	pruned     store.PrunedTotals // release notes deleted by PruneUnused, for the lifetime totals
 	// coveredFrom: per repo key, where its stored notes are complete from: the start of the
 	// month after its oldest stored release when older ones weren't fetched (has_more), zero
 	// when the whole history is stored.
@@ -496,6 +545,9 @@ func (s *Server) loadStats(ctx context.Context, now, since time.Time) (*statsDat
 		return nil, false, err
 	}
 	if d.notified, err = s.store.Notified(ctx); err != nil {
+		return nil, false, err
+	}
+	if d.pruned, err = s.store.PrunedReleases(ctx); err != nil {
 		return nil, false, err
 	}
 	states, err := s.store.AllRepoStates(ctx)
@@ -1053,8 +1105,7 @@ func (s *Server) releaseLevels(ctx context.Context, releases map[string][]store.
 		}
 		c := repoLevels{fetchedAt: fetched, byTag: make(map[string]analysis.Level, len(full)), words: make(map[string]int, len(full))}
 		for _, r := range full {
-			c.byTag[r.Tag] = analysis.Analyze(r.Body, nil).Level
-			c.words[r.Tag] = len(strings.Fields(r.Body))
+			c.byTag[r.Tag], c.words[r.Tag] = releaseLevel(r.Body)
 		}
 		next[key] = c
 	}
@@ -1065,6 +1116,12 @@ func (s *Server) releaseLevels(ctx context.Context, releases map[string][]store.
 		levels[key], words[key] = c.byTag, c.words
 	}
 	return levels, words, nil
+}
+
+// releaseLevel is a release's own level and the words in its notes, as the stats count them
+// (and pruning adds them to the lifetime totals).
+func releaseLevel(body string) (analysis.Level, int) {
+	return analysis.Analyze(body, nil).Level, len(strings.Fields(body))
 }
 
 // covers says whether levels has every release in rels.
@@ -1302,6 +1359,8 @@ func (s *Server) lifetimeStats(d *statsData) lifetimeJSON {
 		names[h.ContainerName] = true
 	}
 	out.ContainersTracked = len(names)
+	// Pruned notes keep counting, so the lifetime numbers never drop.
+	out.ReleasesStored, out.BreakingFlagged, out.NotesWords = d.pruned.Releases, d.pruned.Breaking, d.pruned.Words
 	for key, rels := range d.releases {
 		out.ReleasesStored += len(rels)
 		for _, r := range rels {

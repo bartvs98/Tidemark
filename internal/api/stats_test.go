@@ -342,6 +342,7 @@ func TestStatsFromHistory(t *testing.T) {
 	}
 	_ = db.AddAICall(ctx, store.AICall{At: ago(day), Provider: "anthropic", Model: "m", Trigger: "manual", Mode: "extended", Duration: 5 * time.Second})
 	_ = db.AddAICall(ctx, store.AICall{At: ago(day), Provider: "openai", Model: "g", Trigger: "manual", Error: "timeout", Duration: time.Minute})
+	srv.InvalidateStats() // written straight to the store
 	out = getStats(t, h, "all")
 	r := out.Upstream.Repos[0]
 	if r.Releases != 4 || r.Breaking != 1 || r.Attention != 0 || *r.MedianGapDays != 35 {
@@ -665,6 +666,7 @@ func TestStatsBehindNow(t *testing.T) {
 	old := time.Now().UTC().Add(-40 * day).Truncate(time.Second)
 	_ = db.AddRunStats(ctx, store.RunStats{RunID: 1, At: old.Add(-day), Checked: 2, UpToDate: 2})
 	_ = db.AddRunStats(ctx, store.RunStats{RunID: 2, At: old, Checked: 3, UpToDate: 1, Updates: 2, Attention: 1, ReleasesBehind: 7})
+	srv.InvalidateStats() // as the after-run hook does
 	out := getStats(t, h, "30d")
 	if n := out.Behind.Now; len(out.Behind.Tide) != 0 || n == nil || !n.At.Equal(old) ||
 		n.Checked != 3 || n.UpToDate != 1 || n.Updates != 2 || n.Attention != 1 || n.Breaking != 0 || n.ReleasesBehind != 7 {
