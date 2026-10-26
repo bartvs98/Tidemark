@@ -321,6 +321,24 @@ func (s *Store) Releases(ctx context.Context, repo string) ([]Release, error) {
 	return out, rows.Err()
 }
 
+// ReleaseTags returns the tags of a repo's stored releases, without reading their notes.
+func (s *Store) ReleaseTags(ctx context.Context, repo string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT tag FROM releases WHERE repo = ?`, repo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		out = append(out, tag)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) RepoState(ctx context.Context, repo string) (RepoState, bool, error) {
 	st := RepoState{Repo: repo}
 	var fetched string

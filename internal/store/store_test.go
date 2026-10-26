@@ -217,6 +217,9 @@ func TestReleasesAndRepoState(t *testing.T) {
 	if len(rs) != 3 {
 		t.Fatalf("got %d releases", len(rs))
 	}
+	if tags, err := s.ReleaseTags(ctx, repo); err != nil || len(tags) != 3 || !slices.Contains(tags, "2026.11.0b0") {
+		t.Errorf("tags = %v, %v", tags, err)
+	}
 	_ = s.SaveReleases(ctx, repo, []Release{{Tag: "1.0.0"}}, true)
 	if rs, _ := s.Releases(ctx, repo); len(rs) != 1 || rs[0].Tag != "1.0.0" || !rs[0].PublishedAt.IsZero() {
 		t.Errorf("after replace: %+v", rs)

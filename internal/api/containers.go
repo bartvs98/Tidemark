@@ -305,27 +305,19 @@ func timeOrNil(t time.Time) *time.Time {
 // don't count.
 func (s *Server) assessUpdate(ctx context.Context, u *updateJSON, c docker.Container, ref imageref.Ref, rs rules.Rules) {
 	running, latest := parseVersion(u.Running), parseVersion(u.Latest)
-	var ch changelog.Changes
 	repo, found := s.notesRepo(c, ref, rs)
-	if found {
-		var err error
-		if ch, err = s.changelogs.Changes(ctx, repo, running, latest); err != nil {
-			s.log.Debug("stored release notes unavailable", "repo", repo.Key(), "err", err)
-		}
+	if !found {
+		res := changelog.Analyze(version.Class(u.Class), running, latest, changelog.Changes{})
+		u.Level, u.Reasons = res.Level, res.Reasons
+		return
 	}
-	res := assess(u.Class, running, latest, ch)
+	_, res, err := s.changelogs.Assess(ctx, repo, version.Class(u.Class), running, latest)
+	if err != nil {
+		s.log.Debug("stored release notes unavailable", "repo", repo.Key(), "err", err)
+		res = changelog.Analyze(version.Class(u.Class), running, latest, changelog.Changes{})
+	}
 	u.Level, u.Reasons = res.Level, res.Reasons
-	if found {
-		s.applyAI(u, repo, running, latest)
-	}
-}
-
-func assess(class string, running, latest *version.Version, ch changelog.Changes) analysis.Result {
-	in := analysis.Input{Class: version.Class(class), Running: running, Latest: latest, RunningNotes: ch.FromBody}
-	for _, r := range ch.Releases {
-		in.Releases = append(in.Releases, analysis.Notes{Tag: r.Tag, Body: r.Body})
-	}
-	return analysis.Assess(in)
+	s.applyAI(u, repo, running, latest)
 }
 
 type progressJSON struct {

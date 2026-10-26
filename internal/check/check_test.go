@@ -321,6 +321,34 @@ func TestChangedRulesMakeResultStale(t *testing.T) {
 	}
 }
 
+func TestRulesAreMemoised(t *testing.T) {
+	app := withLabels(ctr("app", "team/app:1.0.0", "sha256:1"), "tidemark.tag-pattern", `^\d+\.\d+\.\d+$`)
+	s := New(listSource{list: []docker.Container{app}}, &countingRegistry{calls: map[string]int{}}, openStore(t, filepath.Join(t.TempDir(), "t.db")), quiet)
+	if first, again := s.Rules(app), s.Rules(app); first.TagPattern == nil || first.TagPattern != again.TagPattern {
+		t.Error("same container, same labels: the rules should be reused")
+	}
+	// Same ID, other labels (a test double or a snapshot edit): parsed again.
+	if rs := s.Rules(withLabels(app, "tidemark.pin", "1.0")); rs.Pin != "1.0" || rs.TagPattern != nil {
+		t.Errorf("changed labels = %+v", rs)
+	}
+	// Problems are clipped, so a caller's append can't write into the memo.
+	bad := withLabels(ctr("bad", "team/app:1.0.0", "sha256:1"), "tidemark.pin", "x", "tidemark.ignore", "maybe")
+	_ = s.Rules(bad)
+	if p := s.Rules(bad).Problems; len(p) != 2 || cap(p) != len(p) {
+		t.Errorf("problems = %v (cap %d)", p, cap(p))
+	}
+
+	// A run keeps only the listed containers.
+	runOnce(t, s)
+	s.memoMu.Lock()
+	_, kept := s.memo[app.ID]
+	_, gone := s.memo[bad.ID]
+	s.memoMu.Unlock()
+	if !kept || gone {
+		t.Errorf("after a run: app kept=%v, bad kept=%v", kept, gone)
+	}
+}
+
 func TestGroupsSplitByRules(t *testing.T) {
 	reg := &countingRegistry{calls: map[string]int{}}
 	plain := ctr("plain", "team/app:1.0.0", "sha256:1")

@@ -595,7 +595,7 @@ func (s *Server) appliedUpdates(ctx context.Context, d *statsData) []appliedInfo
 			}
 		}
 		if repo, ok := d.repoOf[h.ContainerName]; ok && to != nil && !info.rebuild {
-			ch, err := s.changelogs.Changes(ctx, repo, from, to)
+			ch, res, err := s.changelogs.Assess(ctx, repo, version.Class(info.class), from, to)
 			if err != nil {
 				s.log.Debug("stats: stored release notes unavailable", "repo", repo.Key(), "err", err)
 			} else {
@@ -609,7 +609,7 @@ func (s *Server) appliedUpdates(ctx context.Context, d *statsData) []appliedInfo
 						info.behind = gap(first, h.DetectedAt)
 					}
 				}
-				info.level = assess(info.class, from, to, ch).Level
+				info.level = res.Level
 			}
 		}
 		out = append(out, info)
