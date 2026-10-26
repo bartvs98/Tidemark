@@ -27,23 +27,38 @@ The wordmark uses lowercase live text (`tidemark`) in Geist, so it renders in th
 
 Dark mode is the default because home-lab dashboards usually live in dark mode, but light mode is fully supported.
 
-### Deep (neutrals, slightly blue)
+### Deep (neutrals, slightly blue): dark mode
 
 | Token | Hex | Typical use |
 |---|---|---|
 | deep-950 | `#070D17` | Dark page background, text on accent (dark) |
-| deep-900 | `#0B1726` | Dark surface, icon tile, primary text (light) |
+| deep-900 | `#0B1726` | Dark surface, icon tile |
 | deep-800 | `#13233A` | Dark raised surface (toasts) |
 | deep-700 | `#1E3350` | Dark borders |
 | deep-600 | `#33496A` | Strong border (dark) |
-| deep-500 | `#536785` | Secondary text (light), subtle / disabled text (dark) |
-| deep-400 | `#7C8DA6` | Secondary text (dark), subtle / disabled text (light) |
-| deep-300 | `#A9B6C8` | Strong border (light) |
-| deep-200 | `#CDD6E2` | Light borders |
-| deep-100 | `#E6EBF2` | Light hover |
-| deep-50  | `#F4F7FA` | Light page background, primary text (dark) |
+| deep-500 | `#536785` | Subtle / disabled text (dark) |
+| deep-400 | `#7C8DA6` | Secondary text (dark) |
+| deep-300 | `#A9B6C8` | — |
+| deep-200 | `#CDD6E2` | — |
+| deep-100 | `#E6EBF2` | — |
+| deep-50  | `#F4F7FA` | Primary text (dark) |
 
-Two surface colours sit outside the scale: white `#FFFFFF` (light surface and raised surface) and `#112038` (dark hover, between deep-900 and deep-800).
+Dark hover `#112038` sits outside the scale, between deep-900 and deep-800.
+
+### Paper (warm neutrals): light mode
+
+Light mode is warm paper with softer ink rather than a cool near-white: easier on the eyes, and the tide water still shows.
+
+| Role | Hex |
+|---|---|
+| Page background (`canvas`, also the phone browser bar) | `#EFECE6` |
+| Surface (cards, tables) | `#F8F6F2` |
+| Raised (toasts, popovers) | `#FBFAF7` |
+| Hover / pressed / skeleton | `#E5E1D9` |
+| Border / strong border | `#D9D3C7` / `#BCB4A5` |
+| Primary text | `#1E2531` |
+| Secondary text (≥ 4.5:1 on all three backgrounds) | `#58606E` |
+| Subtle text (placeholders, arrows, disabled) | `#7F838B` |
 
 ### Tide (brand accent)
 
@@ -53,9 +68,9 @@ Two surface colours sit outside the scale: white `#FFFFFF` (light surface and ra
 | tide-400 | `#2DD4BF` | Accent on dark: primary button bg (dark text on it), focus ring |
 | tide-500 | `#14B8A6` | Wordmark only |
 | tide-600 | `#0D9488` | Focus ring on light (≥ 3:1, UI only) |
-| tide-700 | `#0F766E` | Accent on light: primary button bg (white text on it), accent text and links (≥ 4.5:1) |
+| tide-700 | `#0F766E` | Accent on light: primary button bg (white text on it) |
 
-Light-mode accent hover is `#0B5F58`, a darker step outside the palette.
+Outside the palette on light: accent hover `#0B5F58`, and accent text and links `#0C6A62` (≥ 4.5:1 on the paper backgrounds).
 
 ### Status
 
@@ -63,11 +78,11 @@ Light-mode accent hover is `#0B5F58`, a darker step outside the palette.
 
 | Meaning | Dark mode | Light mode | Shown as |
 |---|---|---|---|
-| Up to date | `#3FB97F` | `#1F7A4D` | Small green check + the word "Up to date", no badge |
+| Up to date | `#3FB97F` | `#1A6B43` | Small green check + the word "Up to date", no badge |
 | Update, no risk | tide-400 | tide-700 | Neutral class badge + tide dot |
-| Attention | `#F5B83D` | `#9A6700` | Amber badge "Attention" + highlighted lines |
-| Breaking | `#F2665E` | `#C9372C` | Coral badge "Breaking" + highlighted lines |
-| Unknown / error | deep-400 | deep-500 | Muted text, dashed border: "check failed" (never checked successfully), "rule skipped", "image missing" |
+| Attention | `#F5B83D` | `#875A00` | Amber badge "Attention" + highlighted lines |
+| Breaking | `#F2665E` | `#B5302A` | Coral badge "Breaking" + highlighted lines |
+| Unknown / error | deep-400 | secondary text | Muted text, dashed border: "check failed" (never checked successfully), "rule skipped", "image missing" |
 | Kept result | — | — | Small muted text + history icon "refresh failed", no badge or colour: it must not hide the result shown |
 | Reviewed | — | — | Check icon + "Reviewed" in small muted text, class and level badges faded; no colour of its own (it isn't a risk) |
 | Snoozed | — | — | Clock icon on the "Snoozed" section, "until 3 Nov" / "until newer than 1.6.0" under the version, badges faded; no colour |

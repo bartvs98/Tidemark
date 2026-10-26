@@ -61,44 +61,49 @@
   --color-tide-600: #0d9488;
   --color-tide-700: #0f766e;
 
+  /*
+   * Light is "paper": warm off-whites with softer ink, instead of the deep-* scale's cool
+   * near-white. Text and status colours keep ≥ 4.5:1 on canvas, surface and hover.
+   */
+
   /* ── Semantic: surfaces ────────────────────────────── */
-  --color-canvas: light-dark(#f4f7fa, #070d17); /* page background */
-  --color-surface: light-dark(#ffffff, #0b1726); /* cards, tables */
-  --color-raised: light-dark(#ffffff, #13233a); /* toasts, popovers */
-  --color-hover: light-dark(#e6ebf2, #112038); /* hover / pressed / skeleton */
+  --color-canvas: light-dark(#efece6, #070d17); /* page background */
+  --color-surface: light-dark(#f8f6f2, #0b1726); /* cards, tables */
+  --color-raised: light-dark(#fbfaf7, #13233a); /* toasts, popovers */
+  --color-hover: light-dark(#e5e1d9, #112038); /* hover / pressed / skeleton */
 
   /* ── Semantic: lines ───────────────────────────────── */
-  --color-line: light-dark(#cdd6e2, #1e3350);
-  --color-line-strong: light-dark(#a9b6c8, #33496a);
+  --color-line: light-dark(#d9d3c7, #1e3350);
+  --color-line-strong: light-dark(#bcb4a5, #33496a);
 
   /* ── Semantic: text ────────────────────────────────── */
-  --color-fg: light-dark(#0b1726, #f4f7fa);
-  --color-fg-muted: light-dark(#536785, #7c8da6); /* secondary text, ≥ 4.5:1 */
-  --color-fg-subtle: light-dark(#7c8da6, #536785); /* placeholders, arrows, disabled */
+  --color-fg: light-dark(#1e2531, #f4f7fa);
+  --color-fg-muted: light-dark(#58606e, #7c8da6); /* secondary text, ≥ 4.5:1 */
+  --color-fg-subtle: light-dark(#7f838b, #536785); /* placeholders, arrows, disabled */
 
   /* ── Semantic: accent (Tide) ───────────────────────── */
   --color-accent: light-dark(#0f766e, #2dd4bf); /* primary button bg */
   --color-accent-hover: light-dark(#0b5f58, #5eead4);
   --color-on-accent: light-dark(#ffffff, #070d17); /* text on accent / breaking bg */
-  --color-accent-text: light-dark(#0f766e, #5eead4); /* links, active tab */
+  --color-accent-text: light-dark(#0c6a62, #5eead4); /* links, active tab */
   --color-accent-soft: light-dark(#dcf3ef, rgb(45 212 191 / 0.12));
   --color-focus: light-dark(#0d9488, #2dd4bf);
-  --color-water: light-dark(rgb(15 118 110 / 0.1), rgb(45 212 191 / 0.06)); /* tide gauge + backdrop water, layered */
+  --color-water: light-dark(rgb(15 118 110 / 0.17), rgb(45 212 191 / 0.06)); /* tide gauge + backdrop water, layered */
 
   /* ── Semantic: status (colour = risk only) ─────────── */
-  --color-ok: light-dark(#1f7a4d, #3fb97f);
+  --color-ok: light-dark(#1a6b43, #3fb97f);
 
-  --color-attention: light-dark(#9a6700, #f5b83d);
+  --color-attention: light-dark(#875a00, #f5b83d);
   --color-attention-soft: light-dark(#fff4d6, rgb(245 184 61 / 0.12));
   --color-attention-line: light-dark(#ecc977, rgb(245 184 61 / 0.38));
 
-  --color-breaking: light-dark(#c9372c, #f2665e);
+  --color-breaking: light-dark(#b5302a, #f2665e);
   --color-breaking-soft: light-dark(#fdecea, rgb(242 102 94 / 0.12));
   --color-breaking-line: light-dark(#f2b3ad, rgb(242 102 94 / 0.42));
 }
 
 :root {
-  --tm-shadow: light-dark(rgb(11 23 38 / 0.08), rgb(0 0 0 / 0.45));
+  --tm-shadow: light-dark(rgb(60 45 20 / 0.07), rgb(0 0 0 / 0.45));
   color-scheme: dark;
 }
 

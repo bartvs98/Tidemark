@@ -14,7 +14,7 @@
       var t = localStorage.getItem('tidemark.theme');
       if (t === 'light' || t === 'dark' || t === 'system') document.documentElement.dataset.theme = t;
       var light = t === 'light' || (t === 'system' && !matchMedia('(prefers-color-scheme: dark)').matches);
-      if (light) document.querySelector('meta[name="theme-color"]').content = '#f4f7fa';
+      if (light) document.querySelector('meta[name="theme-color"]').content = '#efece6';
     } catch (e) {}
   </script>
 </head>
