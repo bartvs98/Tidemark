@@ -221,6 +221,34 @@ describe('AiSummary', () => {
     expect(changed).toHaveBeenCalledTimes(2);
   });
 
+  it("doesn't poll in a hidden tab, and asks once when it's shown again", async () => {
+    vi.useFakeTimers();
+    const setHidden = (hidden: boolean) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    try {
+      const fixture = TestBed.createComponent(AiSummary);
+      fixture.componentRef.setInput('name', 'x');
+      fixture.componentRef.setInput('ai', { ...BASE, generating: true });
+      const changed = vi.fn();
+      fixture.componentInstance.changed.subscribe(changed);
+      fixture.detectChanges();
+      setHidden(true);
+      await vi.advanceTimersByTimeAsync(AI_POLL_MS * 3);
+      expect(changed).not.toHaveBeenCalled();
+
+      setHidden(false);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(changed).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(AI_POLL_MS);
+      expect(changed).toHaveBeenCalledTimes(2);
+    } finally {
+      delete (document as { visibilityState?: unknown }).visibilityState;
+      vi.useRealTimers();
+    }
+  });
+
   it('leaves out the stats that are unknown', async () => {
     const a = await render({
       ...BASE,

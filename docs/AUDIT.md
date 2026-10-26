@@ -25,7 +25,7 @@ Check runs scale fine: they group containers by image, share registry requests a
 
 ## B. Docker inventory and the API read path
 
-- [ ] **should: every read re-inventories Docker.** `docker.Client.Containers` lists all containers, then inspects each distinct image **sequentially**, with no cache. These all call it:
+- [x] **should: every read re-inventories Docker.** `docker.Client.Containers` lists all containers, then inspects each distinct image **sequentially**, with no cache. These all call it:
 
   | Caller | How often |
   |---|---|
@@ -59,7 +59,7 @@ Check runs scale fine: they group containers by image, share registry requests a
 
 ## D. Frontend
 
-- [ ] **should: polling ignores whether the page is visible.** The dashboard reloads every 60 s (1.5 s during a run) in a background tab, a minimised window or a wall display nobody looks at. Each poll is the full inventory and analysis from B, and every extra tab multiplies it.
+- [x] **should: polling ignores whether the page is visible.** The dashboard reloads every 60 s (1.5 s during a run) in a background tab, a minimised window or a wall display nobody looks at. Each poll is the full inventory and analysis from B, and every extra tab multiplies it.
   - **Fix:** pause the timer while `document.hidden`, and reload once on `visibilitychange` to visible. Do the same for the AI-summary poll on the detail page.
   - Combined with B, a forgotten tab then costs nothing.
 - [ ] **nice: sanitised HTML is re-parsed after DOMPurify.** `renderMarkdown` sanitises, then `imagesToLinks` and `underlineMatches` each parse the result again with `template.innerHTML`, edit it, and serialise it back. Re-parsing sanitised markup in another context is the pattern behind mutation-XSS bypasses, which DOMPurify's docs warn about. The edits only add text, http(s) links and spans, so the risk is low.

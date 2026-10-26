@@ -83,6 +83,27 @@ type apiImage struct {
 	inspectErr string // set by the client when the inspect failed with something other than 404
 }
 
+// apiImageSummary is an entry of GET /images/json: the image's current tags and digests.
+type apiImageSummary struct {
+	ID          string   `json:"Id"`
+	RepoTags    []string `json:"RepoTags"`
+	RepoDigests []string `json:"RepoDigests"`
+}
+
+// tags and digests leave out the placeholders older engines list for untagged images.
+func (s apiImageSummary) tags() []string    { return without(s.RepoTags, "<none>:<none>") }
+func (s apiImageSummary) digests() []string { return without(s.RepoDigests, "<none>@<none>") }
+
+func without(list []string, drop string) []string {
+	out := make([]string, 0, len(list))
+	for _, v := range list {
+		if v != drop {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 func (c apiContainer) toContainer(images map[string]apiImage) Container {
 	img, found := images[c.ImageID]
 	out := Container{

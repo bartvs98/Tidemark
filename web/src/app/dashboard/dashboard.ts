@@ -3,6 +3,7 @@ import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { HttpClient, HttpErrorResponse, httpResource } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import {
+  PageVisibility,
   SegmentOption,
   TmBadge,
   TmButton,
@@ -93,6 +94,7 @@ const GROUPS: SegmentOption<Grouping>[] = [
 export class Dashboard {
   private readonly http = inject(HttpClient);
   private readonly toasts = inject(Toasts);
+  private readonly visibility = inject(PageVisibility);
   private readonly state = inject(DashboardState);
 
   protected readonly list = httpResource<ContainerList>(() => '/api/containers');
@@ -311,8 +313,19 @@ export class Dashboard {
     // While a check runs, poll fast so results appear as they come in; otherwise slowly.
     // Depend on the status object (new on every response), not the boolean, which stays
     // `true` between polls, and on the resource status, so a failed poll schedules the next.
+    // A hidden tab doesn't poll; it reloads once when it's shown again.
+    let hidden = false;
     effect((onCleanup) => {
       this.list.status();
+      if (!this.visibility.visible()) {
+        hidden = true;
+        return;
+      }
+      if (hidden) {
+        hidden = false;
+        untracked(() => this.list.reload());
+        return;
+      }
       const timer = setTimeout(() => this.list.reload(), this.check()?.running ? POLL_MS : IDLE_POLL_MS);
       onCleanup(() => clearTimeout(timer));
     });

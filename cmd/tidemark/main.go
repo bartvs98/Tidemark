@@ -46,7 +46,11 @@ var version = "dev"
 // (or a container has no valid result).
 const startupCheckAge = time.Hour
 
-// Caps for the after-check hook's two parts (check.afterCheckTimeout caps the whole hook).
+// apiListTTL: the API's reads share one container list for this long (docker.Shared).
+const apiListTTL = 2 * time.Second
+
+// Caps for the after-check hook's notes sync (check.afterCheckTimeout caps the whole hook)
+// and for the AI follow-up it queues.
 const (
 	prefetchTimeout = time.Minute
 	autoAITimeout   = 2 * time.Minute
@@ -191,10 +195,12 @@ func run(cfg config.Config, log *slog.Logger) error {
 	settingsMgr := settings.New(db, cfg.Env, cfg.Editable, appliers(ctx, cfg, log, checks, changelogs, notifier, aiSvc, setIcons), log)
 
 	// The API server is built before the startup check so the first run's hook has its source.
+	// Its reads share one list (polls, detail pages and the after-run hook's three calls);
+	// check runs keep listing for themselves.
 	apiSrv = api.New(api.Deps{
 		Version:    version,
 		Log:        log,
-		Source:     source,
+		Source:     docker.Shared(source, apiListTTL),
 		Checks:     checks,
 		Changelogs: changelogs,
 		Store:      db,

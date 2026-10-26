@@ -112,6 +112,8 @@ func fakeEngine(t *testing.T) *httptest.Server {
 				t.Errorf("containers list without all=1")
 			}
 			_, _ = w.Write(f.Containers)
+		case r.URL.Path == "/images/json":
+			_ = json.NewEncoder(w).Encode(f.Images) // inspects carry the summary's fields too
 		case strings.HasPrefix(r.URL.Path, "/containers/"):
 			t.Errorf("container inspect must never be called: %s", r.URL.Path)
 			w.WriteHeader(http.StatusForbidden)

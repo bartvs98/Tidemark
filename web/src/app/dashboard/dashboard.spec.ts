@@ -659,6 +659,36 @@ describe('Dashboard', () => {
     }
   });
 
+  it("doesn't poll in a hidden tab, and reloads once when it's shown again", async () => {
+    vi.useFakeTimers();
+    const settle = () => vi.advanceTimersByTimeAsync(20);
+    const setHidden = (hidden: boolean) => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (hidden ? 'hidden' : 'visible') });
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    try {
+      const body: ContainerList = { source: { kind: 'docker', location: 'x' }, check: { running: true, done: 0, total: 3 }, containers: [container('jellyfin', 'media')] };
+      const fixture = TestBed.createComponent(Dashboard);
+      fixture.detectChanges();
+      http.expectOne('/api/containers').flush(body);
+      await settle();
+
+      setHidden(true);
+      await vi.advanceTimersByTimeAsync(120_000);
+      http.expectNone('/api/containers');
+
+      setHidden(false);
+      await settle();
+      http.expectOne('/api/containers').flush(body);
+      await settle();
+      await vi.advanceTimersByTimeAsync(1500);
+      http.expectOne('/api/containers').flush(body); // and polling again
+    } finally {
+      delete (document as { visibilityState?: unknown }).visibilityState;
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps the list and keeps polling when one poll fails', async () => {
     vi.useFakeTimers();
     const settle = () => vi.advanceTimersByTimeAsync(20);

@@ -101,7 +101,9 @@ compose.example.yaml
 
 One check run covers every container (when runs happen: [FEATURES §7](FEATURES.md#7-checks-failures-and-settings)). Limits: 6 workers, at most 4 concurrent requests per registry host, 2 min per container, 60 s per registry request. The rules file is re-read at the start of each run.
 
-1. **Inventory:** `GET /containers/json?all=1` plus `GET /images/{id}/json` once per image. This gives name, image ref, image ID, `RepoDigests`, labels and Compose project/service.
+1. **Inventory:** `GET /containers/json?all=1`, `GET /images/json` (every image's current tags and digests) and `GET /images/{id}/json` for each image the client hasn't inspected yet. This gives name, image ref, image ID, `RepoDigests`, labels and Compose project/service.
+   - `docker.Client` caches inspects by image ID (an image's config never changes) for the images still in use, and takes `RepoTags` and `RepoDigests` from the image list on every call, since a pull or re-tag moves them. When the image list fails, every image is inspected again.
+   - The API's reads (`GET /api/containers`, the detail and stats pages, the after-run hook) go through `docker.Shared`: one list shared by concurrent callers and reused for 2 s. Check runs list for themselves.
    - Container inspect is never called, because it exposes environment variables. From the image environment only `*_VERSION` variables are kept.
    - Ignored containers are dropped here, before any registry call.
    - An image deleted since the container was created fails that container with "the container's image is no longer on this host". Any other failed image inspect also fails only that container.
@@ -242,7 +244,7 @@ What the pages show is in [FEATURES §1](FEATURES.md#1-dashboard) and [§6](FEAT
 - **Routes** (`app.routes.ts`, all lazy): `/` dashboard, `/containers/:name` detail, `/stats`, `/styleguide` (design-system showcase; linked from the settings dialog and shipped in production); anything else redirects to `/`.
 - **Shell** (`app.html`): `tm-tide-backdrop` behind every page; sticky 64 px header (`h-16`, content `max-w-7xl`) with the logo (links home), the stats link (chart icon), theme switch (stored as `tidemark.theme`) and the settings gear; toaster; footer with Tidemark's version (from `/api/health`) and the selfh.st icons credit (CC BY 4.0).
 - **Dashboard** (`dashboard/`):
-  - **Data:** polls `/api/containers` every 1.5 s during a run, otherwise every minute. `data` is a `linkedSignal` that keeps the last good response while a refresh fails (the detail page does the same, keyed by container name).
+  - **Data:** polls `/api/containers` every 1.5 s during a run, otherwise every minute; not while the tab is hidden (`ui/page-visibility`), reloading once when it's shown again. `data` is a `linkedSignal` that keeps the last good response while a refresh fails (the detail page does the same, keyed by container name).
   - **Coming back from a detail page:** the last list and which sections are open live in the root `DashboardState` service, so the page renders at full height at once and the router (`withInMemoryScrolling`) can restore the scroll position. The detail page's "← Containers" calls `location.back()` when it came from `/`.
   - **Grouping:** `groupBySeverity` / `orderStacks` in `containers.ts`. `splitIgnored` and `splitSnoozed` take those containers out first for their own sections. The stack view's collapsed "Up to date" section shares its open state (`currentOpen`) with the severity view's.
   - **Fading:** up-to-date rows and tiles carry `data-current`, and faded ones `data-dimmed` (`dimQuiet`).
@@ -252,7 +254,7 @@ What the pages show is in [FEATURES §1](FEATURES.md#1-dashboard) and [§6](FEAT
 - **Container detail** (`detail/`): header card with a compact `tm-tide-gauge` and `.tm-severity-frame`; Changes, Details and History tabs (`TM_TABS`); notes via `tm-markdown` in a `tm-clamp`.
   - A quoted reason jumps to its line: switch to Changes, open `details[data-release]`, `TmClamp.reveal` the `[data-flag~=i]` line, scroll, and ring it with `tm-flag-jumped` for 2 s.
   - Review actions sit on the tab row (`detail/review-actions/`: PUT/DELETE, then `reload()`).
-  - **AI summary** (`detail/ai-summary/`): POSTs to `…/summary`, then reloads the detail (the level may rise); while `ai.generating` is true (an auto run) it reloads every 4 s.
+  - **AI summary** (`detail/ai-summary/`): POSTs to `…/summary`, then reloads the detail (the level may rise); while `ai.generating` is true (an auto run) it reloads every 4 s, paused like the dashboard while the tab is hidden.
 - **Stats** (`stats/`): one `httpResource` on `/api/stats?range=…`, the last good response kept while another range loads; the range is stored as `tidemark.statsRange` (localStorage). Sections are `tm-section`s with the chart pieces from `ui/charts` (kept out of the `ui` barrel so they stay in the lazy chunks); text helpers in `stats/stats-format.ts`.
 - **Settings dialog** (`settings/settings-dialog.ts` + `.html`, a `tm-dialog size="lg" flush` with `.tm-tabs-vertical` pages: General, Checks, Notifications, AI, GitHub; the page is kept between opens): fetches `/api/settings` each time it opens; the Notifications section's **Send test message** posts to `/api/notifications/test` and reloads it.
 - Dev: `ng serve` (bound to 127.0.0.1) with a proxy for `/api` → `localhost:8080`.

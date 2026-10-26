@@ -22,6 +22,7 @@ export * from './switch/switch';
 export * from './update-class/update-class';
 export * from './level/level';
 export * from './menu/menu';
+export * from './page-visibility/page-visibility';
 export * from './version-diff/version-diff';
 export * from './theme-switch/theme';
 export * from './theme-switch/theme-switch';
