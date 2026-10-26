@@ -1,0 +1,31 @@
+/* Accent in four steps, mixed with the surface. Longhand `fill` only (see the lightningcss gotcha). */
+.tm-cal-cell {
+  fill: var(--color-hover);
+}
+.tm-cal-cell.s1 {
+  fill: color-mix(in srgb, var(--color-accent) 30%, var(--color-surface));
+}
+.tm-cal-cell.s2 {
+  fill: color-mix(in srgb, var(--color-accent) 52%, var(--color-surface));
+}
+.tm-cal-cell.s3 {
+  fill: color-mix(in srgb, var(--color-accent) 76%, var(--color-surface));
+}
+.tm-cal-cell.s4 {
+  fill: var(--color-accent);
+}
+.tm-cal-active {
+  fill: none;
+  stroke: var(--color-fg);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.tm-cal-svg {
+  display: block;
+  overflow: visible;
+  border-radius: var(--radius-sm);
+}
+.tm-cal-axis {
+  fill: var(--color-fg-subtle);
+  font-size: var(--text-xs);
+}

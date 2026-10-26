@@ -490,16 +490,23 @@
           <tm-bar-list label="By level" [items]="kindLevelItems" [max]="kindMax" />
         </div>
       </tm-card>
+      <tm-card heading="Tide calendar" class="lg:col-span-2" data-testid="chart-calendar">
+        <tm-calendar-chart label="Up to date per day" [days]="tideYear" />
+      </tm-card>
+      <tm-card heading="Tide calendar, 30 days" data-testid="chart-calendar-short">
+        <tm-calendar-chart label="Up to date per day, last 30 days" [days]="tideMonth" />
+      </tm-card>
       <tm-card heading="Empty states" data-testid="chart-empty">
         <div class="grid gap-4">
           <tm-time-chart label="Check duration" [points]="tideOnePoint" [height]="96" />
           <tm-bar-chart label="Updates applied per week" [bars]="emptyBars" [height]="96" />
           <tm-bar-list label="Failures by reason" [items]="[]" />
+          <tm-calendar-chart label="Up to date per day" [days]="[]" />
         </div>
       </tm-card>
     </div>
     <p class="mt-1 font-mono text-xs text-fg-muted">
-      tm-time-chart · tm-bar-chart (stacked by segment tone; fill grows it with a stretched card) · tm-bar-list (optional max)
+      tm-time-chart · tm-bar-chart (stacked by segment tone; fill grows it with a stretched card) · tm-bar-list (optional max) · tm-calendar-chart (days, format, empty)
     </p>
   </section>
 

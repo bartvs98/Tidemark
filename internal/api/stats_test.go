@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -747,36 +748,138 @@ func TestReleaseLevelsCache(t *testing.T) {
 	t0 := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v1", Body: "- Bug fixes"}}, false)
 	_ = db.SaveRepoState(ctx, store.RepoState{Repo: repo, Kind: "releases", FetchedAt: t0})
+	var words map[string]int
 	levels := func() map[string]analysis.Level {
 		t.Helper()
 		rels, _ := db.AllReleases(ctx)
 		states, _ := db.AllRepoStates(ctx)
-		out, err := srv.releaseLevels(ctx, rels, states)
+		out, w, err := srv.releaseLevels(ctx, rels, states)
 		if err != nil {
 			t.Fatal(err)
 		}
+		words = w[repo]
 		return out[repo]
 	}
-	if l := levels(); l["v1"] != analysis.None {
-		t.Errorf("levels = %v", l)
+	if l := levels(); l["v1"] != analysis.None || words["v1"] != 3 {
+		t.Errorf("levels = %v, words = %v", l, words)
 	}
 	// A body changed without a new fetch time isn't seen (bodies are only read after a fetch)…
 	breaking := "## Breaking changes\n- The old API is removed"
 	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v1", Body: breaking}}, false)
-	if l := levels(); l["v1"] != analysis.None {
-		t.Errorf("levels re-read without a fetch: %v", l)
+	if l := levels(); l["v1"] != analysis.None || words["v1"] != 3 {
+		t.Errorf("levels re-read without a fetch: %v, words %v", l, words)
 	}
 	// …a new release is, and so is a new fetch.
 	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v2", Body: breaking}}, false)
-	if l := levels(); l["v1"] != analysis.Breaking || l["v2"] != analysis.Breaking {
-		t.Errorf("levels after a new release = %v", l)
+	if l := levels(); l["v1"] != analysis.Breaking || l["v2"] != analysis.Breaking || words["v1"] != 9 || words["v2"] != 9 {
+		t.Errorf("levels after a new release = %v, words %v", l, words)
 	}
 	_ = db.SaveReleases(ctx, repo, []store.Release{{Tag: "v2", Body: "- Bug fixes"}}, false)
 	_ = db.SaveRepoState(ctx, store.RepoState{Repo: repo, Kind: "releases", FetchedAt: t0.Add(time.Hour)})
-	if l := levels(); l["v2"] != analysis.None {
-		t.Errorf("levels after a fetch = %v", l)
+	if l := levels(); l["v2"] != analysis.None || words["v2"] != 3 {
+		t.Errorf("levels after a fetch = %v, words %v", l, words)
 	}
 	if len(srv.levels) != 1 {
 		t.Errorf("cache = %v", srv.levels)
+	}
+}
+
+// Software age: current, non-ignored containers whose running version has a dated release,
+// oldest release first; up-to-date ones count too.
+func TestStatsSoftwareAge(t *testing.T) {
+	a := map[string]string{"tidemark.repo": "github.com/team/a"}
+	undated := map[string]string{"tidemark.repo": "github.com/team/undated"}
+	old := map[string]string{"tidemark.repo": "github.com/team/old"}
+	srv, checks, db := statsServer(t, staticSource{
+		ctrApp("old1", "1.0.0", a), ctrApp("old2", "1.0.0", a),
+		ctrApp("mid1", "1.2.0", a), ctrApp("mid2", "1.2.0", a), ctrApp("mid3", "1.2.0", a),
+		ctrApp("up", "2.0.0", a),
+		ctrApp("fresh", "2.0.0", old), // up to date, but its release is the oldest
+		ctrApp("ignored", "1.0.0", map[string]string{"tidemark.repo": "github.com/team/a", "tidemark.ignore": "true"}),
+		ctrApp("undated", "1.0.0", undated),
+		ctrApp("norepo", "1.0.0", nil),
+	})
+	runChecks(t, checks)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	ago := func(days int) time.Time { return now.Add(-time.Duration(days) * day) }
+	_ = db.SaveReleases(ctx, "github.com/team/a", []store.Release{
+		{Tag: "v1.0.0", Body: "first release", PublishedAt: ago(400)},
+		{Tag: "v1.2.0", Body: "- one\n- two  three", PublishedAt: ago(100)},
+		{Tag: "v2.0.0", PublishedAt: ago(4)},
+	}, false)
+	_ = db.SaveReleases(ctx, "github.com/team/old", []store.Release{{Tag: "v2.0.0", Body: "x", PublishedAt: ago(500)}}, false)
+	_ = db.SaveReleases(ctx, "github.com/team/undated", []store.Release{{Tag: "v1.0.0"}}, false)
+
+	out := getStats(t, srv.Handler(fstest.MapFS{}), "30d")
+	sa := out.Behind.SoftwareAge
+	var names []string
+	for _, r := range sa.Oldest {
+		names = append(names, r.Name)
+	}
+	if sa.Count != 7 || strings.Join(names, " ") != "fresh old1 old2 mid1 mid2" {
+		t.Fatalf("software age = %d, %v", sa.Count, names)
+	}
+	if f, o := sa.Oldest[0], sa.Oldest[1]; !f.Latest || f.Running != "2.0.0" || f.Released.Sub(ago(500)).Abs() > time.Second || o.Latest || o.Running != "1.0.0" {
+		t.Errorf("oldest = %+v", sa.Oldest)
+	}
+	// Ages 4, 100, 100, 100, 400, 400, 500 days: the median is 100.
+	if m := sa.MedianMs; m == nil || time.Duration(*m)*time.Millisecond-100*day > time.Minute || 100*day-time.Duration(*m)*time.Millisecond > time.Minute {
+		t.Errorf("median = %v", m)
+	}
+	// Every stored release's words, the undated and unused ones too.
+	if out.Lifetime.NotesWords != 2+5+1 {
+		t.Errorf("notes words = %d", out.Lifetime.NotesWords)
+	}
+}
+
+func TestStatsSoftwareAgeWithoutDocker(t *testing.T) {
+	srv, _, _ := statsServer(t, failingSource{})
+	out := getStats(t, srv.Handler(fstest.MapFS{}), "")
+	if sa := out.Behind.SoftwareAge; sa.Count != 0 || sa.MedianMs != nil || sa.Oldest == nil || len(sa.Oldest) != 0 {
+		t.Errorf("software age = %+v", sa)
+	}
+}
+
+func TestTideCalendar(t *testing.T) {
+	now := time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
+	at := func(s string) time.Time {
+		v, err := time.Parse("2006-01-02 15:04", s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if got := tideCalendar(&statsData{now: now}); got == nil || len(got) != 0 {
+		t.Errorf("without rows = %v", got)
+	}
+	rows := []store.RunStats{
+		{At: at("2026-10-20 08:00"), Checked: 3, UpToDate: 1},
+		{At: at("2026-10-20 20:00"), Checked: 3, UpToDate: 3}, // the day's last counted run
+		{At: at("2026-10-20 22:00")},                          // checked nothing: skipped
+		{At: at("2026-10-22 10:00")},
+		{At: at("2026-10-24 09:00"), Checked: 4, UpToDate: 2},
+	}
+	str := func(days []calendarDayJSON) string {
+		var parts []string
+		for _, d := range days {
+			parts = append(parts, fmt.Sprintf("%s:%d/%d", d.Day[5:], d.UpToDate, d.Checked))
+		}
+		return strings.Join(parts, " ")
+	}
+	// "all", or a range starting before the first row: from the first row's day to today.
+	want := "10-20:3/3 10-21:0/0 10-22:0/0 10-23:0/0 10-24:2/4 10-25:0/0 10-26:0/0"
+	for _, since := range []time.Time{{}, now.Add(-30 * day)} {
+		if got := str(tideCalendar(&statsData{now: now, since: since, runStats: rows})); got != want {
+			t.Errorf("since %v = %s", since, got)
+		}
+	}
+	if got := str(tideCalendar(&statsData{now: now, since: at("2026-10-23 05:00"), runStats: rows})); got != "10-23:0/0 10-24:2/4 10-25:0/0 10-26:0/0" {
+		t.Errorf("from the range start = %s", got)
+	}
+	// Never more than a year back.
+	long := append([]store.RunStats{{At: at("2024-01-01 00:00"), Checked: 1}}, rows...)
+	if got := tideCalendar(&statsData{now: now, runStats: long}); len(got) != maxCalendarDays+1 || got[0].Day != "2025-10-26" || got[len(got)-1].Day != "2026-10-26" {
+		t.Errorf("capped = %d days, %v … %v", len(got), got[0], got[len(got)-1])
 	}
 }

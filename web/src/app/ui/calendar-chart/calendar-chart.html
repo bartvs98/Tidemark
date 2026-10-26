@@ -1,0 +1,72 @@
+@if (chart(); as c) {
+  <div #scroller class="overflow-x-auto pb-1">
+    <svg
+      #svg
+      class="tm-cal-svg"
+      [attr.width]="c.width"
+      [attr.height]="c.height"
+      role="img"
+      [attr.aria-label]="label()"
+      [attr.aria-describedby]="tip() ? tipId : null"
+      tabindex="0"
+      (pointermove)="onPointer($event, svg)"
+      (pointerdown)="onPointer($event, svg)"
+      (pointerleave)="onLeave($event)"
+      (keydown)="onKey($event)"
+      (focus)="onFocus(svg)"
+      (blur)="active.set(null)"
+    >
+      @for (l of c.labels; track l.col) {
+        <text class="tm-cal-axis" data-axis="month" [attr.x]="l.x" y="10">{{ l.text }}</text>
+      }
+      @for (r of rowLabels; track r.row) {
+        <text class="tm-cal-axis" data-axis="row" x="0" [attr.y]="top + r.row * c.pitch + c.cell - 1">{{ r.text }}</text>
+      }
+      @for (cell of c.cells; track $index) {
+        <rect [class]="'tm-cal-cell s' + cell.step" [attr.x]="cell.x" [attr.y]="cell.y" [attr.width]="c.cell" [attr.height]="c.cell" rx="2" />
+      }
+      @if (active() !== null) {
+        <rect class="tm-cal-active" [attr.x]="c.cells[active()!].x - 1" [attr.y]="c.cells[active()!].y - 1" [attr.width]="c.cell + 2" [attr.height]="c.cell + 2" rx="3" />
+      }
+    </svg>
+  </div>
+  <ul class="mt-2 flex items-center gap-1.5 text-xs text-fg-muted" aria-hidden="true">
+    <li class="mr-0.5">{{ format()(0) }}</li>
+    @for (s of steps; track s) {
+      <li>
+        <svg width="11" height="11" class="block"><rect [class]="'tm-cal-cell s' + s" width="11" height="11" rx="2" /></svg>
+      </li>
+    }
+    <li class="ml-0.5">{{ format()(1) }}</li>
+  </ul>
+  @if (tip(); as t) {
+    <tm-chart-tip [id]="tipId" [heading]="t.heading" [rows]="t.rows" [note]="t.note" [anchor]="t.anchor" />
+  }
+  <div class="sr-only">
+    <table>
+      <caption>{{ label() }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">Date</th>
+          <th scope="col">Value</th>
+          @if (hasNotes()) {
+            <th scope="col">Note</th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (d of days(); track $index) {
+          <tr>
+            <th scope="row">{{ title(d.day) }}</th>
+            <td>{{ valueText(d) }}</td>
+            @if (hasNotes()) {
+              <td>{{ d.note ?? '' }}</td>
+            }
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+} @else {
+  <div class="flex h-24 items-center justify-center rounded-md text-sm text-fg-muted">{{ empty() }}</div>
+}

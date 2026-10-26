@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/bartvs98/tidemark/internal/analysis"
@@ -33,7 +34,10 @@ const (
 	// A time series with more points than this keeps one per UTC day.
 	maxSeriesPoints = 180
 	// Top-N lists.
-	topJumps = 5
+	topJumps  = 5
+	topOldest = 5
+	// The tide calendar reaches back at most this many days before today.
+	maxCalendarDays = 365
 	// Requests over a longer span than this are summed per week instead of per day.
 	maxRequestDays = 92
 	// "all" starts the releases per month at the oldest release, at most this many months back.
@@ -62,7 +66,33 @@ type behindJSON struct {
 	FromMessage medianJSON `json:"fromMessage"`
 	Tide        []tideJSON `json:"tide"`
 	// Now is the newest run_stats row, whatever the range; absent without one.
-	Now *tideJSON `json:"now,omitempty"`
+	Now         *tideJSON         `json:"now,omitempty"`
+	SoftwareAge softwareAgeJSON   `json:"softwareAge"`
+	Calendar    []calendarDayJSON `json:"calendar"` // contiguous, oldest first
+}
+
+// softwareAgeJSON: how old the running versions' releases are now, whatever the range.
+type softwareAgeJSON struct {
+	Count    int              `json:"count"` // containers with a dated running release
+	MedianMs *int64           `json:"medianMs,omitempty"`
+	Oldest   []softwareAgeRow `json:"oldest"` // oldest release first, at most topOldest
+}
+
+type softwareAgeRow struct {
+	Name     string    `json:"name"`
+	Stack    string    `json:"stack,omitempty"`
+	Icon     *iconJSON `json:"icon,omitempty"`
+	Running  string    `json:"running"`
+	Released time.Time `json:"released"`         // the running version's release
+	Latest   bool      `json:"latest,omitempty"` // up to date (class none)
+}
+
+// calendarDayJSON is a UTC day's last run_stats row that checked anything; Checked is 0
+// on a day without one.
+type calendarDayJSON struct {
+	Day      string `json:"day"` // YYYY-MM-DD, UTC
+	Checked  int    `json:"checked"`
+	UpToDate int    `json:"upToDate"`
 }
 
 type behindContainerJSON struct {
@@ -286,6 +316,7 @@ type lifetimeJSON struct {
 	FastestUpdate     *appliedUpdateJSON `json:"fastestUpdate,omitempty"`
 	LongestBehind     *appliedUpdateJSON `json:"longestBehind,omitempty"`
 	LongestStreak     *streakJSON        `json:"longestStreak,omitempty"`
+	NotesWords        int                `json:"notesWords"` // in all stored release notes
 }
 
 type streakJSON struct {
@@ -401,6 +432,7 @@ type statsData struct {
 	repoOf     map[string]source.Repo               // current, non-ignored container name → notes repo
 	releases   map[string][]store.Release           // without bodies
 	levels     map[string]map[string]analysis.Level // repo key → tag → the release's own level
+	words      map[string]map[string]int            // repo key → tag → words in its notes
 	byTag      map[string]map[string]store.Release  // repo key → tag → release
 	runStats   []store.RunStats                     // all, oldest first
 	runs       []store.Run                          // all, oldest first
@@ -470,7 +502,7 @@ func (s *Server) loadStats(ctx context.Context, now, since time.Time) (*statsDat
 	if err != nil {
 		return nil, false, err
 	}
-	if d.levels, err = s.releaseLevels(ctx, d.releases, states); err != nil {
+	if d.levels, d.words, err = s.releaseLevels(ctx, d.releases, states); err != nil {
 		return nil, false, err
 	}
 	for key, rels := range d.releases {
@@ -680,6 +712,88 @@ func (s *Server) behindStats(ctx context.Context, d *statsData) behindJSON {
 	if len(d.runStats) > 0 {
 		now := toTide(d.runStats[len(d.runStats)-1])
 		out.Now = &now
+	}
+	out.SoftwareAge = s.softwareAge(ctx, d)
+	out.Calendar = tideCalendar(d)
+	return out
+}
+
+// softwareAge measures every current, non-ignored container whose running version has a
+// dated release in the stored notes (up-to-date ones included) from that release to now.
+func (s *Server) softwareAge(ctx context.Context, d *statsData) softwareAgeJSON {
+	out := softwareAgeJSON{Oldest: []softwareAgeRow{}}
+	if s.changelogs == nil {
+		return out
+	}
+	var rows []softwareAgeRow
+	var ms []int64
+	for _, cc := range d.current {
+		u := cc.json.Update
+		repo, ok := d.repoOf[cc.c.Name] // ignored containers have none
+		if !ok || u == nil {
+			continue
+		}
+		running := parseVersion(u.Running)
+		if running == nil {
+			continue
+		}
+		// The same lookup as behindBy, so it's usually cached already.
+		ch, err := s.changelogs.Changes(ctx, repo, running, parseVersion(u.Latest))
+		if err != nil || ch.FromTag == "" {
+			continue
+		}
+		rel, ok := d.byTag[repo.Key()][ch.FromTag]
+		if !ok || rel.PublishedAt.IsZero() {
+			continue
+		}
+		rows = append(rows, softwareAgeRow{
+			Name: cc.c.Name, Stack: cc.c.Project, Icon: cc.json.Icon, Running: u.Running,
+			Released: rel.PublishedAt.UTC(), Latest: u.CheckedAt != nil && u.Class == string(version.None),
+		})
+		ms = append(ms, d.now.Sub(rel.PublishedAt).Milliseconds())
+	}
+	out.Count = len(rows)
+	out.MedianMs = median(ms)
+	slices.SortFunc(rows, func(a, b softwareAgeRow) int {
+		return cmp.Or(a.Released.Compare(b.Released), cmp.Compare(a.Name, b.Name))
+	})
+	out.Oldest = append(out.Oldest, rows[:min(len(rows), topOldest)]...)
+	return out
+}
+
+// tideCalendar is one entry per UTC day from the later of the range start and the first
+// run_stats row (at most maxCalendarDays before today) to today, with the day's last row
+// that checked anything (as the tide chart counts); empty without rows.
+func tideCalendar(d *statsData) []calendarDayJSON {
+	out := []calendarDayJSON{}
+	if len(d.runStats) == 0 {
+		return out
+	}
+	last := map[string]store.RunStats{}
+	for _, r := range d.runStats {
+		if r.Checked == 0 {
+			continue
+		}
+		key := r.At.UTC().Format(time.DateOnly)
+		if prev, ok := last[key]; !ok || !r.At.Before(prev.At) {
+			last[key] = r
+		}
+	}
+	today := dayOf(d.now)
+	start := dayOf(d.runStats[0].At)
+	if !d.since.IsZero() && dayOf(d.since).After(start) {
+		start = dayOf(d.since)
+	}
+	if limit := today.AddDate(0, 0, -maxCalendarDays); start.Before(limit) {
+		start = limit
+	}
+	for day := start; !day.After(today); day = day.AddDate(0, 0, 1) {
+		key := day.Format(time.DateOnly)
+		cd := calendarDayJSON{Day: key}
+		if r, ok := last[key]; ok {
+			cd.Checked, cd.UpToDate = r.Checked, r.UpToDate
+		}
+		out = append(out, cd)
 	}
 	return out
 }
@@ -920,10 +1034,10 @@ func medianGapDays(times []time.Time) *float64 {
 
 // releaseLevels is every stored release's level on its own, by repo key and tag, as the
 // detail page flags its notes (without a running release whose repeated lines it would
-// skip). A repo's levels are kept until it's fetched again (its fetched_at changes) or a
+// skip), and the words in each release's notes. A repo's levels are kept until it's fetched again (its fetched_at changes) or a
 // release shows up that they don't cover (a sync that failed partway keeps the pages it got),
 // so only then are its bodies read. Repos no longer stored drop out of the cache.
-func (s *Server) releaseLevels(ctx context.Context, releases map[string][]store.Release, states map[string]store.RepoState) (map[string]map[string]analysis.Level, error) {
+func (s *Server) releaseLevels(ctx context.Context, releases map[string][]store.Release, states map[string]store.RepoState) (levels map[string]map[string]analysis.Level, words map[string]map[string]int, err error) {
 	s.levelsMu.Lock()
 	defer s.levelsMu.Unlock()
 	next := make(map[string]repoLevels, len(releases))
@@ -935,20 +1049,22 @@ func (s *Server) releaseLevels(ctx context.Context, releases map[string][]store.
 		}
 		full, err := s.store.Releases(ctx, key)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		c := repoLevels{fetchedAt: fetched, byTag: make(map[string]analysis.Level, len(full))}
+		c := repoLevels{fetchedAt: fetched, byTag: make(map[string]analysis.Level, len(full)), words: make(map[string]int, len(full))}
 		for _, r := range full {
 			c.byTag[r.Tag] = analysis.Analyze(r.Body, nil).Level
+			c.words[r.Tag] = len(strings.Fields(r.Body))
 		}
 		next[key] = c
 	}
 	s.levels = next
-	out := make(map[string]map[string]analysis.Level, len(next))
+	levels = make(map[string]map[string]analysis.Level, len(next))
+	words = make(map[string]map[string]int, len(next))
 	for key, c := range next {
-		out[key] = c.byTag
+		levels[key], words[key] = c.byTag, c.words
 	}
-	return out, nil
+	return levels, words, nil
 }
 
 // covers says whether levels has every release in rels.
@@ -964,6 +1080,7 @@ func covers(levels map[string]analysis.Level, rels []store.Release) bool {
 type repoLevels struct {
 	fetchedAt time.Time // the repo's fetched_at when the levels were computed
 	byTag     map[string]analysis.Level
+	words     map[string]int // tag → words in its notes
 }
 
 // ── check health ─────────────────────────────────────────
@@ -1188,6 +1305,7 @@ func (s *Server) lifetimeStats(d *statsData) lifetimeJSON {
 			if d.levels[key][r.Tag] == analysis.Breaking {
 				out.BreakingFlagged++
 			}
+			out.NotesWords += d.words[key][r.Tag]
 		}
 	}
 

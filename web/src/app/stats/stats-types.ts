@@ -52,6 +52,18 @@ export interface BehindStats {
   /** One point per run_stats row in range; if more than 180, the last row per UTC day. */
   /** One point per run; `releasesBehind` is the update debt: releases between running and latest over all updates. */
   tide: TidePoint[];
+  /** Current containers (not ignored) whose running version has a dated release in the stored notes; ignores the range. */
+  softwareAge: { count: number; medianMs?: number; oldest: SoftwareAgeRow[] };
+  /** One entry per UTC day, contiguous, oldest first; checked 0 = no counted run that day. */
+  calendar: { day: string; checked: number; upToDate: number }[];
+}
+export interface SoftwareAgeRow {
+  name: string;
+  stack?: string;
+  icon?: { src: string; light?: string; dark?: string };
+  running: string;
+  released: string; // published_at of the running version's release
+  latest?: boolean; // up to date
 }
 export interface TidePoint {
   at: string;
@@ -147,6 +159,7 @@ export interface LifetimeStats {
   startedAt: string; // this process's start (uptime)
   containersTracked: number;
   releasesStored: number; // "release notes read"
+  notesWords: number; // words in all stored release notes
   breakingFlagged: number;
   fastestUpdate?: AppliedUpdate;
   longestBehind?: AppliedUpdate;
