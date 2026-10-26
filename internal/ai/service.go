@@ -145,6 +145,14 @@ func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, tr
 	start := s.now()
 	raw, usage, err := p.Complete(ctx, prompt)
 	took := s.now().Sub(start)
+	// Cut short at shutdown: not the provider's failure, so no error, back-off or call row.
+	// A timeout (DeadlineExceeded) still counts as a failure.
+	if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+		s.mu.Lock()
+		e := s.entries[k]
+		s.mu.Unlock()
+		return e, ctx.Err()
+	}
 	var sum *Summary
 	if err == nil {
 		sum, err = summaryFrom(raw, sel, base)

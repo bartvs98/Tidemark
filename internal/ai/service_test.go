@@ -170,6 +170,27 @@ func TestGenerateSharesConcurrentCalls(t *testing.T) {
 	}
 }
 
+// A call cut short at shutdown isn't a failure: no error, no back-off, no call recorded.
+func TestCancelledCallIsNotAFailure(t *testing.T) {
+	s, st, _ := newService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	f := &fakeProvider{answer: good, err: context.Canceled, onCall: cancel}
+	s.Configure(f, 2)
+	s.Auto(ctx, key, req)
+	if f.calls.Load() != 1 {
+		t.Fatalf("calls = %d, want 1", f.calls.Load())
+	}
+	if e, _ := s.Lookup(key); e.Error != "" || !e.FailedAt.IsZero() {
+		t.Errorf("entry = %+v, want no failure", e)
+	}
+	if !s.WantsAuto(key, req) {
+		t.Error("backing off after a cancelled call")
+	}
+	if u, err := st.AIUsageSince(context.Background(), time.Time{}); err != nil || u.Calls != 0 {
+		t.Errorf("usage = %+v, %v; want no call recorded", u, err)
+	}
+}
+
 func TestAuto(t *testing.T) {
 	s, _, now := newService(t)
 	ctx := context.Background()
