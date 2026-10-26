@@ -12,6 +12,7 @@ import {
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import {
+  PageVisibility,
   TmAiMarker,
   TmButton,
   TmCallout,
@@ -62,6 +63,7 @@ export class AiSummary {
 
   private readonly http = inject(HttpClient);
   private readonly locale = inject(LOCALE_ID);
+  private readonly visibility = inject(PageVisibility);
 
   /** The latest POST's answer until the page hands over a newer state. */
   private readonly answer = linkedSignal<AiState, AiState | undefined>({
@@ -94,9 +96,19 @@ export class AiSummary {
   );
 
   constructor() {
-    // Poll while the server generates on its own; the effect re-runs only when `generating` flips.
+    // Poll while the server generates on its own; the effect re-runs only when `generating`
+    // or the page's visibility flips. A hidden tab doesn't poll, and asks once when shown again.
+    let hidden = false;
     effect((onCleanup) => {
       if (!this.ai().generating) return;
+      if (!this.visibility.visible()) {
+        hidden = true;
+        return;
+      }
+      if (hidden) {
+        hidden = false;
+        this.changed.emit();
+      }
       const id = setInterval(() => this.changed.emit(), AI_POLL_MS);
       onCleanup(() => clearInterval(id));
     });

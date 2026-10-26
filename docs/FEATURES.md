@@ -25,7 +25,7 @@ Ordinary UI behaviour (Back restores the scroll position, Escape closes things, 
   - **Extra badges:** not running, "image missing", "check failed" (no successful check yet) and "rule skipped". A version held back by a rule shows as a quiet line under the version.
   - **A failed refresh** of an earlier result keeps that result (it still counts for the filters) and adds a quiet "refresh failed" note ([§7](#7-checks-failures-and-settings)).
   - A config file that won't load gets a notice at the top.
-- **Refreshing:** during a run, results fill in as they arrive. Otherwise the page reloads its data every minute, so scheduled checks show up without a reload. If that reload fails, the last data stays with a "Couldn't refresh" callout.
+- **Refreshing:** during a run, results fill in as they arrive. Otherwise the page reloads its data every minute, so scheduled checks show up without a reload. A hidden tab (in the background, or a minimised window) doesn't reload until it's shown again. If that reload fails, the last data stays with a "Couldn't refresh" callout.
 
 ### App icons
 

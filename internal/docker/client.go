@@ -10,10 +10,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
-// Client is a minimal read-only Docker Engine API client. Tidemark only needs two
+// Client is a minimal read-only Docker Engine API client. Tidemark only needs three
 // GET endpoints, so this avoids the full Docker SDK and its dependency tree.
 //
 // It deliberately never calls GET /containers/{id}/json: that response includes
@@ -22,6 +23,12 @@ type Client struct {
 	host string
 	base string
 	http *http.Client
+
+	// Image inspects by image ID. An image's config (labels, env, created, platform)
+	// never changes, but its tags and digests do (a pull moves a tag to the new image), so
+	// those come from the image list on every call. Only images still in use are kept.
+	mu     sync.Mutex
+	images map[string]apiImage
 }
 
 // NewClient accepts unix:///var/run/docker.sock or tcp://host:2375 (e.g. docker-socket-proxy).
@@ -31,7 +38,7 @@ func NewClient(host string) (*Client, error) {
 		return nil, fmt.Errorf("docker host %q: %w", host, err)
 	}
 	transport := &http.Transport{MaxIdleConns: 4, IdleConnTimeout: 30 * time.Second}
-	c := &Client{host: host, http: &http.Client{Transport: transport, Timeout: 30 * time.Second}}
+	c := &Client{host: host, http: &http.Client{Transport: transport, Timeout: 30 * time.Second}, images: map[string]apiImage{}}
 
 	switch u.Scheme {
 	case "unix":
@@ -60,12 +67,30 @@ func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 		return nil, err
 	}
 
+	// Current tags and digests of every image, for the cached inspects. Without them
+	// (an old proxy rule, say), every image is inspected again.
+	var summaries []apiImageSummary
+	current := map[string]apiImageSummary{}
+	if err := c.get(ctx, "/images/json", &summaries); err == nil {
+		for _, s := range summaries {
+			current[s.ID] = s
+		}
+	}
+
 	images := map[string]apiImage{}
 	for _, ct := range list {
 		if _, seen := images[ct.ImageID]; seen || ct.ImageID == "" {
 			continue
 		}
-		var img apiImage
+		c.mu.Lock()
+		img, cached := c.images[ct.ImageID]
+		c.mu.Unlock()
+		if s, listed := current[ct.ImageID]; cached && listed {
+			img.RepoTags, img.RepoDigests = s.tags(), s.digests()
+			images[ct.ImageID] = img
+			continue
+		}
+		img = apiImage{}
 		err := c.get(ctx, "/images/"+url.PathEscape(ct.ImageID)+"/json", &img)
 		if err != nil {
 			if !isNotFound(err) {
@@ -76,6 +101,15 @@ func (c *Client) Containers(ctx context.Context) ([]Container, error) {
 		}
 		images[ct.ImageID] = img
 	}
+
+	c.mu.Lock()
+	c.images = make(map[string]apiImage, len(images))
+	for id, img := range images {
+		if img.inspectErr == "" {
+			c.images[id] = img
+		}
+	}
+	c.mu.Unlock()
 
 	out := make([]Container, 0, len(list))
 	for _, ct := range list {
