@@ -145,9 +145,19 @@ func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, tr
 	start := s.now()
 	raw, usage, err := p.Complete(ctx, prompt)
 	took := s.now().Sub(start)
-	// Cut short at shutdown: not the provider's failure, so no error, back-off or call row.
-	// A timeout (DeadlineExceeded) still counts as a failure.
+	call := store.AICall{At: start, Provider: p.Name(), Model: p.Model(), Trigger: trigger, Mode: mode,
+		Repo: k.Repo, From: k.From, To: k.To, Releases: len(sel.sent),
+		InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, Duration: took}
+	// Cut short at shutdown: not the provider's failure, so no error or back-off. The call
+	// is only recorded when the provider reported tokens (the answer had arrived), so the
+	// usage stays complete. A timeout (DeadlineExceeded) still counts as a failure.
 	if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+		if usage.InputTokens > 0 || usage.OutputTokens > 0 {
+			call.Error = "cancelled at shutdown"
+			if serr := s.st.AddAICall(context.WithoutCancel(ctx), call); serr != nil {
+				s.log.Error("record AI call", "repo", k.Repo, "err", serr)
+			}
+		}
 		s.mu.Lock()
 		e := s.entries[k]
 		s.mu.Unlock()
@@ -177,9 +187,6 @@ func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, tr
 	if serr := s.st.PutAISummary(sctx, entryToStore(k, e)); serr != nil {
 		s.log.Error("store AI summary", "repo", k.Repo, "err", serr)
 	}
-	call := store.AICall{At: start, Provider: p.Name(), Model: p.Model(), Trigger: trigger, Mode: mode,
-		Repo: k.Repo, From: k.From, To: k.To, Releases: len(sel.sent),
-		InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, Duration: took}
 	if err != nil {
 		call.Error = e.Error
 	}

@@ -170,7 +170,8 @@ func TestGenerateSharesConcurrentCalls(t *testing.T) {
 	}
 }
 
-// A call cut short at shutdown isn't a failure: no error, no back-off, no call recorded.
+// A call cut short at shutdown isn't a failure: no error and no back-off, and it's only
+// recorded when the provider reported tokens.
 func TestCancelledCallIsNotAFailure(t *testing.T) {
 	s, st, _ := newService(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -188,6 +189,18 @@ func TestCancelledCallIsNotAFailure(t *testing.T) {
 	}
 	if u, err := st.AIUsageSince(context.Background(), time.Time{}); err != nil || u.Calls != 0 {
 		t.Errorf("usage = %+v, %v; want no call recorded", u, err)
+	}
+
+	// The answer had arrived (the provider reported tokens): the call is recorded, so the
+	// usage stays complete, but still without a back-off.
+	ctx, cancel = context.WithCancel(context.Background())
+	f.onCall, f.usage = cancel, Usage{InputTokens: 900, OutputTokens: 120}
+	s.Auto(ctx, key, req)
+	if u, err := st.AIUsageSince(context.Background(), time.Time{}); err != nil || u.Calls != 1 || u.InputTokens != 900 || u.OutputTokens != 120 {
+		t.Errorf("usage = %+v, %v; want the call with its tokens", u, err)
+	}
+	if e, _ := s.Lookup(key); e.Error != "" || !s.WantsAuto(key, req) {
+		t.Errorf("entry = %+v, want no failure or back-off", e)
 	}
 }
 
