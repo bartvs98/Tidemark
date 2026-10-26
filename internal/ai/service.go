@@ -145,6 +145,24 @@ func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, tr
 	start := s.now()
 	raw, usage, err := p.Complete(ctx, prompt)
 	took := s.now().Sub(start)
+	call := store.AICall{At: start, Provider: p.Name(), Model: p.Model(), Trigger: trigger, Mode: mode,
+		Repo: k.Repo, From: k.From, To: k.To, Releases: len(sel.sent),
+		InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, Duration: took}
+	// Cut short at shutdown: not the provider's failure, so no error or back-off. The call
+	// is only recorded when the provider reported tokens (the answer had arrived), so the
+	// usage stays complete. A timeout (DeadlineExceeded) still counts as a failure.
+	if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+		if usage.InputTokens > 0 || usage.OutputTokens > 0 {
+			call.Error = "cancelled at shutdown"
+			if serr := s.st.AddAICall(context.WithoutCancel(ctx), call); serr != nil {
+				s.log.Error("record AI call", "repo", k.Repo, "err", serr)
+			}
+		}
+		s.mu.Lock()
+		e := s.entries[k]
+		s.mu.Unlock()
+		return e, ctx.Err()
+	}
 	var sum *Summary
 	if err == nil {
 		sum, err = summaryFrom(raw, sel, base)
@@ -169,9 +187,6 @@ func (s *Service) generate(ctx context.Context, p Provider, k Key, r Request, tr
 	if serr := s.st.PutAISummary(sctx, entryToStore(k, e)); serr != nil {
 		s.log.Error("store AI summary", "repo", k.Repo, "err", serr)
 	}
-	call := store.AICall{At: start, Provider: p.Name(), Model: p.Model(), Trigger: trigger, Mode: mode,
-		Repo: k.Repo, From: k.From, To: k.To, Releases: len(sel.sent),
-		InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, Duration: took}
 	if err != nil {
 		call.Error = e.Error
 	}
@@ -214,25 +229,35 @@ func extendable(b *Summary) bool {
 	return b != nil && b.Omitted == 0 && b.Covered > 0 && b.CoveredHash != ""
 }
 
+// WantsAuto says whether Auto would call the provider for k and r now (see Auto), so the
+// after-check hook only queues the calls that will happen.
+func (s *Service) WantsAuto(k Key, r Request) bool {
+	s.mu.Lock()
+	p, autoMin, e, busy := s.provider, s.autoMin, s.entries[k], s.generating[k]
+	s.mu.Unlock()
+	if p == nil || autoMin <= 0 || len(r.Releases) < autoMin || busy || !hasNotes(r) {
+		return false
+	}
+	if strings.TrimSpace(r.Releases[0].Body) == "" {
+		return false
+	}
+	if e.Summary != nil && e.Summary.NotesHash == NotesHash(r) {
+		return false
+	}
+	return e.FailedAt.IsZero() || s.now().Sub(e.FailedAt) >= autoBackoff
+}
+
 // Auto is for the after-check hook: generates (extending when possible) when on,
 // autoMin > 0, len(r.Releases) >= autoMin, the newest release in range has notes (they
 // usually follow the tag within the hour, and the hourly sync picks them up), there's no
 // summary or it's stale (NotesHash differs), and the last failure for the key is older
 // than 6 h. Logs failures, never returns them.
 func (s *Service) Auto(ctx context.Context, k Key, r Request) {
-	s.mu.Lock()
-	p, autoMin, e, busy := s.provider, s.autoMin, s.entries[k], s.generating[k]
-	s.mu.Unlock()
-	if p == nil || autoMin <= 0 || len(r.Releases) < autoMin || busy || !hasNotes(r) {
+	if !s.WantsAuto(k, r) {
 		return
 	}
-	if strings.TrimSpace(r.Releases[0].Body) == "" {
-		return
-	}
-	if e.Summary != nil && e.Summary.NotesHash == NotesHash(r) {
-		return
-	}
-	if !e.FailedAt.IsZero() && s.now().Sub(e.FailedAt) < autoBackoff {
+	p, _ := s.Status()
+	if p == nil { // turned off since
 		return
 	}
 	got, err := s.generateAs(ctx, k, r, triggerAuto, false)

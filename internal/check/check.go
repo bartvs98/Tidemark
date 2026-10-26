@@ -23,9 +23,14 @@ import (
 const (
 	workers          = 6
 	containerTimeout = 2 * time.Minute
-	// afterCheckTimeout caps the AfterCheck hook (release-note prefetch, then an automatic
-	// AI summary), so a slow forge or provider can't hold a worker for the rest of the run.
+	// afterCheckTimeout caps the AfterCheck hook (release-note prefetch), so a slow forge
+	// can't hold a worker for the rest of the run.
 	afterCheckTimeout = 3 * time.Minute
+	// followUpWorkers run the follow-ups AfterCheck queues (automatic AI summaries), once
+	// every image is checked.
+	followUpWorkers = 2
+	// errCancelled is the run error of a run cut short by shutdown.
+	errCancelled = "cancelled at shutdown"
 )
 
 // Triggers say what started a run.
@@ -61,16 +66,23 @@ type Status struct {
 	FinishedAt *time.Time
 	Done       int // images checked so far in the current/last run
 	Total      int
-	Err        string     // the run itself failed (e.g. Docker unreachable)
-	NextRunAt  *time.Time // next scheduled run, nil without a schedule
+	// Follow-ups queued by AfterCheck (automatic AI summaries) and how many have run;
+	// they run after every image is checked, while the run is still running.
+	FollowUps, FollowUpsDone int
+	Err                      string     // the run itself failed (e.g. Docker unreachable)
+	NextRunAt                *time.Time // next scheduled run, nil without a schedule
 }
 
 // AfterCheck runs after a container's image was checked successfully (once per image
-// and rules), e.g. to prefetch release notes. It runs inside the check run's worker.
-type AfterCheck func(ctx context.Context, c docker.Container, rs rules.Rules, r resolve.Result)
+// and rules), e.g. to prefetch release notes. It runs inside the check run's worker. It
+// can return a follow-up (nil for none) for slow work that shouldn't hold a worker, such
+// as an AI summary: follow-ups run once every image is checked, before the run finishes
+// and its AfterRun hook, so that hook sees what they did.
+type AfterCheck func(ctx context.Context, c docker.Container, rs rules.Rules, r resolve.Result) (followUp func(context.Context))
 
 // AfterRun runs once a run has finished and recorded its end, unless the run itself failed
-// (Docker unreachable). It runs inside the run's goroutine, so Wait also waits for it.
+// (Docker unreachable) or was cancelled. It runs inside the run's goroutine, so Wait also
+// waits for it.
 type AfterRun func(ctx context.Context, run Finished)
 
 // Finished is the run an AfterRun hook follows. Status may already describe a newer run
@@ -326,6 +338,11 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 		s.log.Warn("check: can't record run", "err", err)
 	}
 
+	// Check now looks again: caches from before the run don't count, but the groups
+	// within it still share what it fetched.
+	if trigger == TriggerManual {
+		ctx = registry.FreshSince(ctx, started)
+	}
 	s.reloadRules()
 	list, err := s.source.Containers(ctx)
 	if err != nil {
@@ -359,6 +376,7 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 	s.mu.Unlock()
 
 	jobs := make(chan *group)
+	var followUps []func(context.Context) // guarded by s.mu
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Add(1)
@@ -367,9 +385,17 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 			for g := range jobs {
 				first := g.containers[0]
 				entry := s.checkOne(ctx, first, g.rules)
+				if ctx.Err() != nil {
+					continue // cut short at shutdown: not a failure of this image
+				}
 				if entry.Err == "" && s.after != nil {
 					actx, cancel := context.WithTimeout(ctx, afterCheckTimeout)
-					s.after(actx, first, g.rules, entry.Result)
+					if f := s.after(actx, first, g.rules, entry.Result); f != nil {
+						s.mu.Lock()
+						followUps = append(followUps, f)
+						s.status.FollowUps = len(followUps)
+						s.mu.Unlock()
+					}
 					cancel()
 				}
 				for _, c := range g.containers {
@@ -381,11 +407,28 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 			}
 		}()
 	}
+dispatch:
 	for _, key := range order {
-		jobs <- groups[key]
+		select {
+		case jobs <- groups[key]:
+		case <-ctx.Done():
+			break dispatch
+		}
 	}
 	close(jobs)
 	wg.Wait()
+	s.runFollowUps(ctx, followUps)
+
+	// Recorded as failed, so the next start checks again and stats don't count it as a
+	// short, successful run. Results are kept as they are.
+	if ctx.Err() != nil {
+		s.mu.RLock()
+		done := s.status.Done
+		s.mu.RUnlock()
+		s.finish(ctx, runID, done, errCancelled)
+		s.log.Info("check cancelled", "trigger", trigger, "took", time.Since(started).Round(time.Millisecond))
+		return
+	}
 
 	// Forget containers that no longer exist or are ignored now.
 	current := make(map[string]bool, len(keep))
@@ -409,6 +452,35 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 	if s.ran != nil {
 		s.ran(ctx, Finished{ID: runID, Trigger: trigger, StartedAt: started, FinishedAt: finished, Images: len(order)})
 	}
+}
+
+// runFollowUps runs the follow-ups AfterCheck queued, followUpWorkers at a time, until
+// they're done or ctx ends.
+func (s *Service) runFollowUps(ctx context.Context, fs []func(context.Context)) {
+	work := make(chan func(context.Context))
+	var wg sync.WaitGroup
+	for range min(followUpWorkers, len(fs)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for f := range work {
+				f(ctx)
+				s.mu.Lock()
+				s.status.FollowUpsDone++
+				s.mu.Unlock()
+			}
+		}()
+	}
+queue:
+	for _, f := range fs {
+		select {
+		case work <- f:
+		case <-ctx.Done():
+			break queue
+		}
+	}
+	close(work)
+	wg.Wait()
 }
 
 func (s *Service) checkOne(ctx context.Context, c docker.Container, rs rules.Rules) Entry {

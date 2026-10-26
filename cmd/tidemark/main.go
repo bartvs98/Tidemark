@@ -107,20 +107,21 @@ func run(cfg config.Config, log *slog.Logger) error {
 	}
 
 	// Prefetch release notes for containers with an update, so the detail page is instant
-	// and the notes can be scanned for breaking changes, then summarise them when automatic
-	// AI summaries are on. The token comes from settings.
+	// and the notes can be scanned for breaking changes, then queue a summary when automatic
+	// AI summaries are on (a follow-up: it runs once every image is checked, so a slow
+	// provider doesn't hold a worker). The token comes from settings.
 	changelogs := changelog.New(db, "", log, changelog.WithTransport(reqs.Wrap(http.DefaultTransport, stats.Forge)))
-	checks.SetAfterCheck(func(ctx context.Context, c docker.Container, rs rules.Rules, r resolve.Result) {
+	checks.SetAfterCheck(func(ctx context.Context, c docker.Container, rs rules.Rules, r resolve.Result) func(context.Context) {
 		if r.Class == tmversion.None {
-			return
+			return nil
 		}
 		ref, err := imageref.Parse(c.ImageRef)
 		if err != nil {
-			return
+			return nil
 		}
 		repo, _, ok := reposource.Resolve(c, ref, rs)
 		if !ok {
-			return
+			return nil
 		}
 		var need, latest *tmversion.Version
 		if v, ok := tmversion.Parse(r.Running); ok {
@@ -130,6 +131,9 @@ func run(cfg config.Config, log *slog.Logger) error {
 			latest = &v
 		}
 		syncCtx, cancel := context.WithTimeout(ctx, prefetchTimeout)
+		if since, ok := registry.FreshSinceOf(ctx); ok { // Check now: look for new notes too
+			syncCtx = changelog.RecheckSince(syncCtx, since)
+		}
 		err = changelogs.Sync(syncCtx, repo, need, latest)
 		cancel()
 		if err != nil {
@@ -138,20 +142,26 @@ func run(cfg config.Config, log *slog.Logger) error {
 
 		// A channel build isn't compared with stable releases, so their notes say nothing about it.
 		if p, autoMin := aiSvc.Status(); p == nil || autoMin == 0 || resolve.Channel(ref.Tag) != "" {
-			return
+			return nil
 		}
 		k, ok := ai.KeyFor(repo.Key(), need, latest)
 		if !ok {
-			return
+			return nil
 		}
 		ch, err := changelogs.Changes(ctx, repo, need, latest)
 		if err != nil {
 			log.Debug("stored release notes unavailable", "repo", repo.Key(), "err", err)
-			return
+			return nil
 		}
-		aiCtx, cancel := context.WithTimeout(ctx, autoAITimeout)
-		defer cancel()
-		aiSvc.Auto(aiCtx, k, ai.RequestFrom(ref.Familiar(), repo.Path, r.Running, r.Latest, ch))
+		req := ai.RequestFrom(ref.Familiar(), repo.Path, r.Running, r.Latest, ch)
+		if !aiSvc.WantsAuto(k, req) {
+			return nil
+		}
+		return func(ctx context.Context) {
+			aiCtx, cancel := context.WithTimeout(ctx, autoAITimeout)
+			defer cancel()
+			aiSvc.Auto(aiCtx, k, req)
+		}
 	})
 
 	// Notifications: one Telegram message per check run with the new updates, or a digest.
@@ -204,13 +214,14 @@ func run(cfg config.Config, log *slog.Logger) error {
 
 	// Check at startup unless a recent run covered every container, so restarts don't hammer
 	// registries. Containers without a valid result (new, recreated, or with changed rules)
-	// would otherwise show nothing until the next scheduled run.
+	// would otherwise show nothing until the next scheduled run. A run that failed or was
+	// cut short at shutdown didn't cover them.
 	last := checks.LastFinished()
 	unchecked, err := checks.Unchecked(ctx)
 	if err != nil {
 		log.Warn("can't list containers at startup", "err", err)
 	}
-	if time.Since(last) > startupCheckAge || unchecked > 0 {
+	if time.Since(last) > startupCheckAge || unchecked > 0 || checks.Status().Err != "" {
 		checks.Start(ctx, check.TriggerStartup)
 	} else {
 		log.Info("skipping startup check, last one is recent", "finished", last.Format(time.RFC3339))

@@ -33,7 +33,9 @@ type checkJSON struct {
 	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 	Done       int        `json:"done"`
 	Total      int        `json:"total"`
-	Error      string     `json:"error,omitempty"`
+	// FollowUps: automatic AI summaries queued by the run, absent when there are none.
+	FollowUps *progressJSON `json:"followUps,omitempty"`
+	Error     string        `json:"error,omitempty"`
 	// RulesError: the config file couldn't be loaded, so its rules aren't applied (the
 	// last good version is, if any; labels always are).
 	RulesError string `json:"rulesError,omitempty"`
@@ -326,13 +328,22 @@ func assess(class string, running, latest *version.Version, ch changelog.Changes
 	return analysis.Assess(in)
 }
 
+type progressJSON struct {
+	Done  int `json:"done"`
+	Total int `json:"total"`
+}
+
 func (s *Server) checkJSON() *checkJSON {
 	st := s.checks.Status()
-	return &checkJSON{
+	out := &checkJSON{
 		Running: st.Running, Trigger: st.Trigger, NextRunAt: st.NextRunAt,
 		StartedAt: st.StartedAt, FinishedAt: st.FinishedAt, Done: st.Done, Total: st.Total, Error: st.Err,
 		RulesError: s.checks.RulesError(),
 	}
+	if st.FollowUps > 0 {
+		out.FollowUps = &progressJSON{Done: st.FollowUpsDone, Total: st.FollowUps}
+	}
+	return out
 }
 
 // startCheck starts a check run unless one is running, and answers with the run's status.

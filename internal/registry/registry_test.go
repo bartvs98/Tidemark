@@ -413,3 +413,36 @@ func TestPersistentTagCache(t *testing.T) {
 		t.Errorf("stale cache: tags=%v err=%v requests=%d saved=%v", tags, err, requests.Load(), tc.tags[key])
 	}
 }
+
+// FreshSince (Check now) skips cached tag lists and digests from before its time, in
+// memory and in the tag cache, but reuses what was fetched after it.
+func TestFreshSince(t *testing.T) {
+	host, _, requests := testRegistry(t)
+	ref, _ := imageref.Parse(host + "/team/app:1.0.0")
+	key := host + "/team/app"
+	tc := &memTagCache{tags: map[string][]string{key: {"cached"}}, at: map[string]time.Time{key: time.Now().Add(-time.Minute)}}
+	c := New("t", WithTagCache(tc))
+	ctx := context.Background()
+	if _, err := c.Digest(ctx, ref, "latest"); err != nil {
+		t.Fatal(err)
+	}
+	requests.Store(0)
+
+	fresh := FreshSince(ctx, time.Now())
+	tags, err := c.Tags(fresh, ref)
+	if err != nil || len(tags) != 3 {
+		t.Errorf("tags = %v, %v; want the registry's, not the cached list", tags, err)
+	}
+	if _, err := c.Digest(fresh, ref, "latest"); err != nil {
+		t.Fatal(err)
+	}
+	asked := requests.Load()
+	if asked == 0 {
+		t.Fatal("no requests: cached values were used")
+	}
+	_, _ = c.Tags(fresh, ref)
+	_, _ = c.Digest(fresh, ref, "latest")
+	if requests.Load() != asked {
+		t.Errorf("%d extra requests: what the run fetched itself wasn't reused", requests.Load()-asked)
+	}
+}

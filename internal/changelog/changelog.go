@@ -99,11 +99,20 @@ func New(st *store.Store, githubToken string, log *slog.Logger, opts ...Option) 
 	return s
 }
 
+type recheckKey struct{}
+
+// RecheckSince returns a ctx under which Sync doesn't wait latestRetry before fetching
+// notes again that don't have the latest version yet and were fetched before t (Check
+// now). GitHub repos only do so with a token: without one, the quota is too small.
+func RecheckSince(ctx context.Context, t time.Time) context.Context {
+	return context.WithValue(ctx, recheckKey{}, t)
+}
+
 // Sync makes sure the repo's notes are stored and fresh. need is the oldest version
 // that should be covered (the running version); with nil only the newest are needed.
 // latest is the newest version the registry has (nil if unknown): notes without it are
 // fetched again after latestRetry instead of freshFor, so a new release gets its notes
-// soon after its image appears.
+// soon after its image appears (sooner under RecheckSince).
 func (s *Service) Sync(ctx context.Context, repo source.Repo, need, latest *version.Version) error {
 	key := repo.Key()
 	unlock := s.lock(key)
@@ -114,7 +123,7 @@ func (s *Service) Sync(ctx context.Context, repo source.Repo, need, latest *vers
 		return err
 	}
 	if age := time.Since(st.FetchedAt); known && age < freshFor && s.covered(ctx, key, st, need) &&
-		(age < latestRetry || s.hasLatest(ctx, key, st, latest)) {
+		((age < latestRetry && !s.recheck(ctx, repo, st)) || s.hasLatest(ctx, key, st, latest)) {
 		return nil
 	}
 	defer s.forget(key) // anything below may store new notes or state
@@ -177,6 +186,20 @@ func (s *Service) syncReleases(ctx context.Context, repo source.Repo, st *store.
 		}
 	}
 	return nil
+}
+
+// recheck says whether ctx (RecheckSince) asks to look for the latest version again.
+func (s *Service) recheck(ctx context.Context, repo source.Repo, st store.RepoState) bool {
+	since, ok := ctx.Value(recheckKey{}).(time.Time)
+	if !ok || !st.FetchedAt.Before(since) {
+		return false
+	}
+	if repo.IsGitHub() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.token != ""
+	}
+	return true
 }
 
 // covered: the stored notes reach back to the needed version, there's nothing older, or

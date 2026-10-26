@@ -115,7 +115,7 @@ export interface HealthStats {
     total: number;
     failed: number; // check_runs in range; failed = error != ''
     byTrigger: { startup: number; schedule: number; manual: number };
-    medianMs?: number;
+    medianMs?: number; // runs without an error
     slowestMs?: number;
   };
   /** One point per finished check run in range (thinned to 180 by day). */

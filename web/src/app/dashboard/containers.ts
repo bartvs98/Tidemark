@@ -20,6 +20,8 @@ export interface CheckStatus {
   finishedAt?: string;
   done: number;
   total: number;
+  /** Automatic AI summaries the run queued; they run once every image is checked. Absent when none. */
+  followUps?: { done: number; total: number };
   error?: string;
   /** The config file couldn't be loaded; its rules aren't applied (labels still are). */
   rulesError?: string;
