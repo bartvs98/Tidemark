@@ -114,10 +114,19 @@ export interface HealthStats {
   failuresByKind: { kind: string; count: number }[];
   /** Requests per UTC day over the range (zeros included). */
   /** Per day, or per week (`day` is then the Monday) when the span is over 92 days: see `requestsPer`. */
-  requests: { day: string; registry: number; github: number; gitlab: number; limited: number }[];
+  requests: ({ day: string } & RequestCounts)[];
   requestsPer: 'day' | 'week';
-  requestTotals: { registry: number; github: number; gitlab: number; limited: number };
+  requestTotals: RequestCounts;
   github: { token: boolean; limit?: number; remaining?: number; resetAt?: string }; // last-known, no request made
+}
+
+/** Requests, and those refused for a rate limit split like the chart (release notes = GitHub + GitLab). */
+export interface RequestCounts {
+  registry: number;
+  github: number;
+  gitlab: number;
+  limitedRegistry: number;
+  limitedNotes: number;
 }
 
 export interface AiStats {

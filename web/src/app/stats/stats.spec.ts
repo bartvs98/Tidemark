@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
-import { Stats } from './stats';
+import { limitedText, Stats } from './stats';
 import { Stats as StatsData } from './stats-types';
 
 function fixture(overrides: Partial<StatsData> = {}): StatsData {
@@ -74,9 +74,9 @@ function fixture(overrides: Partial<StatsData> = {}): StatsData {
       ],
       failing: [{ name: 'mosquitto', kind: 'rate-limit', error: 'toomanyrequests', since: '2026-10-20T06:00:00Z' }],
       failuresByKind: [{ kind: 'rate-limit', count: 4 }, { kind: 'other', count: 1 }],
-      requests: [{ day: '2026-10-19', registry: 40, github: 12, gitlab: 0, limited: 1 }],
+      requests: [{ day: '2026-10-19', registry: 40, github: 12, gitlab: 0, limitedRegistry: 1, limitedNotes: 0 }],
       requestsPer: 'day',
-      requestTotals: { registry: 40, github: 12, gitlab: 0, limited: 1 },
+      requestTotals: { registry: 40, github: 12, gitlab: 0, limitedRegistry: 1, limitedNotes: 0 },
       github: { token: false },
     },
     ai: {
@@ -137,6 +137,7 @@ describe('Stats', () => {
     expect(el.textContent).toMatch(/Ungrouped\s*6\s*Removed containers\s*2/);
     expect(el.querySelector('[data-testid="repo-flagged"]')?.textContent).toMatch(/2 breaking\s+1 attention/);
     expect(el.querySelector('[data-testid="failing"]')?.textContent).toContain('mosquitto');
+    expect(flat(text(el, 'limited')).trim()).toBe('1 rate limited (registry)');
   });
 
   function withBehind(patch: Partial<StatsData['behind']>): StatsData {
@@ -246,5 +247,12 @@ describe('Stats', () => {
     const callout = (component.nativeElement as HTMLElement).querySelector('[data-testid="stats-error"]');
     expect(callout?.textContent).toContain("Couldn't load stats.");
     expect(callout?.textContent).toContain('boom');
+  });
+
+  it('splits rate-limited requests by source', () => {
+    const counts = { registry: 300, github: 20, gitlab: 2, limitedRegistry: 0, limitedNotes: 0 };
+    expect(limitedText(counts)).toBeUndefined();
+    expect(limitedText({ ...counts, limitedRegistry: 16, limitedNotes: 2 })).toBe('18 rate limited (16 registry, 2 release notes)');
+    expect(limitedText({ ...counts, limitedNotes: 3 })).toBe('3 rate limited (release notes)');
   });
 });

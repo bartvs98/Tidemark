@@ -12,4 +12,6 @@ export class DashboardState {
   readonly currentOpen = signal(false);
   readonly snoozedOpen = signal(false);
   readonly ignoredOpen = signal(false);
+  /** Whether "Up to date" was all the dashboard showed last time, so it only opens itself when that turns true. */
+  onlyUpToDate = false;
 }
