@@ -804,6 +804,13 @@ export class Styleguide {
     { label: '4.0.8 → 4.0.14', value: 3, display: '3 releases', hint: 'sonarr', mono: true },
   ];
 
+  /** A mono hint with a plain note, as in "Oldest software running". */
+  protected readonly ageItems: BarListItem[] = [
+    { label: 'uptime-kuma', value: 22, display: '22 months', hint: '1.23.16', hintMono: true },
+    { label: 'mosquitto', value: 10, display: '10 months', hint: '2.0.22', hintMono: true, hintNote: 'latest' },
+    { label: 'vaultwarden', value: 2, display: '2 months', hint: '1.37.2', hintMono: true },
+  ];
+
   /** Two lists on one scale (`max`), as in "Time to update by kind". */
   protected readonly kindClassItems: BarListItem[] = [
     { label: 'Patch', value: 2, display: '2 days', hint: '14 updates' },

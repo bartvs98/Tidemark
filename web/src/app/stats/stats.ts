@@ -173,7 +173,9 @@ export class Stats {
       label: r.name,
       value: this.now() - new Date(r.released).getTime(),
       display: longDuration(Math.max(0, this.now() - new Date(r.released).getTime())),
-      hint: r.latest ? `${r.running} · latest` : r.running,
+      hint: r.running,
+      hintMono: true,
+      hintNote: r.latest ? 'latest' : undefined,
       href: `/containers/${encodeURIComponent(r.name)}`,
     })),
   );

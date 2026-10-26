@@ -496,6 +496,9 @@
       <tm-card heading="Tide calendar, 30 days" data-testid="chart-calendar-short">
         <tm-calendar-chart label="Up to date per day, last 30 days" [days]="tideMonth" />
       </tm-card>
+      <tm-card heading="Oldest software running" data-testid="chart-bar-list-hint">
+        <tm-bar-list label="Oldest software running" [items]="ageItems" />
+      </tm-card>
       <tm-card heading="Empty states" data-testid="chart-empty">
         <div class="grid gap-4">
           <tm-time-chart label="Check duration" [points]="tideOnePoint" [height]="96" />

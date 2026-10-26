@@ -53,6 +53,17 @@ describe('TmBarList', () => {
     expect(el.textContent).toContain('2 containers');
   });
 
+  it('shows a mono hint with a plain note after it', async () => {
+    const { fixture, host, el } = await render();
+    host.items.set([{ label: 'mosquitto', value: 1, hint: '2.0.22', hintMono: true, hintNote: 'latest' }]);
+    await fixture.whenStable();
+    const [hint, note] = [...el.querySelectorAll('li .text-xs')];
+    expect(hint.textContent).toBe('2.0.22');
+    expect(hint.classList).toContain('font-mono');
+    expect(note.textContent).toBe(' · latest');
+    expect(note.classList).not.toContain('font-mono');
+  });
+
   it('shows the empty text without items', async () => {
     const { fixture, host, el } = await render();
     host.items.set([]);
