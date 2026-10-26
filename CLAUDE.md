@@ -11,6 +11,7 @@ Each fact lives in one doc. Read the section you need, not the whole file.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): stack, package layout, check pipeline, data model, API shapes, frontend, security, CI and releasing. Read before changing a package, a table or an endpoint.
 - [README.md](README.md): for users: install, env vars, rules syntax. The only config reference.
 - [docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md) (components, tokens) + [docs/BRAND.md](docs/BRAND.md) (colour, type, voice): read before any UI work.
+- [docs/AUDIT.md](docs/AUDIT.md): the 26 Oct 2026 audit: open findings with severity and a suggested fix order. Tick a finding when its fix merges.
 
 (`docs/IDEAS.md` may exist locally: the owner's git-ignored notes; everything decided from it is in the docs above.)
 
