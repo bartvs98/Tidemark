@@ -39,7 +39,7 @@ Every colour is written once as `light-dark(<light>, <dark>)`. The theme switch 
 - The default is **dark**. `system` follows the OS.
 - **Scrollbars** are thin, a `line-strong` thumb on a transparent track: `scrollbar-color` and `scrollbar-width` on `html` in `styles.css`, inherited by every scrolling area. Don't restyle them per component.
 - The choice is saved in `localStorage` (`tidemark.theme`) and applied by an inline script in `index.html` before first paint, so the page doesn't flash the wrong theme.
-- `<meta name="theme-color">` (the browser bar on phones) follows the resolved theme: it's the `canvas` colour, `#070d17` dark or `#f4f7fa` light (`THEME_COLORS` in `ui/theme-switch/theme.ts`). The pre-paint script sets it first, then the `Theme` service keeps it in sync, also when `system` flips with the OS. Change `canvas` and you change those two copies too.
+- `<meta name="theme-color">` (the browser bar on phones) follows the resolved theme: it's the `canvas` colour, `#070d17` dark or `#efece6` light (`THEME_COLORS` in `ui/theme-switch/theme.ts`). The pre-paint script sets it first, then the `Theme` service keeps it in sync, also when `system` flips with the OS. Change `canvas` and you change those two copies too.
 
 ## Components
 

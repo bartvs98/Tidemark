@@ -8,7 +8,7 @@ const STORAGE_KEY = 'tidemark.theme';
  * The page background (`--color-canvas` in styles/tokens.css) per resolved theme, for
  * <meta name="theme-color"> (the browser bar on phones). index.html's pre-paint script has a copy.
  */
-export const THEME_COLORS = { light: '#f4f7fa', dark: '#070d17' } as const;
+export const THEME_COLORS = { light: '#efece6', dark: '#070d17' } as const;
 
 /**
  * Holds the theme preference and reflects it as <html data-theme="…">.
