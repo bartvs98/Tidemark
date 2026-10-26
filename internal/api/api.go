@@ -73,6 +73,12 @@ type Server struct {
 	// Release levels for the stats, by repo key (see releaseLevels).
 	levelsMu sync.Mutex
 	levels   map[string]repoLevels
+
+	// GET /api/stats responses by range, reused while statsGeneration is unchanged and they're
+	// younger than statsMaxAge (see cachedStats).
+	statsGen   atomic.Uint64 // bumped by InvalidateStats
+	statsMu    sync.Mutex
+	statsCache map[string]cachedStats
 }
 
 func New(d Deps) *Server {
@@ -86,7 +92,7 @@ func New(d Deps) *Server {
 	}
 	s := &Server{version: d.Version, log: d.Log, source: d.Source, checks: d.Checks, changelogs: d.Changelogs, store: d.Store, notify: d.Notify,
 		settings: d.Settings, ai: d.AI, configFile: d.ConfigFile, background: bg, started: started,
-		levels: map[string]repoLevels{}}
+		levels: map[string]repoLevels{}, statsCache: map[string]cachedStats{}}
 	s.icons.Store(d.Icons)
 	return s
 }

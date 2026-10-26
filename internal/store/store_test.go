@@ -595,3 +595,141 @@ func TestStatsReads(t *testing.T) {
 		t.Errorf("calls = %+v, %v", calls, err)
 	}
 }
+
+// Reads go to the reader pool, so they don't wait for a write transaction; the pool
+// can't write.
+func TestReaderPool(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	if err := s.SaveReview(ctx, Review{ContainerName: "redis", Kind: "reviewed", Version: "7.2", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO reviews (container_name, kind, version, until, created_at) VALUES ('nginx', 'reviewed', '1.27', '', '')`); err != nil {
+		t.Fatal(err)
+	}
+	rctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	start := time.Now()
+	got, err := s.Reviews(rctx)
+	if err != nil || len(got) != 1 || got["redis"].Version != "7.2" {
+		t.Errorf("reviews during write tx = %+v, %v", got, err)
+	}
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Errorf("read waited %v for the writer", d)
+	}
+	if _, err := s.rdb.ExecContext(ctx, `DELETE FROM reviews`); err == nil {
+		t.Error("reader pool accepted a write")
+	}
+}
+
+func TestPruneRepos(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	now := time.Now()
+	old := now.Add(-40 * 24 * time.Hour)
+	for _, st := range []RepoState{
+		{Repo: "github.com/a/old", Kind: "releases", FetchedAt: old},
+		{Repo: "github.com/a/used", Kind: "releases", FetchedAt: old},
+		{Repo: "github.com/a/fresh", Kind: "releases", FetchedAt: now},
+		{Repo: "github.com/a/never", Kind: "none"},
+	} {
+		if err := s.SaveRepoState(ctx, st); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.SaveReleases(ctx, st.Repo, []Release{{Tag: "v1", Body: "notes"}}, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cutoff := now.Add(-30 * 24 * time.Hour)
+	stale, err := s.StaleRepos(ctx, map[string]bool{"github.com/a/used": true}, cutoff)
+	if want := []string{"github.com/a/never", "github.com/a/old"}; err != nil || !reflect.DeepEqual(stale, want) {
+		t.Fatalf("stale = %v, %v; want %v", stale, err, want)
+	}
+
+	if got, err := s.PrunedReleases(ctx); err != nil || got != (PrunedTotals{}) {
+		t.Errorf("initial totals = %+v, %v", got, err)
+	}
+	if err := s.PruneRepos(ctx, stale, PrunedTotals{Releases: 2, Breaking: 1, Words: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PruneRepos(ctx, nil, PrunedTotals{Releases: 1, Words: 5}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.PrunedReleases(ctx); err != nil || got != (PrunedTotals{Releases: 3, Breaking: 1, Words: 15}) {
+		t.Errorf("totals = %+v, %v", got, err)
+	}
+	states, _ := s.AllRepoStates(ctx)
+	releases, _ := s.AllReleases(ctx)
+	for _, repo := range []string{"github.com/a/old", "github.com/a/never"} {
+		if _, ok := states[repo]; ok {
+			t.Errorf("%s repo state kept", repo)
+		}
+		if _, ok := releases[repo]; ok {
+			t.Errorf("%s releases kept", repo)
+		}
+	}
+	for _, repo := range []string{"github.com/a/used", "github.com/a/fresh"} {
+		if _, ok := states[repo]; !ok || len(releases[repo]) != 1 {
+			t.Errorf("%s pruned", repo)
+		}
+	}
+}
+
+func TestPruneTagCache(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	now := time.Now()
+	old := now.Add(-40 * 24 * time.Hour)
+	for repo, at := range map[string]time.Time{
+		"docker.io/library/old":   old,
+		"docker.io/library/used":  old,
+		"docker.io/library/fresh": now,
+		// Without fractional seconds: shorter text than the cutoff, still older.
+		"docker.io/library/whole": old.Truncate(time.Second),
+	} {
+		if err := s.SaveTags(ctx, repo, []string{"1"}, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := s.PruneTagCache(ctx, map[string]bool{"docker.io/library/used": true}, now.Add(-30*24*time.Hour))
+	if err != nil || n != 2 {
+		t.Fatalf("pruned = %d, %v; want 2", n, err)
+	}
+	for repo, want := range map[string]bool{"docker.io/library/old": false, "docker.io/library/whole": false,
+		"docker.io/library/used": true, "docker.io/library/fresh": true} {
+		if _, _, ok := s.LoadTags(ctx, repo); ok != want {
+			t.Errorf("%s kept = %v, want %v", repo, ok, want)
+		}
+	}
+	if n, err := s.PruneTagCache(ctx, map[string]bool{"docker.io/library/used": true}, now.Add(-30*24*time.Hour)); err != nil || n != 0 {
+		t.Errorf("second prune = %d, %v", n, err)
+	}
+}
+
+func TestBackup(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	if err := s.SaveReview(ctx, Review{ContainerName: "redis", Kind: "reviewed", Version: "7.2", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "backup.db")
+	if err := s.Backup(ctx, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Backup(ctx, path); err == nil {
+		t.Error("backup over an existing file succeeded")
+	}
+	b, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if got, err := b.Reviews(ctx); err != nil || got["redis"].Version != "7.2" {
+		t.Errorf("backup reviews = %+v, %v", got, err)
+	}
+}

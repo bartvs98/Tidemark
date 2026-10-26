@@ -144,6 +144,7 @@ func (s *Server) putReview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.InvalidateStats()
 	writeJSON(w, http.StatusOK, toReviewJSON(rv))
 }
 
@@ -161,5 +162,6 @@ func (s *Server) deleteReview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.InvalidateStats()
 	w.WriteHeader(http.StatusNoContent)
 }

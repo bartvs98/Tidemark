@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -470,5 +471,68 @@ func TestPrereleaseLatestIncludesPrereleases(t *testing.T) {
 	}
 	if cs.ToTag != "2026.11.0-rc.2" {
 		t.Errorf("to tag = %q", cs.ToTag)
+	}
+}
+
+func TestLocksAreReleased(t *testing.T) {
+	f := &fakeHosts{releases: map[string][]string{"a/a": {"v1.1.0"}, "b/b": {"v1.1.0"}}}
+	s := setup(t, f)
+	var wg sync.WaitGroup
+	for i := 0; i < 6; i++ {
+		repo := gh([]string{"a/a", "b/b"}[i%2])
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = s.Sync(context.Background(), repo, nil, nil)
+		}()
+	}
+	wg.Wait()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.locks) != 0 {
+		t.Errorf("locks = %d, want none once the syncs are done", len(s.locks))
+	}
+}
+
+func TestIdleCacheEntriesAreEvicted(t *testing.T) {
+	f := &fakeHosts{releases: map[string][]string{"a/a": {"v1.1.0"}, "b/b": {"v1.1.0"}}}
+	s := setup(t, f)
+	ctx := context.Background()
+	a, b := gh("a/a"), gh("b/b")
+	_ = s.Sync(ctx, a, nil, nil)
+	_ = s.Sync(ctx, b, nil, nil)
+	if _, err := s.Changes(ctx, a, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range s.cache {
+		for _, e := range m {
+			e.used = time.Now().Add(-2 * cacheIdle)
+		}
+	}
+	if _, err := s.Changes(ctx, b, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.cache[a.Key()]; ok || len(s.cache) != 1 {
+		t.Errorf("cache keys = %d, want only %s", len(s.cache), b.Key())
+	}
+}
+
+func TestGenerationChangesWhenNotesMayHaveChanged(t *testing.T) {
+	f := &fakeHosts{releases: map[string][]string{"a/a": {"v1.1.0"}}}
+	s := setup(t, f)
+	ctx := context.Background()
+	g := s.Generation()
+	_ = s.Sync(ctx, gh("a/a"), nil, nil)
+	if s.Generation() == g {
+		t.Error("generation unchanged after a Sync that stored notes")
+	}
+	g = s.Generation()
+	_ = s.Sync(ctx, gh("a/a"), nil, nil) // fresh: nothing stored
+	if s.Generation() != g {
+		t.Error("generation changed by a Sync that stored nothing")
+	}
+	s.Forget("github.com/a/a")
+	if s.Generation() == g {
+		t.Error("generation unchanged after Forget")
 	}
 }

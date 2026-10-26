@@ -65,6 +65,16 @@ Recommended: create a [GitHub fine-grained token](https://github.com/settings/pe
 
 Nothing else: no telemetry, no accounts.
 
+### Backups
+
+Everything Tidemark keeps is in `/data/tidemark.db`. Don't copy that file while Tidemark runs (the copy can be inconsistent); let Tidemark write a copy instead, then move it off the host:
+
+```sh
+docker compose exec tidemark tidemark backup /data/backup-2026-10-26.db
+```
+
+To restore, stop Tidemark, put the copy back as `/data/tidemark.db` and delete any `tidemark.db-wal` and `tidemark.db-shm` next to it. Release notes and cached tag lists that no container has used for 30 days are deleted after a check run; their counts stay on the stats page.
+
 ## Configuration
 
 Everything can be set by environment variables. The settings marked ✎ can also be changed in the Settings dialog (gear in the header) once you set `TIDEMARK_SETTINGS_EDITABLE=true`. Changes apply right away, without a restart. An env var always wins: its field shows as locked. Otherwise the value saved in the dialog counts, then the default.

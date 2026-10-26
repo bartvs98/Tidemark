@@ -26,8 +26,11 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
+// Store has one writer connection (s.db: writes, transactions, migrations) and a small
+// read-only pool (s.rdb) for plain reads, so pages load while a check run writes.
 type Store struct {
-	db *sql.DB
+	db  *sql.DB
+	rdb *sql.DB
 }
 
 // Open opens (creating if needed) the database at path and applies pending migrations.
@@ -36,9 +39,9 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("store: %w", err)
 	}
 	// WAL lets the API read while a check run writes; busy_timeout absorbs short lock waits.
-	dsn := "file:" + filepath.ToSlash(path) +
-		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)&_pragma=synchronous(normal)"
-	db, err := sql.Open("sqlite", dsn)
+	file := "file:" + filepath.ToSlash(path)
+	db, err := sql.Open("sqlite", file+
+		"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)&_pragma=synchronous(normal)")
 	if err != nil {
 		return nil, fmt.Errorf("store: %w", err)
 	}
@@ -48,10 +51,18 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	// Opened after migrating, so it sees the final schema. WAL is persistent in the file.
+	rdb, err := sql.Open("sqlite", file+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(on)&_pragma=query_only(1)")
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("store: %w", err)
+	}
+	rdb.SetMaxOpenConns(4)
+	s.rdb = rdb
 	return s, nil
 }
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error { return errors.Join(s.rdb.Close(), s.db.Close()) }
 
 func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY)`); err != nil {
@@ -120,7 +131,7 @@ func (s *Store) FinishRun(ctx context.Context, id int64, at time.Time, images in
 func (s *Store) LastFinishedRun(ctx context.Context) (Run, bool, error) {
 	var r Run
 	var started, finished string
-	err := s.db.QueryRowContext(ctx, `
+	err := s.rdb.QueryRowContext(ctx, `
 		SELECT id, trigger, started_at, finished_at, images, error FROM check_runs
 		WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1`).
 		Scan(&r.ID, &r.Trigger, &started, &finished, &r.Images, &r.Error)
@@ -179,7 +190,7 @@ func (s *Store) SaveResult(ctx context.Context, r Result) error {
 }
 
 func (s *Store) Results(ctx context.Context) ([]Result, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rdb.QueryContext(ctx, `
 		SELECT container_name, image_ref, image_id, running, source, latest, latest_in_major,
 		       class, floating, new_image, held, held_by, tag_digest, rules, error, error_kind, checked_at, failed_at, tags_from, COALESCE(run_id, 0)
 		FROM results`)
@@ -216,7 +227,7 @@ func (s *Store) KeepResults(ctx context.Context, names []string) error {
 // LoadTags returns the cached tag list of a repository and when it was fetched.
 func (s *Store) LoadTags(ctx context.Context, repository string) ([]string, time.Time, bool) {
 	var raw, fetched string
-	err := s.db.QueryRowContext(ctx, `SELECT tags, fetched_at FROM tag_cache WHERE repository = ?`, repository).Scan(&raw, &fetched)
+	err := s.rdb.QueryRowContext(ctx, `SELECT tags, fetched_at FROM tag_cache WHERE repository = ?`, repository).Scan(&raw, &fetched)
 	if err != nil {
 		return nil, time.Time{}, false
 	}
@@ -303,7 +314,7 @@ func (s *Store) SaveReleases(ctx context.Context, repo string, rs []Release, rep
 }
 
 func (s *Store) Releases(ctx context.Context, repo string) ([]Release, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT tag, name, body, url, published_at, prerelease FROM releases WHERE repo = ?`, repo)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT tag, name, body, url, published_at, prerelease FROM releases WHERE repo = ?`, repo)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +334,7 @@ func (s *Store) Releases(ctx context.Context, repo string) ([]Release, error) {
 
 // ReleaseTags returns the tags of a repo's stored releases, without reading their notes.
 func (s *Store) ReleaseTags(ctx context.Context, repo string) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT tag FROM releases WHERE repo = ?`, repo)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT tag FROM releases WHERE repo = ?`, repo)
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +353,7 @@ func (s *Store) ReleaseTags(ctx context.Context, repo string) ([]string, error) 
 func (s *Store) RepoState(ctx context.Context, repo string) (RepoState, bool, error) {
 	st := RepoState{Repo: repo}
 	var fetched string
-	err := s.db.QueryRowContext(ctx, `SELECT kind, etag, has_more, fetched_at, error FROM repos WHERE repo = ?`, repo).
+	err := s.rdb.QueryRowContext(ctx, `SELECT kind, etag, has_more, fetched_at, error FROM repos WHERE repo = ?`, repo).
 		Scan(&st.Kind, &st.ETag, &st.HasMore, &fetched, &st.Error)
 	if errors.Is(err, sql.ErrNoRows) {
 		return st, false, nil
@@ -384,7 +395,7 @@ type Review struct {
 
 // Reviews returns all stored reviews by container name.
 func (s *Store) Reviews(ctx context.Context) (map[string]Review, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT container_name, kind, version, until, created_at FROM reviews`)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT container_name, kind, version, until, created_at FROM reviews`)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +480,7 @@ func (s *Store) LastHistory(ctx context.Context) (map[string]HistoryEntry, error
 }
 
 func (s *Store) queryHistory(ctx context.Context, query string, args ...any) ([]HistoryEntry, error) {
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.rdb.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +522,7 @@ type Notification struct {
 
 // Notified returns every sent update by container and key.
 func (s *Store) Notified(ctx context.Context) (map[NotifiedKey]Notified, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT container_name, key, level, notified_at FROM notified`)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT container_name, key, level, notified_at FROM notified`)
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +571,7 @@ func (s *Store) AddNotification(ctx context.Context, n Notification) error {
 func (s *Store) LastNotification(ctx context.Context) (Notification, bool, error) {
 	var n Notification
 	var sent string
-	err := s.db.QueryRowContext(ctx, `
+	err := s.rdb.QueryRowContext(ctx, `
 		SELECT id, sent_at, notifier, kind, items, error FROM notifications ORDER BY id DESC LIMIT 1`).
 		Scan(&n.ID, &sent, &n.Notifier, &n.Kind, &n.Items, &n.Error)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -577,14 +588,14 @@ func (s *Store) LastNotification(ctx context.Context) (Notification, bool, error
 // sent successfully. Tests and failed attempts don't count.
 func (s *Store) SentUpdatesBefore(ctx context.Context) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `
+	err := s.rdb.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM notifications WHERE kind IN ('updates', 'first') AND error = ''`).Scan(&n)
 	return n > 0, err
 }
 
 // Settings returns the stored editable settings by key.
 func (s *Store) Settings(ctx context.Context) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM settings`)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT key, value FROM settings`)
 	if err != nil {
 		return nil, err
 	}
@@ -651,7 +662,7 @@ type AIReason struct {
 
 // AISummaries returns every stored summary.
 func (s *Store) AISummaries(ctx context.Context) ([]AISummary, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rdb.QueryContext(ctx, `
 		SELECT repo, from_version, to_version, provider, model, changes_json, actions_json, verdict,
 			reasons_json, releases, omitted, notes_hash, created_at, error, failed_at,
 			input_tokens, output_tokens, duration_ms, latest, extended_from, covered, covered_hash
@@ -775,7 +786,7 @@ func (s *Store) AddAICall(ctx context.Context, c AICall) error {
 // AIUsageSince sums the calls since t.
 func (s *Store) AIUsageSince(ctx context.Context, t time.Time) (AIUsage, error) {
 	var u AIUsage
-	err := s.db.QueryRowContext(ctx, `
+	err := s.rdb.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(error != ''), 0), COALESCE(SUM(mode = 'extended'), 0),
 			COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
 		FROM ai_calls WHERE at >= ?`, tsSortable(t)).Scan(&u.Calls, &u.Failed, &u.Extended, &u.InputTokens, &u.OutputTokens)
@@ -792,7 +803,7 @@ func nonNil[T any](s []T) []T {
 
 // AICalls returns every recorded provider call, oldest first.
 func (s *Store) AICalls(ctx context.Context) ([]AICall, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rdb.QueryContext(ctx, `
 		SELECT at, provider, model, trigger, mode, repo, from_version, to_version, releases,
 			input_tokens, output_tokens, duration_ms, error
 		FROM ai_calls ORDER BY at, id`)
@@ -863,7 +874,7 @@ func (s *Store) RunStatsSince(ctx context.Context, since time.Time) ([]RunStats,
 	if !since.IsZero() {
 		from = tsSortable(since)
 	}
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rdb.QueryContext(ctx, `
 		SELECT run_id, at, duration_ms, containers, ignored, checked, up_to_date, updates, attention, breaking,
 			reviewed, snoozed, failed, releases_behind, classes, failures, requests, github_remaining, github_limit
 		FROM run_stats WHERE at >= ? ORDER BY at, run_id`, from)
@@ -896,7 +907,7 @@ func (s *Store) RunStatsSince(ctx context.Context, since time.Time) ([]RunStats,
 // Runs returns every check run, oldest first (FinishedAt nil while one is running or
 // when it never recorded its end).
 func (s *Store) Runs(ctx context.Context) ([]Run, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.rdb.QueryContext(ctx, `
 		SELECT id, trigger, started_at, COALESCE(finished_at, ''), images, error FROM check_runs ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -929,7 +940,7 @@ func (s *Store) AllHistory(ctx context.Context) ([]HistoryEntry, error) {
 // AllReleases returns the stored releases of every repo, by repo key, without their
 // bodies (Releases has those).
 func (s *Store) AllReleases(ctx context.Context) (map[string][]Release, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT repo, tag, name, url, published_at, prerelease FROM releases`)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT repo, tag, name, url, published_at, prerelease FROM releases`)
 	if err != nil {
 		return nil, err
 	}
@@ -949,7 +960,7 @@ func (s *Store) AllReleases(ctx context.Context) (map[string][]Release, error) {
 
 // AllRepoStates returns every repo's fetch state, by repo key.
 func (s *Store) AllRepoStates(ctx context.Context) (map[string]RepoState, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT repo, kind, etag, has_more, fetched_at, error FROM repos`)
+	rows, err := s.rdb.QueryContext(ctx, `SELECT repo, kind, etag, has_more, fetched_at, error FROM repos`)
 	if err != nil {
 		return nil, err
 	}

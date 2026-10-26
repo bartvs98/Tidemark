@@ -47,15 +47,16 @@ Check runs scale fine: they group containers by image, share registry requests a
 
 ## C. Store and growth
 
-- [ ] **should: one connection serialises reads behind writes.** `store.Open` sets `SetMaxOpenConns(1)`. That's right for writes, but WAL is turned on precisely so readers don't wait for the writer, and with one connection they still do. During a run, each `SaveResult`, `SaveReleases` (a transaction per page of 100) and `PutAISummary` queues behind a running dashboard or stats read, and the other way round. The stats page, which reads every table in full, is the longest holder.
+- [x] **should: one connection serialises reads behind writes.** `store.Open` sets `SetMaxOpenConns(1)`. That's right for writes, but WAL is turned on precisely so readers don't wait for the writer, and with one connection they still do. During a run, each `SaveResult`, `SaveReleases` (a transaction per page of 100) and `PutAISummary` queues behind a running dashboard or stats read, and the other way round. The stats page, which reads every table in full, is the longest holder.
   - **Fix:** open two pools on the same file: a writer with 1 connection, and a reader with a few connections opened with `_pragma=query_only(1)`. Route the read methods to the reader. Keep the rule that no query runs while another one's rows are open, which the first audit checked.
-- [ ] **nice: tables and caches only grow.** By design, `history`, `run_stats` and `ai_calls` are never pruned (the stats page builds on them), and they're small. The tables below are pruned by nothing, though, and no screen needs their old rows:
+- [x] **nice: tables and caches only grow.** By design, `history`, `run_stats` and `ai_calls` are never pruned (the stats page builds on them), and they're small. The tables below are pruned by nothing, though, and no screen needs their old rows:
   - `releases`, `repos` and `tag_cache` for repos and images no current container uses. A tag list can be thousands of tags of JSON, and a releases row holds full note bodies.
   - `notified` rows for versions long past, and `notifications`.
   - In memory: the registry client's `tags` and `digests` maps keep expired entries, including whole tag lists. The changelog service's `locks` map and its `Changes` cache keep an entry for every repo and range ever asked for; the stats page asks for every historical update's range.
+  - **Done differently:** `notified` and `notifications` stay unpruned, since the stats page and the first message depend on them; pruned release notes keep counting in the lifetime totals ([ARCHITECTURE → Data model](ARCHITECTURE.md#data-model-sqlite)).
   - **Fix:** an after-run step that deletes `releases`, `repos` and `tag_cache` rows unused for 30 days (unused = no current container resolves to them), and `notified` rows whose key is no longer any container's review key. Evict expired map entries when an entry is stored. Check what the stats page reads first: it uses the stored notes of *current* containers' repos only.
-- [ ] **nice: the stats page is computed from scratch on every request.** It reads `run_stats`, `check_runs`, `history`, `ai_calls`, `releases` and `notified` in full, re-inventories Docker and runs the analysis for every applied update. That's fine today; with an hourly schedule it's about 9,000 runs a year. The answer only changes when a run finishes, a review changes or notes are stored, so cache the response per range behind a generation counter that those three events bump.
-- [ ] **nice: there's no way to take a backup.** The data dir holds a WAL-mode database. Copying it while Tidemark runs can give an inconsistent copy, and the image has no shell to run `sqlite3` in. Add a `tidemark backup <path>` subcommand (`VACUUM INTO`, like `tidemark healthcheck`, so it works through `docker exec`) and a line in the README.
+- [x] **nice: the stats page is computed from scratch on every request.** It reads `run_stats`, `check_runs`, `history`, `ai_calls`, `releases` and `notified` in full, re-inventories Docker and runs the analysis for every applied update. That's fine today; with an hourly schedule it's about 9,000 runs a year. The answer only changes when a run finishes, a review changes or notes are stored, so cache the response per range behind a generation counter that those three events bump.
+- [x] **nice: there's no way to take a backup.** The data dir holds a WAL-mode database. Copying it while Tidemark runs can give an inconsistent copy, and the image has no shell to run `sqlite3` in. Add a `tidemark backup <path>` subcommand (`VACUUM INTO`, like `tidemark healthcheck`, so it works through `docker exec`) and a line in the README.
 
 ## D. Frontend
 
@@ -94,7 +95,7 @@ These aren't bugs. Most are already [parked in the roadmap](ROADMAP.md#ideas-par
 - **Secrets:** never returned by `GET /api/settings`, never logged, and stripped from provider and Telegram errors before they're stored or returned (all tested).
 - **Writes:** need `X-Tidemark`. Bodies are size-limited with strict decoders (review 4 KiB, summary 1 KiB, settings).
 - **SQLite:**
-  - No method runs a query while another one's rows are open, so the single connection can't deadlock.
+  - No method runs a query while another one's rows are open, so neither the single writer connection nor the reader pool can deadlock on itself.
   - Migrations are append-only, and run-end and run-stats writes survive a cancelled context.
 - **Notifications:** items are only marked as sent after a successful send. Messages are split at Telegram's 4,096-character limit. A digest or notifier change never cuts off a send in progress.
 - **AI:**

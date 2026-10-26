@@ -253,6 +253,11 @@ func (c *Client) fetchTags(ctx context.Context, key, host string, since time.Tim
 		l := limitedTags{tags: old, tagsAt: oldAt, haveTags: haveOld, err: err, at: time.Now()}
 		c.mu.Lock()
 		c.limited[key] = l
+		for k, e := range c.limited {
+			if time.Since(e.at) >= staleTTL {
+				delete(c.limited, k)
+			}
+		}
 		c.mu.Unlock()
 		if haveOld {
 			return old, &StaleError{At: oldAt, Err: err}
@@ -261,6 +266,7 @@ func (c *Client) fetchTags(ctx context.Context, key, host string, since time.Tim
 	}
 	c.mu.Lock()
 	c.tags[key] = cached[[]string]{value: tags, at: time.Now()}
+	evictExpired(c.tags, c.ttl)
 	delete(c.limited, key)
 	c.mu.Unlock()
 	if c.tagCache != nil {
@@ -363,6 +369,17 @@ func store[T any](c *Client, m map[string]cached[T], key string, v T) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	m[key] = cached[T]{value: v, at: time.Now()}
+	evictExpired(m, c.ttl)
+}
+
+// evictExpired deletes entries older than ttl: lookup never serves them again, so they
+// would only pile up for repos and tags that are no longer asked for. Call with c.mu held.
+func evictExpired[T any](m map[string]cached[T], ttl time.Duration) {
+	for k, e := range m {
+		if time.Since(e.at) >= ttl {
+			delete(m, k)
+		}
+	}
 }
 
 // friendly turns registry errors into short messages that say what went wrong (and,

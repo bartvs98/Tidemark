@@ -248,6 +248,7 @@ func (s *Server) postSummary(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(s.background, summaryTimeout)
 	defer cancel()
 	_, err = s.ai.Generate(ctx, t.key, t.req, full)
+	s.InvalidateStats() // it recorded an ai_calls row, success or not
 	switch {
 	case errors.Is(err, ai.ErrOff):
 		writeError(w, http.StatusConflict, err.Error())

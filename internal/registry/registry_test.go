@@ -446,3 +446,35 @@ func TestFreshSince(t *testing.T) {
 		t.Errorf("%d extra requests: what the run fetched itself wasn't reused", requests.Load()-asked)
 	}
 }
+
+func TestExpiredEntriesAreEvicted(t *testing.T) {
+	c := New("tidemark-test", WithTTL(time.Hour))
+	old := time.Now().Add(-2 * time.Hour)
+	c.tags["a/old"] = cached[[]string]{value: []string{"1"}, at: old}
+	c.digests["a/old:1"] = cached[string]{value: "sha256:x", at: old}
+	c.limited["a/old"] = limitedTags{at: time.Now().Add(-2 * staleTTL)}
+
+	store(c, c.digests, "a/new:1", "sha256:y")
+	if _, ok := c.digests["a/old:1"]; ok || len(c.digests) != 1 {
+		t.Errorf("digests = %v, want only the new entry", c.digests)
+	}
+	store(c, c.tags, "a/new", []string{"2"})
+	if _, ok := c.tags["a/old"]; ok || len(c.tags) != 1 {
+		t.Errorf("tags = %v, want only the new entry", c.tags)
+	}
+
+	// A rate-limited outcome evicts expired ones of other repos.
+	host, _, _ := hookedRegistry(t, func(w http.ResponseWriter, r *http.Request) bool {
+		w.WriteHeader(http.StatusTooManyRequests)
+		return true
+	})
+	ref, err := imageref.Parse(host + "/team/app:1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fastRetries(c)
+	_, _ = c.Tags(context.Background(), ref)
+	if _, ok := c.limited["a/old"]; ok || len(c.limited) != 1 {
+		t.Errorf("limited = %v, want only the new outcome", c.limited)
+	}
+}
