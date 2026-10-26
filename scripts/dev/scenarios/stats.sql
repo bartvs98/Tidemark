@@ -43,8 +43,8 @@ SELECT 1000 + i,
        20 + updates * 12 + (i % 10) * 2,
        printf('{"patch":1,"minor":%d}', updates),
        CASE WHEN i % 29 = 28 THEN '{"rate-limit":1}' WHEN i % 53 = 52 THEN '{"timeout":1}' ELSE '{}' END,
-       printf('{"registry":{"requests":%d,"limited":0},"github":{"requests":%d,"limited":%d}}',
-              22 + (i * 5) % 14, (i * 3) % 9, CASE WHEN i % 47 = 46 THEN 1 ELSE 0 END),
+       printf('{"registry":{"requests":%d,"limited":%d},"github":{"requests":%d,"limited":%d}}',
+              22 + (i * 5) % 14, CASE WHEN i % 29 = 28 THEN 2 ELSE 0 END, (i * 3) % 9, CASE WHEN i % 47 = 46 THEN 1 ELSE 0 END),
        4800 - (i % 9) * 20,
        5000
 FROM runs;

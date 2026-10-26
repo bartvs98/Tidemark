@@ -258,6 +258,9 @@ func TestStatsFromHistory(t *testing.T) {
 			r.Requests["github"] = stats.Count{Requests: 1, Limited: 1}
 			r.Failures = map[string]int{"rate-limit": 2, "network": 1}
 		}
+		if i%100 == 0 {
+			r.Requests["registry"] = stats.Count{Requests: 2, Limited: 1}
+		}
 		if i >= 10 && i < 30 || i >= 100 && i < 105 {
 			r.Updates = 0
 		}
@@ -277,10 +280,10 @@ func TestStatsFromHistory(t *testing.T) {
 		t.Errorf("longest streak = %+v", s)
 	}
 	// Requests per day from the first row to today, zeros included.
-	if r := out.Health.Requests; len(r) != 50 || r[0].Day != first.Format(time.DateOnly) || r[0].Registry != 8 || r[0].GitHub != 4 || r[0].Limited != 1 {
+	if r := out.Health.Requests; len(r) != 50 || r[0].Day != first.Format(time.DateOnly) || r[0].Registry != 8 || r[0].GitHub != 4 || r[0].limitedJSON != (limitedJSON{1, 1}) {
 		t.Errorf("requests: %d days, first %+v", len(r), r[0])
 	}
-	if tot := out.Health.RequestTotals; tot != (requestTotalsJSON{Registry: 400, GitHub: 200, Limited: 4}) {
+	if tot := out.Health.RequestTotals; tot != (requestTotalsJSON{Registry: 400, GitHub: 200, limitedJSON: limitedJSON{LimitedRegistry: 2, LimitedNotes: 4}}) {
 		t.Errorf("request totals = %+v", tot)
 	}
 	if k := out.Health.FailuresByKind; !reflect.DeepEqual(k, []kindCountJSON{{"rate-limit", 8}, {"network", 4}}) {

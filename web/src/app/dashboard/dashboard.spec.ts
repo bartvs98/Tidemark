@@ -940,6 +940,33 @@ describe('Dashboard', () => {
       expect([...settled.querySelectorAll('tbody tr a')].map(text)).toEqual(['adguard']);
     });
 
+    it('opens "Up to date" when everything is up to date, in both groupings, and not again after closing it', async () => {
+      const list = body();
+      list.containers = list.containers.map((c) => (c.rules?.ignore ? c : { ...c, update: checked('none') }));
+      const first = TestBed.createComponent(Dashboard);
+      first.detectChanges();
+      http.expectOne('/api/containers').flush(list);
+      await first.whenStable();
+      const el = first.nativeElement as HTMLElement;
+      expect(sectionNames(el)).toEqual(['Up to date', 'Ignored']);
+      const toggle = (root: HTMLElement) => root.querySelector<HTMLButtonElement>('[data-view] > tm-section h2 button')!;
+      expect(toggle(el).getAttribute('aria-expanded')).toBe('true');
+
+      el.querySelector<HTMLButtonElement>('[data-testid="group"] button:nth-child(2)')!.click(); // Severity
+      await settle();
+      expect(toggle(el).getAttribute('aria-expanded')).toBe('true');
+      toggle(el).click();
+      await settle();
+      expect(toggle(el).getAttribute('aria-expanded')).toBe('false');
+      first.destroy();
+
+      // Back from a detail page: the component is new, the choice to close it stays.
+      const again = TestBed.createComponent(Dashboard);
+      again.detectChanges();
+      TestBed.tick();
+      expect(toggle(again.nativeElement).getAttribute('aria-expanded')).toBe('false');
+    });
+
     it("groups by severity, remembers it, and shows each container's stack", async () => {
       const el = await render((req) => req.flush(body()));
       const group = [...el.querySelectorAll<HTMLButtonElement>('[data-testid="group"] button')];

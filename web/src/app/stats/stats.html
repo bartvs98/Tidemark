@@ -206,7 +206,10 @@
           @if (healthStats(); as s) {
             @if (s.limited) {
               <p class="mt-3 flex items-center gap-1.5 text-sm text-attention" data-testid="limited">
-                <tm-icon name="triangle-alert" [size]="14" />{{ count(s.limited, 'request') }} rate limited
+                <tm-icon name="triangle-alert" [size]="14" />{{ s.limited }}
+              </p>
+              <p class="mt-1 text-xs text-fg-muted">
+                A rate-limited tag list falls back to the stored one; release notes wait for GitHub's reset and keep showing the stored notes.
               </p>
             }
           }

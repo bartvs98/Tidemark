@@ -15,10 +15,13 @@
       <tm-icon [name]="option.icon" [size]="14" />
     }
     @if (!iconOnly()) {
-      {{ option.label }}
-      @if (option.count !== undefined) {
-        <span class="text-xs text-fg-subtle tabular-nums">{{ option.count }}</span>
-      }
+      <!-- Baseline-aligned: centring the smaller count would sit it off the label's baseline. -->
+      <span class="inline-flex items-baseline gap-1.5">
+        {{ option.label }}
+        @if (option.count !== undefined) {
+          <span class="text-xs text-fg-subtle tabular-nums">{{ option.count }}</span>
+        }
+      </span>
     }
   </button>
 }

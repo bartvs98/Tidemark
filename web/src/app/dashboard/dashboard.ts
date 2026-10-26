@@ -148,15 +148,18 @@ export class Dashboard {
   protected readonly workStacks = computed(() => this.shownStacks().filter((s) => !this.collectSettled() || !s.current));
   /** Stack mode: the stacks inside "Up to date". */
   protected readonly settledStacks = computed(() => (this.collectSettled() ? this.shownStacks().filter((s) => s.current) : []));
-  /**
-   * A search whose only matches in the stacks are in settled ones: the collapsed "Up to date"
-   * section opens (see the effect below), so the matches don't hide behind it.
-   */
-  private readonly searchOnlySettled = computed(
-    () => !!this.needle() && this.workStacks().length === 0 && this.settledStacks().length > 0,
-  );
   /** Severity mode: Breaking, Attention, Updates, Check failed, Not checked yet, Up to date. */
   protected readonly shownSeverity = computed(() => groupBySeverity(this.shown()));
+  /**
+   * "Up to date" is all the main area shows (everything is up to date, or a search only matches
+   * up-to-date containers): the collapsed section opens (see the effect below), so the page
+   * isn't empty and the matches don't hide behind it.
+   */
+  private readonly onlyUpToDate = computed(() =>
+    this.group() === 'stack'
+      ? this.workStacks().length === 0 && this.settledStacks().length > 0
+      : this.shownSeverity().length > 0 && this.shownSeverity().every((g) => g.key === 'current'),
+  );
   /** Ignored containers have no update, so they only show under "All". */
   protected readonly shownIgnored = computed(() => {
     const query = this.needle();
@@ -170,7 +173,7 @@ export class Dashboard {
   protected readonly nothingShown = computed(
     () => this.shown().length === 0 && this.shownSnoozed().length === 0 && this.shownIgnored().length === 0,
   );
-  /** The "Up to date" section (severity mode's group, stack mode's settled stacks): collapsed by default, like "Ignored". One signal, so it stays open or closed across both groupings. */
+  /** The "Up to date" section (severity mode's group, stack mode's settled stacks): collapsed by default, like "Ignored", unless it's all there is. One signal, so it stays open or closed across both groupings. */
   protected readonly currentOpen = this.state.currentOpen;
   protected readonly snoozedOpen = this.state.snoozedOpen;
   protected readonly ignoredOpen = this.state.ignoredOpen;
@@ -289,10 +292,12 @@ export class Dashboard {
       if (data) this.state.list.set(data);
     });
 
-    // Searching for something that's only in settled stacks: open "Up to date" so the matches show.
-    // Runs when that turns true; closing the section again is up to the user.
+    // Only "Up to date" to show: open it. Runs when that turns true (remembered across visits,
+    // so coming back from a detail page doesn't reopen it); closing it again is up to the user.
     effect(() => {
-      if (this.searchOnlySettled()) this.currentOpen.set(true);
+      const only = this.onlyUpToDate();
+      if (only && !this.state.onlyUpToDate) this.currentOpen.set(true);
+      this.state.onlyUpToDate = only;
     });
 
     // While a check runs, poll fast so results appear as they come in; otherwise slowly.

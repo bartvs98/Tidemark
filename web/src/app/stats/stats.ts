@@ -19,7 +19,7 @@ import { formatDuration, formatTokens } from '../detail/ai-format';
 import { shortDate, timeAgo } from '../detail/dates';
 import { behindFor, capitalize, count, dayLabel, longDuration, monthLabel, percent } from './stats-format';
 import { StatsSkeleton } from './stats-skeleton/stats-skeleton';
-import { AppliedUpdate, KindMedian, Stats as StatsData, StatsRange } from './stats-types';
+import { AppliedUpdate, KindMedian, RequestCounts, Stats as StatsData, StatsRange } from './stats-types';
 
 const RANGE_KEY = 'tidemark.statsRange';
 const RANGES: SegmentOption<StatsRange>[] = [
@@ -226,7 +226,7 @@ export class Stats {
       slowest: runs.slowestMs === undefined ? undefined : `slowest ${formatDuration(runs.slowestMs)}`,
       quota,
       quotaHint,
-      limited: requestTotals.limited,
+      limited: limitedText(requestTotals),
       requests: requestTotals.registry + requestTotals.github + requestTotals.gitlab,
     };
   });
@@ -248,7 +248,7 @@ export class Stats {
         // One segment for both forges: two greys couldn't be told apart.
         { value: r.github + r.gitlab, tone: 'muted' as const, name: 'Release notes' },
       ],
-      note: r.limited ? `${r.limited} rate limited` : undefined,
+      note: limitedText(r),
     }));
   });
   protected readonly requestsTitle = computed(() =>
@@ -342,6 +342,13 @@ export class Stats {
 /** "12 releases", or "100+ releases" when the stored notes only give a lower bound. */
 function releasesText(n: number, partial: boolean | undefined): string {
   return partial ? `${n.toLocaleString('en-US')}+ releases` : count(n, 'release');
+}
+
+/** "18 rate limited (16 registry, 2 release notes)", "3 rate limited (registry)"; undefined when none were. */
+export function limitedText({ limitedRegistry: registry, limitedNotes: notes }: RequestCounts): string | undefined {
+  if (!registry && !notes) return undefined;
+  const split = registry && notes ? `${registry} registry, ${notes} release notes` : registry ? 'registry' : 'release notes';
+  return `${registry + notes} rate limited (${split})`;
 }
 
 /** A failure kind as a label: "Rate limited", "Not found"; unknown kinds ("other") capitalised as they are. */

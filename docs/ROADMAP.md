@@ -33,6 +33,7 @@ From the owner's notes after the MVP. One PR each; the release comes last so v1.
 - [x] **H7. Third round of notes**: Tidemark's own icon is built in (images named `…/tidemark`, also before the icon index loads) and Docker socket proxies get selfh.st's Docker icon. Tooltips open with a tap on touch screens, one at a time. In the stack view, up-to-date containers in stacks with updates fade, and fully settled stacks move into a collapsed "Up to date · N stacks" section (new `level` input on `tm-section`). The README screenshot is dark mode only.
 - [x] **H8. Audit fixes**: the findings of the 20 Oct 2026 audit (pipeline, backend, frontend), fixed in six PRs: changelog quota (#16), Docker inventory (#17), dashboard refresh (#18), version resolution and build reviews (#20), hardening (#21), registry resilience (#22).
 - [x] **H9. Fourth round of notes**: Back to the dashboard keeps the scroll position and open sections; loading skeletons match the page again; flagged lines no longer overlap; the detail callout quotes every flagged line (in a clamp); each flagged line says what triggered it (dotted underline + hover), and "when it is removed" no longer counts.
+- [x] **H10. Fifth round of notes**: "Up to date" opens by itself when it's all the dashboard shows; segmented counts sit on the label's baseline; the stats page splits rate-limited requests into registry and release notes; `TZ` is documented (the schedule follows it across daylight saving).
 
 ## After MVP
 

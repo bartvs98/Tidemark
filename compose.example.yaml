@@ -19,6 +19,7 @@ services:
     depends_on: [socket-proxy]
     environment:
       TIDEMARK_DOCKER_HOST: tcp://socket-proxy:2375
+      TZ: Europe/Amsterdam   # your time zone: the schedule and digest follow it, daylight saving included (UTC without it)
       TIDEMARK_GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       # Telegram notifications (see the README):
       # TIDEMARK_TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}

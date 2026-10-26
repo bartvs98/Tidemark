@@ -225,14 +225,21 @@ type requestDayJSON struct {
 	Registry int64  `json:"registry"`
 	GitHub   int64  `json:"github"`
 	GitLab   int64  `json:"gitlab"`
-	Limited  int64  `json:"limited"`
+	limitedJSON
 }
 
 type requestTotalsJSON struct {
 	Registry int64 `json:"registry"`
 	GitHub   int64 `json:"github"`
 	GitLab   int64 `json:"gitlab"`
-	Limited  int64 `json:"limited"`
+	limitedJSON
+}
+
+// limitedJSON: requests refused for a rate limit, split like the chart (release notes =
+// GitHub and GitLab together).
+type limitedJSON struct {
+	LimitedRegistry int64 `json:"limitedRegistry"`
+	LimitedNotes    int64 `json:"limitedNotes"`
 }
 
 type githubQuotaJSON struct {
@@ -1059,7 +1066,8 @@ func (s *Server) healthStats(d *statsData) healthJSON {
 			out.RequestTotals.Registry += rd.Registry
 			out.RequestTotals.GitHub += rd.GitHub
 			out.RequestTotals.GitLab += rd.GitLab
-			out.RequestTotals.Limited += rd.Limited
+			out.RequestTotals.LimitedRegistry += rd.LimitedRegistry
+			out.RequestTotals.LimitedNotes += rd.LimitedNotes
 		}
 	}
 
@@ -1081,12 +1089,14 @@ func addRequests(day *requestDayJSON, reqs map[string]stats.Count) {
 		switch group {
 		case "registry":
 			day.Registry += c.Requests
+			day.LimitedRegistry += c.Limited
 		case "github":
 			day.GitHub += c.Requests
+			day.LimitedNotes += c.Limited
 		case "gitlab":
 			day.GitLab += c.Requests
+			day.LimitedNotes += c.Limited
 		}
-		day.Limited += c.Limited
 	}
 }
 
