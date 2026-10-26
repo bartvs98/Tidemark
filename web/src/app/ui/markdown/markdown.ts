@@ -19,13 +19,10 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
  * Replaces every image (markdown or raw `<img>`, also in `<picture>`) with a link "Image: alt"
  * to its URL, so nothing loads from a remote host just by opening the notes. Inside an existing
  * link only the text remains (no nested anchors); a non-http(s) source leaves plain text.
- * Runs on already sanitised HTML and only creates text and validated http(s) links.
+ * Edits the sanitised fragment in place and only creates text and validated http(s) links.
  */
-function imagesToLinks(html: string): string {
-  if (!/<(img|picture|source)\b/i.test(html)) return html;
-  const tpl = document.createElement('template');
-  tpl.innerHTML = html;
-  for (const img of Array.from(tpl.content.querySelectorAll('img'))) {
+function imagesToLinks(frag: DocumentFragment): void {
+  for (const img of Array.from(frag.querySelectorAll('img'))) {
     const alt = (img.getAttribute('alt') ?? '').trim();
     const text = alt ? `Image: ${alt}` : 'Image';
     let href: string | undefined;
@@ -47,14 +44,16 @@ function imagesToLinks(html: string): string {
     a.textContent = text;
     img.replaceWith(a);
   }
-  tpl.content.querySelectorAll('source').forEach((el) => el.remove());
-  for (const pic of Array.from(tpl.content.querySelectorAll('picture'))) pic.replaceWith(...Array.from(pic.childNodes));
-  return tpl.innerHTML;
+  frag.querySelectorAll('source').forEach((el) => el.remove());
+  for (const pic of Array.from(frag.querySelectorAll('picture'))) pic.replaceWith(...Array.from(pic.childNodes));
 }
 
+// A fragment, not a string: the edits below work on DOMPurify's own output, which is serialised
+// once at the end instead of being re-parsed after sanitising (the pattern behind mutation XSS).
 const PURIFY = {
   FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe'],
   FORBID_ATTR: ['style'],
+  RETURN_DOM_FRAGMENT: true as const,
 };
 
 /** A source line to highlight (from the API's breaking-change analysis). */
@@ -166,19 +165,22 @@ export function renderMarkdown(markdown: string, githubRepo?: string, flags: Mar
       ],
     });
   }
-  return underlineMatches(imagesToLinks(DOMPurify.sanitize(md.parse(markdown, { async: false }) as string, PURIFY)), flags);
+  const frag = DOMPurify.sanitize(md.parse(markdown, { async: false }) as string, PURIFY);
+  imagesToLinks(frag);
+  underlineMatches(frag, flags);
+  const out = document.createElement('div');
+  out.append(frag);
+  return out.innerHTML;
 }
 
 /**
  * Wraps the first occurrence of each flag's `match` in its flagged element (own text only, not a
  * nested list) in `span.tm-flag-match`. A match split across formatting (or not in the rendered
- * text at all) stays unmarked; the title still says it. Runs on sanitised HTML and only adds spans.
+ * text at all) stays unmarked; the title still says it. Edits the sanitised fragment and only adds spans.
  */
-function underlineMatches(html: string, flags: MarkdownFlag[]): string {
-  if (!flags.some((f) => f.match && f.level !== 'none')) return html;
-  const tpl = document.createElement('template');
-  tpl.innerHTML = html;
-  for (const el of Array.from(tpl.content.querySelectorAll<HTMLElement>('[data-flag]'))) {
+function underlineMatches(frag: DocumentFragment, flags: MarkdownFlag[]): void {
+  if (!flags.some((f) => f.match && f.level !== 'none')) return;
+  for (const el of Array.from(frag.querySelectorAll<HTMLElement>('[data-flag]'))) {
     const matches = new Set(
       (el.dataset['flag'] ?? '')
         .split(' ')
@@ -207,7 +209,6 @@ function underlineMatches(html: string, flags: MarkdownFlag[]): string {
       }
     }
   }
-  return tpl.innerHTML;
 }
 
 /** Sanitised markdown, styled by `.tm-prose`. */

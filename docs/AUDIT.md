@@ -63,9 +63,9 @@ Check runs scale fine: they group containers by image, share registry requests a
 - [x] **should: polling ignores whether the page is visible.** The dashboard reloads every 60 s (1.5 s during a run) in a background tab, a minimised window or a wall display nobody looks at. Each poll is the full inventory and analysis from B, and every extra tab multiplies it.
   - **Fix:** pause the timer while `document.hidden`, and reload once on `visibilitychange` to visible. Do the same for the AI-summary poll on the detail page.
   - Combined with B, a forgotten tab then costs nothing.
-- [ ] **nice: sanitised HTML is re-parsed after DOMPurify.** `renderMarkdown` sanitises, then `imagesToLinks` and `underlineMatches` each parse the result again with `template.innerHTML`, edit it, and serialise it back. Re-parsing sanitised markup in another context is the pattern behind mutation-XSS bypasses, which DOMPurify's docs warn about. The edits only add text, http(s) links and spans, so the risk is low.
+- [x] **nice: sanitised HTML is re-parsed after DOMPurify.** `renderMarkdown` sanitises, then `imagesToLinks` and `underlineMatches` each parse the result again with `template.innerHTML`, edit it, and serialise it back. Re-parsing sanitised markup in another context is the pattern behind mutation-XSS bypasses, which DOMPurify's docs warn about. The edits only add text, http(s) links and spans, so the risk is low.
   - **Fix:** sanitise with `RETURN_DOM_FRAGMENT: true`, do both edits on that fragment, and serialise once at the end.
-- [ ] **nice: no script CSP.** Responses set `frame-ancestors 'none'` but no `script-src`, on a page that renders untrusted release notes. DOMPurify is the only line of defence there.
+- [x] **nice: no script CSP.** Responses set `frame-ancestors 'none'` but no `script-src`, on a page that renders untrusted release notes. DOMPurify is the only line of defence there.
   - **Fix:** add `script-src 'self'` with a hash for the one inline script in `index.html` (the theme bootstrap). Angular's `security.autoCsp` in `angular.json` generates that hash at build time.
 
 ## E. Build, CI and operations
