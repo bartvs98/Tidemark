@@ -34,8 +34,8 @@
         (click)="checkNow()"
         data-testid="check-now"
       >
-        @if (checking() && check(); as c) {
-          Checking {{ c.done }}/{{ c.total }}
+        @if (progress(); as p) {
+          {{ p }}
         } @else {
           Check now
         }

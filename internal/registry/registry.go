@@ -92,8 +92,14 @@ func FreshSince(ctx context.Context, t time.Time) context.Context {
 	return context.WithValue(ctx, freshKey{}, t)
 }
 
+// FreshSinceOf returns the time FreshSince set on ctx, if any.
+func FreshSinceOf(ctx context.Context) (time.Time, bool) {
+	t, ok := ctx.Value(freshKey{}).(time.Time)
+	return t, ok
+}
+
 func freshSince(ctx context.Context) time.Time {
-	t, _ := ctx.Value(freshKey{}).(time.Time)
+	t, _ := FreshSinceOf(ctx)
 	return t
 }
 

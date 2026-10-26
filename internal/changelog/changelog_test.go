@@ -234,6 +234,36 @@ func TestSyncFetchesAgainForMissingLatest(t *testing.T) {
 	calls(3)
 }
 
+// Check now (RecheckSince) skips the latestRetry wait for notes from before it, but only
+// for GitHub with a token, and only once per run.
+func TestRecheckSince(t *testing.T) {
+	f := &fakeHosts{releases: map[string][]string{"a/b": {"v1.1.0"}}}
+	s := setup(t, f)
+	repo := gh("a/b")
+	_ = s.Sync(context.Background(), repo, v(t, "1.1.0"), nil)
+	st, _, _ := s.store.RepoState(context.Background(), repo.Key())
+	st.FetchedAt = time.Now().Add(-10 * time.Minute) // before the run, within latestRetry
+	_ = s.store.SaveRepoState(context.Background(), st)
+	f.releases["a/b"] = []string{"v1.2.0", "v1.1.0"}
+	latest := v(t, "1.2.0")
+	ctx := RecheckSince(context.Background(), time.Now())
+
+	_ = s.Sync(ctx, repo, v(t, "1.1.0"), latest)
+	if got := f.apiCalls.Load(); got != 1 {
+		t.Errorf("without a token: api calls = %d, want 1 (waits)", got)
+	}
+	s.SetToken("t")
+	_ = s.Sync(ctx, repo, v(t, "1.1.0"), latest)
+	if got := f.apiCalls.Load(); got != 2 {
+		t.Errorf("with a token: api calls = %d, want 2", got)
+	}
+	f.releases["a/b"] = []string{"v1.3.0", "v1.2.0", "v1.1.0"}
+	_ = s.Sync(ctx, repo, v(t, "1.1.0"), v(t, "1.3.0")) // fetched during this run: waits again
+	if got := f.apiCalls.Load(); got != 2 {
+		t.Errorf("second sync in the run: api calls = %d, want 2", got)
+	}
+}
+
 func TestPaginationUntilCovered(t *testing.T) {
 	var many []string
 	for i := 250; i >= 1; i-- {

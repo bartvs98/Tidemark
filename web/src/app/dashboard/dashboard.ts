@@ -190,6 +190,14 @@ export class Dashboard {
   protected readonly source = computed(() => this.data()?.source);
   protected readonly check = computed(() => this.data()?.check);
   protected readonly checking = computed(() => this.check()?.running ?? false);
+  /** "Checking 14/80", then "Summarising 1/3" while the run's automatic AI summaries run. */
+  protected readonly progress = computed(() => {
+    const c = this.check();
+    if (!c?.running) return undefined;
+    const f = c.followUps;
+    if (f && c.done === c.total) return `Summarising ${f.done}/${f.total}`;
+    return `Checking ${c.done}/${c.total}`;
+  });
   protected readonly rulesError = computed(() => this.check()?.rulesError);
   /** Containers whose latest check attempt failed (an earlier result may still be shown). */
   protected readonly failedCount = computed(() => this.containers().filter(checkFailed).length);
@@ -236,8 +244,8 @@ export class Dashboard {
    * everything is up to date when it isn't.
    */
   protected readonly headline = computed(() => {
-    const check = this.check();
-    if (check?.running) return `Checking ${check.done}/${check.total}`;
+    const progress = this.progress();
+    if (progress) return progress;
     const { updates, settled, checked } = this.stats();
     if (updates) return plural(updates, 'update');
     if (settled) return 'No open updates';

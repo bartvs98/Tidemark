@@ -597,6 +597,17 @@ describe('Dashboard', () => {
     expect(el.querySelectorAll('tbody tr').length).toBe(1);
   });
 
+  it('says Summarising once every image is checked and AI summaries are queued', async () => {
+    const body: ContainerList = {
+      source: { kind: 'docker', location: 'x' },
+      check: { running: true, done: 24, total: 24, followUps: { done: 1, total: 3 } },
+      containers: [container('jellyfin', 'media')],
+    };
+    const el = await render((req) => req.flush(body));
+    expect(el.querySelector('[data-testid="check-now"]')!.textContent).toContain('Summarising 1/3');
+    expect(el.querySelector('[data-testid="headline"]')!.textContent).toContain('Summarising 1/3');
+  });
+
   it('shows progress while a check runs, and Check now starts one', async () => {
     const body: ContainerList = {
       source: { kind: 'docker', location: 'unix:///var/run/docker.sock' },

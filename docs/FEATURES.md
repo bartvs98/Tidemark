@@ -8,7 +8,7 @@ Ordinary UI behaviour (Back restores the scroll position, Escape closes things, 
 
 - **Inventory:** every container from the Docker API, running and stopped, with its image, Compose project and service.
 - **Hero:** the headline, a summary line and the figures.
-  - Headline: "N updates" (open ones, i.e. not reviewed or snoozed), "No open updates" (only reviewed or snoozed ones left), "All up to date", or "Checking done/total" during a run.
+  - Headline: "N updates" (open ones, i.e. not reviewed or snoozed), "No open updates" (only reviewed or snoozed ones left), "All up to date", or "Checking done/total" during a run, then "Summarising done/total" while the run's automatic AI summaries are written ([§11](#11-ai-summaries)).
   - The Breaking / Attention / Updates figures count open updates only.
   - The summary line also counts reviewed, snoozed, ignored and failed checks, and shows when the last and next check run.
   - In snapshot mode a "Snapshot · date" badge shows.
@@ -96,7 +96,7 @@ linuxserver.io images point at their packaging repo (`linuxserver/docker-<app>`)
 
 **Fetching:**
 
-- Notes are stored and refreshed at most every 6 h, or sooner when the running version isn't covered yet. While they don't have the latest version yet (its image is out before its notes were fetched), they're refreshed at most every hour instead, so a new release gets its notes and breaking verdict soon. A repo without any notes stays at 6 h.
+- Notes are stored and refreshed at most every 6 h, or sooner when the running version isn't covered yet. While they don't have the latest version yet (its image is out before its notes were fetched), they're refreshed at most every hour instead, so a new release gets its notes and breaking verdict soon; **Check now** doesn't wait for that hour (for GitHub repos only with a GitHub token, since 60 requests an hour without one run out fast). A repo without any notes stays at 6 h.
 - They're fetched right after each check for containers with an update, so the detail page opens instantly. Otherwise the detail page fetches them, waiting up to 15 s.
 - Pages are fetched only until the running version is covered, at most 5 × 100 releases. Older notes beyond that show as "not loaded".
 - When GitHub's rate limit is hit, no GitHub calls are made until it resets (15 min if GitHub doesn't say), and the stored notes still show.
@@ -145,8 +145,8 @@ The level is computed from the stored notes on every request, so the dashboard a
 
 - **When checks run:** at startup, on the schedule (`TIDEMARK_SCHEDULE`) and with **Check now**. One run at a time; a trigger during a run is ignored.
 - **Startup** only checks if the last run finished over an hour ago, ended with an error (Docker unreachable, or cut short when Tidemark stopped), or a container lacks a valid result (new, recreated or its rules changed), so restarts don't hammer registries.
-- **Check now asks the registries again:** startup and scheduled runs reuse tag lists and digests fetched in the last hour; a manual run doesn't, so a release from a minute ago shows up. Rate-limited registries still fall back as below.
-- **Stopping during a run** (an update, a reboot) records it as cancelled: what it checked so far is kept, nothing it didn't get to is marked failed, and no notification goes out for it.
+- **Check now asks the registries again:** startup and scheduled runs reuse tag lists and digests fetched in the last hour; a manual run doesn't, so a release from a minute ago shows up. Rate-limited registries still fall back as below. Its release notes are looked for again too ([§4](#4-changelog-between-versions)).
+- **Stopping during a run** (an update, a reboot) records it as cancelled: what it checked so far is kept, nothing it didn't get to is marked failed, queued AI summaries are dropped, and no notification goes out for it.
 - **A failed check keeps the last good result,** with its level and reasons, plus a quiet "refresh failed" note (e.g. after the host wakes from sleep). A container that never had a successful check shows "check failed" instead.
   - Short reasons: rate limited (429), not found or private (401/403/404), timed out, network error, registry error (5xx). Anything else shows the raw error.
   - A failed check still counts as checked, so it doesn't force a check at startup.
@@ -210,7 +210,7 @@ Opt-in: off until a provider is configured, by env vars or on the settings dialo
 - **The verdict only raises.** The level everywhere (dashboard, filters, detail page, notifications) is the higher of the heuristic level ([§5](#5-breaking-change-highlighting)) and the AI verdict; an AI "none" never quiets a heuristic "breaking". A raise is sent as "level raised" like any other ([§10](#10-notifications)). AI reasons follow the quoted lines, marked "AI". Verdicts only count while AI is on.
 - **When it runs:**
   - **On demand:** "Summarise N releases" on the detail page (it says which provider and model the notes go to), and "Regenerate" on an existing summary, which always summarises the whole range again.
-  - **Automatically** with `TIDEMARK_AI_AUTO_MIN_RELEASES` set: right after a check, for updates with at least that many releases in range, so the verdict is there before the notification goes out. Automatic mode waits while the newest release in range has no notes yet (they usually follow within the hour), and a failed automatic attempt isn't retried for 6 h.
+  - **Automatically** with `TIDEMARK_AI_AUTO_MIN_RELEASES` set: at the end of a check run, once every image is checked (two at a time; the dashboard says "Summarising 1/3"), for updates with at least that many releases in range, so the verdict is there before the notification goes out. Automatic mode waits while the newest release in range has no notes yet (they usually follow within the hour), and a failed automatic attempt isn't retried for 6 h.
 - **One summary per range:** stored per repo and version range (running → latest), shared by containers on the same image, and kept across restarts. It's deleted at the end of the first check run that no longer needs it: after you update, when a newer latest appears, or when the container is gone or ignored. One exception: the most complete summary for the same repo and running version is kept as the base for extending (below). Changing the model doesn't throw summaries away. When the notes in range change afterwards (say the latest release's notes arrived later), the card says so: the summary and its verdict still apply, Regenerate makes a new one, and auto mode does that by itself.
 - **Extending instead of starting over:** when a newer release appears on top of a range that was summarised (you run 2.9, there's a summary up to 3.1.0, now 3.2.0 is out), Summarise and automatic mode send the earlier summary plus only the new releases' notes, and the model merges them. The earlier verdict is a floor: those releases are still in range, so the result is never lower, whatever the model says (its reasons are kept then). The footer says "extended from 3.1.0". It falls back to a full summary when the running version changed, the older notes were edited since, the earlier summary had releases left out, or the new notes plus the earlier summary don't fit the input cap.
 - **Long ranges:** at most 120,000 characters of notes are sent (each release cut at 20,000). Over that, breaking releases go first, then attention ones, then the rest, newest first; the card says how many were left out.

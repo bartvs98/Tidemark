@@ -214,25 +214,35 @@ func extendable(b *Summary) bool {
 	return b != nil && b.Omitted == 0 && b.Covered > 0 && b.CoveredHash != ""
 }
 
+// WantsAuto says whether Auto would call the provider for k and r now (see Auto), so the
+// after-check hook only queues the calls that will happen.
+func (s *Service) WantsAuto(k Key, r Request) bool {
+	s.mu.Lock()
+	p, autoMin, e, busy := s.provider, s.autoMin, s.entries[k], s.generating[k]
+	s.mu.Unlock()
+	if p == nil || autoMin <= 0 || len(r.Releases) < autoMin || busy || !hasNotes(r) {
+		return false
+	}
+	if strings.TrimSpace(r.Releases[0].Body) == "" {
+		return false
+	}
+	if e.Summary != nil && e.Summary.NotesHash == NotesHash(r) {
+		return false
+	}
+	return e.FailedAt.IsZero() || s.now().Sub(e.FailedAt) >= autoBackoff
+}
+
 // Auto is for the after-check hook: generates (extending when possible) when on,
 // autoMin > 0, len(r.Releases) >= autoMin, the newest release in range has notes (they
 // usually follow the tag within the hour, and the hourly sync picks them up), there's no
 // summary or it's stale (NotesHash differs), and the last failure for the key is older
 // than 6 h. Logs failures, never returns them.
 func (s *Service) Auto(ctx context.Context, k Key, r Request) {
-	s.mu.Lock()
-	p, autoMin, e, busy := s.provider, s.autoMin, s.entries[k], s.generating[k]
-	s.mu.Unlock()
-	if p == nil || autoMin <= 0 || len(r.Releases) < autoMin || busy || !hasNotes(r) {
+	if !s.WantsAuto(k, r) {
 		return
 	}
-	if strings.TrimSpace(r.Releases[0].Body) == "" {
-		return
-	}
-	if e.Summary != nil && e.Summary.NotesHash == NotesHash(r) {
-		return
-	}
-	if !e.FailedAt.IsZero() && s.now().Sub(e.FailedAt) < autoBackoff {
+	p, _ := s.Status()
+	if p == nil { // turned off since
 		return
 	}
 	got, err := s.generateAs(ctx, k, r, triggerAuto, false)
