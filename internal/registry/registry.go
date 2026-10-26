@@ -83,6 +83,20 @@ type StaleError struct {
 func (e *StaleError) Error() string { return e.Err.Error() }
 func (e *StaleError) Unwrap() error { return e.Err }
 
+type freshKey struct{}
+
+// FreshSince returns a ctx under which Tags and Digest ignore cached tag lists and digests
+// from before t (memory and the tag cache), e.g. for a run the user started to look again.
+// Whatever is fetched after t is reused as usual, and rate-limited outcomes still are.
+func FreshSince(ctx context.Context, t time.Time) context.Context {
+	return context.WithValue(ctx, freshKey{}, t)
+}
+
+func freshSince(ctx context.Context) time.Time {
+	t, _ := ctx.Value(freshKey{}).(time.Time)
+	return t
+}
+
 // TagCache persists tag lists across restarts (the store implements it).
 type TagCache interface {
 	LoadTags(ctx context.Context, repository string) ([]string, time.Time, bool)
@@ -154,14 +168,15 @@ func New(userAgent string, opts ...Option) *Client {
 // groups on the same repo don't ask the refusing registry again in the same run.
 func (c *Client) Tags(ctx context.Context, ref imageref.Ref) ([]string, error) {
 	key := ref.Registry + "/" + ref.Repository
-	if r, ok := c.cachedTags(key); ok {
+	since := freshSince(ctx)
+	if r, ok := c.cachedTags(key, since); ok {
 		return r.tags, r.err
 	}
 	res, err := shared(ctx, &c.tagFlights, key, func(ctx context.Context) (tagsResult, error) {
-		if r, ok := c.cachedTags(key); ok { // a flight that just finished may have filled it
+		if r, ok := c.cachedTags(key, since); ok { // a flight that just finished may have filled it
 			return r, nil
 		}
-		tags, err := c.fetchTags(ctx, key, ref.Registry)
+		tags, err := c.fetchTags(ctx, key, ref.Registry, since)
 		return tagsResult{tags, err}, nil
 	})
 	if err != nil {
@@ -177,9 +192,9 @@ type tagsResult struct {
 	err  error
 }
 
-// cachedTags returns a fresh tag list, or a recent rate-limited outcome.
-func (c *Client) cachedTags(key string) (tagsResult, bool) {
-	if v, ok := lookup(c, c.tags, key); ok {
+// cachedTags returns a fresh tag list (fetched after since), or a recent rate-limited outcome.
+func (c *Client) cachedTags(key string, since time.Time) (tagsResult, bool) {
+	if v, ok := lookup(c, c.tags, key, since); ok {
 		return tagsResult{tags: v}, true
 	}
 	c.mu.Lock()
@@ -195,13 +210,13 @@ func (c *Client) cachedTags(key string) (tagsResult, bool) {
 }
 
 // fetchTags runs once per key at a time (see Tags); ctx is already detached from the callers.
-func (c *Client) fetchTags(ctx context.Context, key, host string) ([]string, error) {
+func (c *Client) fetchTags(ctx context.Context, key, host string, since time.Time) ([]string, error) {
 	var old []string
 	var oldAt time.Time
 	haveOld := false
 	if c.tagCache != nil {
 		old, oldAt, haveOld = c.tagCache.LoadTags(ctx, key)
-		if haveOld && time.Since(oldAt) < c.ttl {
+		if haveOld && time.Since(oldAt) < c.ttl && !oldAt.Before(since) {
 			c.mu.Lock()
 			c.tags[key] = cached[[]string]{value: old, at: oldAt}
 			c.mu.Unlock()
@@ -253,7 +268,8 @@ func (c *Client) fetchTags(ctx context.Context, key, host string) ([]string, err
 // in an image's RepoDigests after a pull.
 func (c *Client) Digest(ctx context.Context, ref imageref.Ref, tag string) (string, error) {
 	key := ref.Registry + "/" + ref.Repository + ":" + tag
-	if v, ok := lookup(c, c.digests, key); ok {
+	since := freshSince(ctx)
+	if v, ok := lookup(c, c.digests, key, since); ok {
 		return v, nil
 	}
 	t, err := name.NewTag(key)
@@ -261,7 +277,7 @@ func (c *Client) Digest(ctx context.Context, ref imageref.Ref, tag string) (stri
 		return "", err
 	}
 	return shared(ctx, &c.digestFlights, key, func(ctx context.Context) (string, error) {
-		if v, ok := lookup(c, c.digests, key); ok { // a flight that just finished may have filled it
+		if v, ok := lookup(c, c.digests, key, since); ok { // a flight that just finished may have filled it
 			return v, nil
 		}
 		release, err := c.acquire(ctx, ref.Registry)
@@ -325,11 +341,12 @@ func (c *Client) acquire(ctx context.Context, host string) (func(), error) {
 	}
 }
 
-func lookup[T any](c *Client, m map[string]cached[T], key string) (T, bool) {
+// lookup returns a cached value younger than the TTL and not from before since.
+func lookup[T any](c *Client, m map[string]cached[T], key string, since time.Time) (T, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := m[key]
-	if ok && time.Since(e.at) < c.ttl {
+	if ok && time.Since(e.at) < c.ttl && !e.at.Before(since) {
 		return e.value, true
 	}
 	var zero T

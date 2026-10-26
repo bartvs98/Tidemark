@@ -244,6 +244,7 @@ func TestStatsFromHistory(t *testing.T) {
 	addRun("startup", ago(60*day), 9*time.Second, 3, "can't reach Docker") // out of the 30 days
 	addRun("schedule", ago(20*day), 2*time.Second, 3, "")
 	addRun("schedule", ago(10*day), 4*time.Second, 3, "")
+	addRun("schedule", ago(5*day), 9*time.Second, 1, "cancelled at shutdown") // failed: not in median or slowest
 	addRun("manual", ago(2*day), 3*time.Second, 3, "")
 	addRun("manual", ago(time.Minute), 0, 0, "") // still running
 
@@ -319,11 +320,11 @@ func TestStatsFromHistory(t *testing.T) {
 		t.Errorf("biggest jumps = %+v", j)
 	}
 	runs := out.Health.Runs
-	if runs.Total != 4 || runs.Failed != 0 || runs.ByTrigger != (triggersJSON{Schedule: 2, Manual: 2}) ||
+	if runs.Total != 5 || runs.Failed != 1 || runs.ByTrigger != (triggersJSON{Schedule: 3, Manual: 2}) ||
 		runs.MedianMs == nil || *runs.MedianMs != 3000 || runs.SlowestMs == nil || *runs.SlowestMs != 4000 {
 		t.Errorf("runs = %+v", runs)
 	}
-	if d := out.Health.Durations; len(d) != 3 || d[0].Ms != 2000 || d[0].Images != 3 || d[0].Failed {
+	if d := out.Health.Durations; len(d) != 4 || d[0].Ms != 2000 || d[0].Images != 3 || d[0].Failed || !d[2].Failed {
 		t.Errorf("durations = %+v", d)
 	}
 	if r := out.Upstream.Repos; len(r) != 1 || r[0].Repo != "team/app" || r[0].URL != "https://github.com/team/app" ||

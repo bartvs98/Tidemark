@@ -26,6 +26,8 @@ const (
 	// afterCheckTimeout caps the AfterCheck hook (release-note prefetch, then an automatic
 	// AI summary), so a slow forge or provider can't hold a worker for the rest of the run.
 	afterCheckTimeout = 3 * time.Minute
+	// errCancelled is the run error of a run cut short by shutdown.
+	errCancelled = "cancelled at shutdown"
 )
 
 // Triggers say what started a run.
@@ -70,7 +72,8 @@ type Status struct {
 type AfterCheck func(ctx context.Context, c docker.Container, rs rules.Rules, r resolve.Result)
 
 // AfterRun runs once a run has finished and recorded its end, unless the run itself failed
-// (Docker unreachable). It runs inside the run's goroutine, so Wait also waits for it.
+// (Docker unreachable) or was cancelled. It runs inside the run's goroutine, so Wait also
+// waits for it.
 type AfterRun func(ctx context.Context, run Finished)
 
 // Finished is the run an AfterRun hook follows. Status may already describe a newer run
@@ -326,6 +329,11 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 		s.log.Warn("check: can't record run", "err", err)
 	}
 
+	// Check now looks again: caches from before the run don't count, but the groups
+	// within it still share what it fetched.
+	if trigger == TriggerManual {
+		ctx = registry.FreshSince(ctx, started)
+	}
 	s.reloadRules()
 	list, err := s.source.Containers(ctx)
 	if err != nil {
@@ -367,6 +375,9 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 			for g := range jobs {
 				first := g.containers[0]
 				entry := s.checkOne(ctx, first, g.rules)
+				if ctx.Err() != nil {
+					continue // cut short at shutdown: not a failure of this image
+				}
 				if entry.Err == "" && s.after != nil {
 					actx, cancel := context.WithTimeout(ctx, afterCheckTimeout)
 					s.after(actx, first, g.rules, entry.Result)
@@ -381,11 +392,27 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 			}
 		}()
 	}
+dispatch:
 	for _, key := range order {
-		jobs <- groups[key]
+		select {
+		case jobs <- groups[key]:
+		case <-ctx.Done():
+			break dispatch
+		}
 	}
 	close(jobs)
 	wg.Wait()
+
+	// Recorded as failed, so the next start checks again and stats don't count it as a
+	// short, successful run. Results are kept as they are.
+	if ctx.Err() != nil {
+		s.mu.RLock()
+		done := s.status.Done
+		s.mu.RUnlock()
+		s.finish(ctx, runID, done, errCancelled)
+		s.log.Info("check cancelled", "trigger", trigger, "took", time.Since(started).Round(time.Millisecond))
+		return
+	}
 
 	// Forget containers that no longer exist or are ignored now.
 	current := make(map[string]bool, len(keep))

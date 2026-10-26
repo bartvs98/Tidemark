@@ -1108,7 +1108,10 @@ func (s *Server) healthStats(d *statsData) healthJSON {
 		}
 		if r.FinishedAt != nil {
 			finished = append(finished, r)
-			ms = append(ms, runMs(r))
+			// A failed or cancelled run's duration says nothing about how long a check takes.
+			if r.Error == "" {
+				ms = append(ms, runMs(r))
+			}
 		}
 	}
 	out.Runs.MedianMs = median(ms)

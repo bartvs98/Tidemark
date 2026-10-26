@@ -204,13 +204,14 @@ func run(cfg config.Config, log *slog.Logger) error {
 
 	// Check at startup unless a recent run covered every container, so restarts don't hammer
 	// registries. Containers without a valid result (new, recreated, or with changed rules)
-	// would otherwise show nothing until the next scheduled run.
+	// would otherwise show nothing until the next scheduled run. A run that failed or was
+	// cut short at shutdown didn't cover them.
 	last := checks.LastFinished()
 	unchecked, err := checks.Unchecked(ctx)
 	if err != nil {
 		log.Warn("can't list containers at startup", "err", err)
 	}
-	if time.Since(last) > startupCheckAge || unchecked > 0 {
+	if time.Since(last) > startupCheckAge || unchecked > 0 || checks.Status().Err != "" {
 		checks.Start(ctx, check.TriggerStartup)
 	} else {
 		log.Info("skipping startup check, last one is recent", "finished", last.Format(time.RFC3339))

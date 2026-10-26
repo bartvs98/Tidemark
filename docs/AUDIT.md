@@ -12,13 +12,13 @@ Check runs scale fine: they group containers by image, share registry requests a
 
 ## A. Check runs
 
-- [ ] **should: a run cut short by shutdown is recorded as a success.** When Tidemark stops during a run (`docker compose up -d` after a new image, a host reboot), `check.Service.run` still calls `finish(ctx, runID, len(order), "")`. The run row gets a finish time and no error. Three effects:
+- [x] **should: a run cut short by shutdown is recorded as a success.** When Tidemark stops during a run (`docker compose up -d` after a new image, a host reboot), `check.Service.run` still calls `finish(ctx, runID, len(order), "")`. The run row gets a finish time and no error. Three effects:
   - At the next start, `LastFinished` is recent, so the startup check is skipped for up to an hour, although most images weren't checked.
   - The stats page counts it as a successful, unusually short run (runs, median and durations).
   - The after-run hook still runs, on a cancelled context, and logs three warnings.
 
   **Fix:** when `ctx.Err() != nil` after `wg.Wait()`, record the run with an error ("cancelled at shutdown"), and skip the prune and the after-run hook. A test can cancel the context halfway through a fake registry.
-- [ ] **should: Check now doesn't look again within the hour.** Tag lists and tag digests are cached for 1 h (`registry.defaultTTL`), and a manual run uses the same caches. Clicking **Check now** right after an upstream release, or a second time within the hour, gives the same answer without asking the registry. FEATURES doesn't say so, so it reads as "nothing new".
+- [x] **should: Check now doesn't look again within the hour.** Tag lists and tag digests are cached for 1 h (`registry.defaultTTL`), and a manual run uses the same caches. Clicking **Check now** right after an upstream release, or a second time within the hour, gives the same answer without asking the registry. FEATURES doesn't say so, so it reads as "nothing new".
   - **Fix:** give manual runs a flag that skips the fresh-cache lookup (`lookup`, and the `tag_cache` age check in `fetchTags`) but keeps singleflight, the per-host slots and the rate-limit fallback. Alternatively, cache digests for a shorter time than tag lists (a `HEAD` is cheap and doesn't count towards Docker Hub's pull limit). Either way, document it in FEATURES §7.
 - [ ] **should: automatic AI summaries run inside the check workers.** The after-check hook syncs notes (up to 1 min) and then waits for the provider (up to 2 min) while holding one of the 6 workers. The first run after turning on auto mode, or a run after a big upstream release day, can take several minutes, with the progress counter ("Checking 14/80") standing still.
   - **Fix:** queue the AI part, `{key, request}`, and work through the queue after the workers finish, with its own concurrency of 1–2. Do it before the after-run hook, so notifications still see the raised level. The run then reports progress for what it actually checks, and the queue can be bounded or skipped when the run is cancelled.

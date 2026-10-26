@@ -3,6 +3,7 @@ package check
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -651,6 +652,59 @@ func TestAfterRun(t *testing.T) {
 	last, ok, err := db.LastFinishedRun(context.Background())
 	if r := runs[0]; err != nil || !ok || r.ID != last.ID || !r.StartedAt.Equal(last.StartedAt) || !r.FinishedAt.Equal(*last.FinishedAt) {
 		t.Errorf("hook run = %+v, recorded %+v (%v)", r, last, err)
+	}
+}
+
+// A run cut short at shutdown stops handing out images, records the run as cancelled
+// with what it checked, keeps the earlier results and skips the after-run hook.
+func TestCancelledRun(t *testing.T) {
+	var list []docker.Container
+	for i := range workers + 2 { // more images than workers, so some are never handed out
+		list = append(list, ctr(fmt.Sprintf("c%d", i), fmt.Sprintf("team/app%d:1.0.0", i), fmt.Sprintf("sha256:%d", i)))
+	}
+	reg := &countingRegistry{calls: map[string]int{}}
+	db := openStore(t, filepath.Join(t.TempDir(), "t.db"))
+	s := New(listSource{list: list}, reg, db, quiet)
+	runOnce(t, s)
+	called := false
+	s.SetAfterRun(func(context.Context, Finished) { called = true })
+
+	reg.block = make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	s.Start(ctx, TriggerSchedule)
+	for s.Status().Total == 0 { // recorded and listed; the workers wait in Tags
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	close(reg.block)
+	st := waitDone(t, s)
+	if err := s.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if st.Err != errCancelled || st.Done != 0 {
+		t.Errorf("status = %+v", st)
+	}
+	last, ok, err := db.LastFinishedRun(context.Background())
+	if err != nil || !ok || last.Error != errCancelled || last.Images != 0 || last.Trigger != TriggerSchedule {
+		t.Errorf("recorded run = %+v (%v)", last, err)
+	}
+	if called {
+		t.Error("AfterRun ran after a cancelled run")
+	}
+	for _, c := range list {
+		if e, ok := s.Result(c); !ok || e.Err != "" {
+			t.Errorf("%s = %+v, %v; want the earlier result untouched", c.Name, e, ok)
+		}
+	}
+	rows, err := db.Results(context.Background())
+	if err != nil || len(rows) != len(list) {
+		t.Errorf("stored results = %d, %v", len(rows), err)
+	}
+	for _, r := range rows {
+		if r.Error != "" {
+			t.Errorf("%s stored error %q", r.ContainerName, r.Error)
+		}
 	}
 }
 
