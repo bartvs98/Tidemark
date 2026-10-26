@@ -33,7 +33,7 @@ import {
   TmVersionDiff,
   Toasts,
 } from '../ui';
-import { BarListItem, ChartBar, TimePoint, TmBarChart, TmBarList, TmStat, TmTimeChart } from '../ui/charts';
+import { BarListItem, CalendarDay, ChartBar, TimePoint, TmBarChart, TmBarList, TmCalendarChart, TmStat, TmTimeChart } from '../ui/charts';
 import { MarkdownFlag, TmMarkdown } from '../ui/markdown/markdown';
 import { ContainerColumnBar } from '../dashboard/column-bar/column-bar';
 import { DashboardSkeleton } from '../dashboard/dashboard-skeleton/dashboard-skeleton';
@@ -148,6 +148,7 @@ const icon = (ref: string) => ({ src: `/api/icons/${ref}` });
     TmTooltip,
     TmBarChart,
     TmBarList,
+    TmCalendarChart,
     TmStat,
     TmTimeChart,
     TmUpdateClass,
@@ -783,6 +784,9 @@ export class Styleguide {
       { name: 'Breaking', value: breaking, tone: 'breaking' as const },
     ],
   }));
+  /** A made-up year of daily checks (UTC days up to 25 Oct 2026): a gap early on, a run of 100 % days, a dip. */
+  protected readonly tideYear: CalendarDay[] = this.tideDays(365);
+  protected readonly tideMonth: CalendarDay[] = this.tideDays(30);
   protected readonly emptyBars: ChartBar[] = [{ label: 'Oct', segments: [{ name: 'Updates applied', value: 0 }] }];
   protected readonly stackItems: BarListItem[] = [
     { label: 'media', value: 9, href: '/styleguide', hint: '5 containers' },
@@ -798,6 +802,13 @@ export class Styleguide {
     { label: '1.118.2 → 1.132.0', value: 14, display: '14 releases', hint: 'immich-server', mono: true },
     { label: '10.9.11 → 10.11.0', value: 6, display: '6 releases', hint: 'jellyfin', mono: true },
     { label: '4.0.8 → 4.0.14', value: 3, display: '3 releases', hint: 'sonarr', mono: true },
+  ];
+
+  /** A mono hint with a plain note, as in "Oldest software running". */
+  protected readonly ageItems: BarListItem[] = [
+    { label: 'uptime-kuma', value: 22, display: '22 months', hint: '1.23.16', hintMono: true },
+    { label: 'mosquitto', value: 10, display: '10 months', hint: '2.0.22', hintMono: true, hintNote: 'latest' },
+    { label: 'vaultwarden', value: 2, display: '2 months', hint: '1.37.2', hintMono: true },
   ];
 
   /** Two lists on one scale (`max`), as in "Time to update by kind". */
@@ -822,5 +833,19 @@ export class Styleguide {
       this.loading.set(false);
       this.toasts.show('Check finished · 5 updates, 1 breaking', 'ok');
     }, 1500);
+  }
+
+  private tideDays(n: number): CalendarDay[] {
+    const end = Date.UTC(2026, 9, 25);
+    return Array.from({ length: n }, (_, i) => {
+      const k = n - 1 - i;
+      const day = new Date(end - k * 86_400_000).toISOString().slice(0, 10);
+      const total = 9;
+      const gap = i % 41 > 36 || (i > 60 && i < 66);
+      if (gap) return { day };
+      const behind = i % 29 < 8 ? 0 : Math.round(2 + 2 * Math.sin(i / 6) + (i % 17 < 3 ? 3 : 0));
+      const upToDate = total - Math.max(0, Math.min(behind, total));
+      return { day, value: upToDate / total, note: `${upToDate} of ${total} up to date` };
+    });
   }
 }

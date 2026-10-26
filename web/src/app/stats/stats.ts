@@ -12,7 +12,7 @@ import {
   TmSegmented,
   TmTooltip,
 } from '../ui';
-import { BarListItem, ChartTone, TmBarChart, TmBarList, TmStat, TmTimeChart } from '../ui/charts';
+import { BarListItem, CalendarDay, ChartTone, TmBarChart, TmBarList, TmCalendarChart, TmStat, TmTimeChart } from '../ui/charts';
 import { ErrorKind } from '../dashboard/containers';
 import { errorKindLabel } from '../dashboard/format';
 import { formatDuration, formatTokens } from '../detail/ai-format';
@@ -41,6 +41,7 @@ const TOP_BEHIND = 5;
     TmBarChart,
     TmBarList,
     TmButton,
+    TmCalendarChart,
     TmCallout,
     TmCard,
     TmIcon,
@@ -92,6 +93,7 @@ export class Stats {
     const partial = d.behind.containers.some((c) => c.releasesPartial);
     const median = d.behind.timeToUpdate.medianMs;
     const fromMessage = d.behind.fromMessage;
+    const age = d.behind.softwareAge;
     return {
       upToDate: last && last.checked ? percent(last.upToDate / last.checked) : '—',
       upToDateHint: last && last.checked ? `${last.upToDate} of ${count(last.checked, 'container')}` : 'No check yet',
@@ -106,6 +108,9 @@ export class Stats {
       fromMessage:
         fromMessage.count > 0 && fromMessage.medianMs !== undefined ? longDuration(fromMessage.medianMs) : undefined,
       fromMessageHint: `after the last message, ${count(fromMessage.count, 'update')}`,
+      softwareAge: age.medianMs === undefined ? '—' : longDuration(age.medianMs),
+      softwareAgeHint:
+        age.count > 0 && age.medianMs !== undefined ? `of ${count(age.count, 'container')}${age.count === 1 ? "'s" : "'"} releases` : 'needs release notes',
     };
   });
   protected readonly tidePoints = computed(
@@ -153,6 +158,27 @@ export class Stats {
         href: `/containers/${encodeURIComponent(c.name)}`,
       })),
   );
+  /** One square per UTC day; a day without a counted run has no value. */
+  protected readonly calendarDays = computed<CalendarDay[]>(
+    () =>
+      this.data()?.behind.calendar.map((c) => ({
+        day: c.day,
+        value: c.checked > 0 ? c.upToDate / c.checked : undefined,
+        note: c.checked > 0 ? `${c.upToDate} of ${c.checked} up to date` : undefined,
+      })) ?? [],
+  );
+  /** The five oldest releases still running (needs release notes), oldest first. */
+  protected readonly ageItems = computed(() =>
+    (this.data()?.behind.softwareAge.oldest ?? []).map((r) => ({
+      label: r.name,
+      value: this.now() - new Date(r.released).getTime(),
+      display: longDuration(Math.max(0, this.now() - new Date(r.released).getTime())),
+      hint: r.running,
+      hintMono: true,
+      hintNote: r.latest ? 'latest' : undefined,
+      href: `/containers/${encodeURIComponent(r.name)}`,
+    })),
+  );
   /** Median time to update by class and by level, on one scale so the bars compare across both groups. */
   protected readonly kindGroups = computed(() => {
     const t = this.data()?.behind.timeToUpdate;
@@ -199,6 +225,16 @@ export class Stats {
     }));
   });
   protected readonly quietRepos = computed(() => this.data()?.upstream.repos.filter((r) => r.quiet).length ?? 0);
+  /** The repo flagged breaking most often in range (ties: more attention, then name); none when no repo has any. */
+  protected readonly mostBreaking = computed(() => {
+    const repos = (this.data()?.upstream.repos ?? []).filter((r) => r.breaking > 0);
+    if (!repos.length) return undefined;
+    const top = [...repos].sort((a, b) => b.breaking - a.breaking || b.attention - a.attention || a.repo.localeCompare(b.repo))[0];
+    const span = { '30d': 'in 30 days', '90d': 'in 90 days', '1y': 'in the last year', all: 'in all stored releases' }[
+      this.data()!.range
+    ];
+    return { repo: top.repo, url: top.url, times: count(top.breaking, 'time'), span };
+  });
   protected readonly partialMonths = computed(() => this.data()?.upstream.perMonth.some((m) => m.partial) ?? false);
 
   // ── Check health ──
@@ -304,6 +340,7 @@ export class Stats {
       streakHint: l.longestStreak
         ? `${shortDate(l.longestStreak.from, this.locale)} to ${shortDate(l.longestStreak.to, this.locale)}`
         : undefined,
+      notesHint: pagesHint(l.notesWords),
       uptime: longDuration(Math.max(0, this.now() - new Date(l.startedAt).getTime())),
     };
   });
@@ -337,6 +374,11 @@ export class Stats {
     if (days < 1) return 'more than daily';
     return days === 1 ? 'daily' : `every ${days} days`;
   }
+}
+
+/** "about 1,240 pages" for a word count at 300 words a page; undefined at 0. */
+function pagesHint(words: number | undefined): string | undefined {
+  return words ? `about ${count(Math.max(1, Math.round(words / 300)), 'page')}` : undefined;
 }
 
 /** "12 releases", or "100+ releases" when the stored notes only give a lower bound. */

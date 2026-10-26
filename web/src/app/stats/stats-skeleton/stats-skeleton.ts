@@ -9,5 +9,5 @@ import { TmCard, TmSkeleton } from '../../ui';
   host: { role: 'status', 'aria-label': 'Loading stats', class: 'block' },
 })
 export class StatsSkeleton {
-  protected readonly items = [1, 2, 3, 4];
+  protected readonly items = [1, 2, 3, 4, 5, 6];
 }

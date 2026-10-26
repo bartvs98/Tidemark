@@ -49,6 +49,19 @@ function fixture(overrides: Partial<StatsData> = {}): StatsData {
         { at: '2026-10-19T12:00:00Z', checked: 8, upToDate: 6, updates: 2, attention: 0, breaking: 1, releasesBehind: 14 },
         { at: '2026-10-20T12:00:00Z', checked: 8, upToDate: 7, updates: 1, attention: 0, breaking: 1, releasesBehind: 9 },
       ],
+      softwareAge: {
+        count: 4,
+        medianMs: 400 * 86_400_000,
+        oldest: [
+          { name: 'mosquitto', running: '2.0.15', released: '2024-10-20T12:00:00Z' },
+          { name: 'nginx', running: '1.29.0', released: '2025-10-20T12:00:00Z', latest: true },
+        ],
+      },
+      calendar: [
+        { day: '2026-10-18', checked: 0, upToDate: 0 },
+        { day: '2026-10-19', checked: 8, upToDate: 6 },
+        { day: '2026-10-20', checked: 8, upToDate: 7 },
+      ],
     },
     upstream: {
       repos: [
@@ -94,6 +107,7 @@ function fixture(overrides: Partial<StatsData> = {}): StatsData {
       startedAt: '2026-10-20T08:00:00Z',
       containersTracked: 9,
       releasesStored: 410,
+      notesWords: 372_000,
       breakingFlagged: 17,
     },
     ...overrides,
@@ -209,6 +223,72 @@ describe('Stats', () => {
     expect(rows[1].textContent).toContain('Quiet');
     expect(el.querySelector('[data-testid="quiet-repos"]')).not.toBeNull();
     expect(text(await renderAgain(fixture()), 'quiet-repos')).toBe('');
+  });
+
+  it('shows the median software age and the oldest software running', async () => {
+    const el = await renderAgain(fixture());
+    expect(flat(text(el, 'software-age'))).toContain("Median software age13 monthsof 4 containers' releases");
+    const card = el.querySelector('[data-testid="oldest-software"]')!;
+    expect([...card.querySelectorAll('a')].map((a) => a.textContent?.trim())).toEqual(['mosquitto', 'nginx']);
+    expect(flat(card.textContent ?? '')).toContain('mosquitto2.0.152 years');
+    expect(flat(card.textContent ?? '')).toContain('nginx1.29.0 · latest12 months');
+
+    const none = await renderAgain(withBehind({ softwareAge: { count: 0, oldest: [] } }));
+    expect(flat(text(none, 'software-age'))).toContain('—needs release notes');
+    expect(text(none, 'oldest-software')).toContain('Needs release notes');
+    const docker = await renderAgain({ ...withBehind({ softwareAge: { count: 0, oldest: [] } }), partial: true });
+    expect(text(docker, 'oldest-software')).toContain('Not available without Docker');
+  });
+
+  it('draws the tide calendar with a note per counted day, and says when there are no checks', async () => {
+    const el = await renderAgain(fixture());
+    const cal = el.querySelector('[data-testid="tide-calendar"]')!;
+    expect(cal.textContent).toContain('7 of 8 up to date');
+    expect(cal.textContent).toContain('6 of 8 up to date');
+    const empty = await renderAgain(withBehind({ calendar: [] }));
+    expect(text(empty, 'tide-calendar')).toContain('No checks in this range');
+  });
+
+  describe('most breaking upstream', () => {
+    const repo = (name: string, breaking: number, attention: number) => ({
+      repo: name,
+      url: `https://github.com/${name}`,
+      containers: [],
+      releases: 10,
+      breaking,
+      attention,
+    });
+    function withRepos(repos: StatsData['upstream']['repos'], range: StatsData['range'] = '90d'): StatsData {
+      const base = fixture();
+      return { ...base, range, upstream: { ...base.upstream, repos } };
+    }
+
+    it('names the repo with most breaking flags, linked, with the range', async () => {
+      const el = await renderAgain(withRepos([repo('a/small', 1, 5), repo('grafana/grafana', 6, 0)]));
+      expect(flat(text(el, 'most-breaking')).trim()).toBe('grafana/grafanaflagged breaking 6 times in 90 days');
+      expect(el.querySelector('[data-testid="most-breaking"] a')?.getAttribute('href')).toBe('https://github.com/grafana/grafana');
+      expect(flat(text(await renderAgain(withRepos([repo('a/b', 1, 0)], 'all')), 'most-breaking'))).toContain('1 time in all stored releases');
+    });
+
+    it('breaks ties by attention, then name', async () => {
+      const byAttention = await renderAgain(withRepos([repo('a/first', 2, 0), repo('b/second', 2, 3)]));
+      expect(text(byAttention, 'most-breaking')).toContain('b/second');
+      const byName = await renderAgain(withRepos([repo('b/second', 2, 1), repo('a/first', 2, 1)]));
+      expect(text(byName, 'most-breaking')).toContain('a/first');
+    });
+
+    it('is hidden when no repo has a breaking release', async () => {
+      const el = await renderAgain(withRepos([repo('a/b', 0, 4)]));
+      expect(el.querySelector('[data-testid="most-breaking"]')).toBeNull();
+    });
+  });
+
+  it('adds a pages hint to "Release notes read", and leaves it out at zero words', async () => {
+    const el = await renderAgain(fixture());
+    expect(flat(text(el, 'stats-lifetime'))).toContain('Release notes read410about 1,240 pages');
+    const base = fixture();
+    const zero = await renderAgain({ ...base, lifetime: { ...base.lifetime, notesWords: 0 } });
+    expect(flat(text(zero, 'stats-lifetime'))).not.toContain('about');
   });
 
   it('hides the AI section without ai stats', async () => {

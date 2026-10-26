@@ -9,6 +9,10 @@ export interface BarListItem {
   display?: string;
   /** Muted text after the label (a stack, `1.2 → 1.4`). */
   hint?: string;
+  /** Hint in mono (a version). */
+  hintMono?: boolean;
+  /** Muted text after the hint, never mono ("latest"). */
+  hintNote?: string;
   /** Makes the label a link: a router link for paths starting with '/', else an external link. */
   href?: string;
   tone?: ChartTone;

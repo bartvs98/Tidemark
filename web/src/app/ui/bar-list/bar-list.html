@@ -12,7 +12,10 @@
               <span class="text-fg" [class.font-mono]="row.mono">{{ row.label }}</span>
             }
             @if (row.hint) {
-              <span class="ml-2 text-xs text-fg-muted">{{ row.hint }}</span>
+              <span class="ml-2 text-xs text-fg-muted" [class.font-mono]="row.hintMono">{{ row.hint }}</span>
+            }
+            @if (row.hintNote) {
+              <span class="text-xs text-fg-muted" [class.ml-2]="!row.hint">{{ row.hint ? ' · ' : '' }}{{ row.hintNote }}</span>
             }
           </span>
           <span class="shrink-0 font-medium text-fg tabular-nums">{{ row.text }}</span>

@@ -31,8 +31,7 @@
     <tm-section heading="Behind & updates" icon="clock" data-testid="stats-behind">
       @if (behindStats(); as s) {
         <div
-          class="grid grid-cols-2 gap-x-6 gap-y-5"
-          [class]="s.fromMessage ? 'sm:grid-cols-3 lg:grid-cols-5' : 'sm:grid-cols-4'"
+          class="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3"
           data-testid="behind-tiles"
         >
           <tm-stat label="Up to date now" [value]="s.upToDate" [hint]="s.upToDateHint" icon="circle-check" />
@@ -42,6 +41,7 @@
             <tm-stat label="From message to update" [value]="fromMessage" [hint]="s.fromMessageHint" />
           }
           <tm-stat label="Releases behind" [value]="s.releasesBehind" [hint]="s.releasesHint" />
+          <tm-stat label="Median software age" [value]="s.softwareAge" [hint]="s.softwareAgeHint" data-testid="software-age" />
         </div>
       }
 
@@ -60,7 +60,19 @@
         </tm-card>
       </div>
 
-      <div class="mt-4 grid gap-4 sm:mt-5 sm:grid-cols-2 sm:gap-5">
+      <div class="mt-4 sm:mt-5">
+        <tm-card heading="Tide calendar">
+          <tm-calendar-chart
+            label="Up to date per day"
+            [days]="calendarDays()"
+            [format]="percentFormat"
+            empty="No checks in this range"
+            data-testid="tide-calendar"
+          />
+        </tm-card>
+      </div>
+
+      <div class="mt-4 grid gap-4 sm:mt-5 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
         <tm-card heading="Time to update by kind">
           @if (kindGroups(); as g) {
             @if (g.hasData) {
@@ -87,6 +99,14 @@
             data-testid="longest-behind"
           />
         </tm-card>
+        <tm-card heading="Oldest software running">
+          <tm-bar-list
+            label="Oldest software running"
+            [items]="ageItems()"
+            [empty]="d.partial ? 'Not available without Docker' : 'Needs release notes'"
+            data-testid="oldest-software"
+          />
+        </tm-card>
       </div>
     </tm-section>
 
@@ -106,10 +126,17 @@
         </tm-card>
       </div>
 
-      <h3 class="mt-8 text-base font-semibold" [class.mb-3]="!quietRepos()">Repositories</h3>
+      <h3 class="mt-8 text-base font-semibold" [class.mb-3]="!quietRepos() && !mostBreaking()">Repositories</h3>
       @if (quietRepos()) {
-        <p class="mt-1 mb-3 text-sm text-fg-muted" data-testid="quiet-repos">
+        <p class="mt-1 text-sm text-fg-muted" [class.mb-3]="!mostBreaking()" data-testid="quiet-repos">
           {{ count(quietRepos(), 'repo') }} quiet for 9+ months
+        </p>
+      }
+      @if (mostBreaking(); as m) {
+        <p class="mt-1 mb-3 flex flex-wrap items-center gap-x-1.5 text-sm text-fg-muted" data-testid="most-breaking">
+          <tm-icon name="octagon-alert" [size]="14" class="text-breaking" />
+          <a [href]="m.url" target="_blank" rel="noopener" class="font-mono">{{ m.repo }}</a>
+          <span>flagged <span class="text-breaking">breaking</span> {{ m.times }} {{ m.span }}</span>
         </p>
       }
       @if (d.upstream.repos.length) {
@@ -307,7 +334,7 @@
         <div class="grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-3 lg:grid-cols-4">
           <tm-stat label="Watching since" [value]="l.since" [hint]="l.sinceHint" />
           <tm-stat label="Containers tracked" [value]="d.lifetime.containersTracked" />
-          <tm-stat label="Release notes read" [value]="d.lifetime.releasesStored" />
+          <tm-stat label="Release notes read" [value]="d.lifetime.releasesStored" [hint]="l.notesHint" />
           <tm-stat label="Breaking releases flagged" [value]="d.lifetime.breakingFlagged" />
           @if (l.fastest; as u) {
             <tm-stat label="Fastest update" [value]="span(u)" [hint]="u.name" />
