@@ -110,7 +110,11 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	cancel()
 
-	ch, err := s.changelogs.Changes(r.Context(), repo, running, latest)
+	var class version.Class
+	if u := out.Container.Update; u != nil {
+		class = version.Class(u.Class)
+	}
+	ch, res, err := s.changelogs.Assess(r.Context(), repo, class, running, latest)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -118,7 +122,6 @@ func (s *Server) containerDetail(w http.ResponseWriter, r *http.Request) {
 	out.Changelog = toChangelogJSON(repo, how, ch)
 	// The notes may be fresher than what the list endpoint saw, so assess again.
 	if u := out.Container.Update; u != nil && u.CheckedAt != nil { // a result, possibly kept after a failed refresh
-		res := assess(u.Class, running, latest, ch)
 		if judged(u) { // a channel build isn't judged by stable notes
 			u.Level, u.Reasons = res.Level, res.Reasons
 			s.applyAI(u, repo, running, latest)

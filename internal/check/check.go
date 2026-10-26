@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -116,10 +118,24 @@ type Service struct {
 	spec     string
 	rules    *rules.File // last config file that loaded; nil if none did
 	rulesErr string      // why the config file last failed to load, "" if it loaded
+
+	// Effective rules by container ID, so labels (and a tag_pattern's regexp) aren't parsed
+	// again on every read. Pruned to the listed containers at the start of each run.
+	memoMu sync.Mutex
+	memo   map[string]memoRules
+}
+
+// memoRules is a container's rules and what they were derived from.
+type memoRules struct {
+	file      *rules.File
+	name, ref string
+	labels    map[string]string
+	rules     rules.Rules
 }
 
 func New(source docker.Source, reg resolve.Registry, st *store.Store, log *slog.Logger) *Service {
-	return &Service{source: source, reg: reg, store: st, log: log, results: map[string]Entry{}, last: map[string]store.HistoryEntry{}}
+	return &Service{source: source, reg: reg, store: st, log: log, results: map[string]Entry{}, last: map[string]store.HistoryEntry{},
+		memo: map[string]memoRules{}}
 }
 
 // SetAfterCheck installs a hook that runs after each successfully checked image.
@@ -152,11 +168,34 @@ func (s *Service) reloadRules() {
 }
 
 // Rules returns a container's effective rules: its labels merged with the config file.
+// Callers must not modify the result's map and slice.
 func (s *Service) Rules(c docker.Container) rules.Rules {
 	s.mu.RLock()
 	f := s.rules
 	s.mu.RUnlock()
-	return f.For(c.Name, c.ImageRef, c.Labels)
+	s.memoMu.Lock()
+	m, ok := s.memo[c.ID]
+	s.memoMu.Unlock()
+	if ok && m.file == f && m.name == c.Name && m.ref == c.ImageRef && maps.Equal(m.labels, c.Labels) {
+		return m.rules
+	}
+	rs := f.For(c.Name, c.ImageRef, c.Labels)
+	rs.Problems = slices.Clip(rs.Problems)
+	s.memoMu.Lock()
+	s.memo[c.ID] = memoRules{file: f, name: c.Name, ref: c.ImageRef, labels: c.Labels, rules: rs}
+	s.memoMu.Unlock()
+	return rs
+}
+
+// pruneRules drops the memoised rules of containers that aren't in list.
+func (s *Service) pruneRules(list []docker.Container) {
+	ids := make(map[string]bool, len(list))
+	for _, c := range list {
+		ids[c.ID] = true
+	}
+	s.memoMu.Lock()
+	maps.DeleteFunc(s.memo, func(id string, _ memoRules) bool { return !ids[id] })
+	s.memoMu.Unlock()
 }
 
 // RulesError says why the config file couldn't be loaded, "" if it could (or there is none).
@@ -350,6 +389,7 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 		s.log.Warn("check failed", "trigger", trigger, "err", err)
 		return
 	}
+	s.pruneRules(list)
 
 	// Containers running the same image with the same rules share one check.
 	// Ignored containers aren't checked and lose any result they had.

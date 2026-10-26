@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bartvs98/tidemark/internal/analysis"
 	"github.com/bartvs98/tidemark/internal/source"
 	"github.com/bartvs98/tidemark/internal/store"
 	"github.com/bartvs98/tidemark/internal/version"
@@ -183,6 +184,37 @@ func TestSyncIsCachedAndConditional(t *testing.T) {
 	}
 	if cs, _ := s.Changes(ctx, repo, v(t, "2.32.0"), v(t, "2.32.1")); !slices.Equal(tags(cs), []string{"v2.32.1"}) || cs.FromTag != "v2.32.0" {
 		t.Errorf("after 304: %+v", cs)
+	}
+}
+
+func TestAssessIsCachedUntilNotesChange(t *testing.T) {
+	f := &fakeHosts{releases: map[string][]string{"filebrowser/filebrowser": {"v2.32.1", "v2.32.0"}}}
+	s := setup(t, f)
+	ctx := context.Background()
+	repo := gh("filebrowser/filebrowser")
+	running, latest := v(t, "2.32.0"), v(t, "2.32.1")
+	_ = s.Sync(ctx, repo, running, latest)
+
+	ch, res, err := s.Assess(ctx, repo, version.Major, running, latest)
+	if err != nil || !slices.Equal(tags(ch), []string{"v2.32.1"}) || len(res.Releases) != 1 {
+		t.Fatalf("assess = %+v, %+v, %v", ch, res, err)
+	}
+	if res.Level != analysis.Breaking || cap(res.Reasons) != len(res.Reasons) {
+		t.Errorf("major jump = %v, reasons %v (cap %d): want breaking, clipped", res.Level, res.Reasons, cap(res.Reasons))
+	}
+	if _, res, _ := s.Assess(ctx, repo, version.Patch, running, latest); res.Level != analysis.None {
+		t.Errorf("patch class = %v, want its own analysis", res.Level)
+	}
+
+	// Notes stored behind the service's back don't show until the repo is forgotten,
+	// which every Sync that may store something does.
+	_ = s.store.SaveReleases(ctx, repo.Key(), []store.Release{{Tag: "v2.32.1", Body: "BREAKING: config moved"}}, false)
+	if _, res, _ := s.Assess(ctx, repo, version.Patch, running, latest); res.Level != analysis.None {
+		t.Errorf("cached patch analysis = %v, want none", res.Level)
+	}
+	s.forget(repo.Key())
+	if _, res, _ := s.Assess(ctx, repo, version.Patch, running, latest); res.Level != analysis.Breaking {
+		t.Errorf("after forget = %v, want breaking", res.Level)
 	}
 }
 

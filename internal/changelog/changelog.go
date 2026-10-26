@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bartvs98/tidemark/internal/analysis"
 	"github.com/bartvs98/tidemark/internal/source"
 	"github.com/bartvs98/tidemark/internal/store"
 	"github.com/bartvs98/tidemark/internal/version"
@@ -64,9 +65,15 @@ type Service struct {
 	rateLimit    RateLimit              // last quota lookup (settings), see RateLimit
 	rateLimitAt  time.Time
 
-	// Changes results by repo, then by running→latest. The dashboard asks for every
-	// container on each poll; a repo's entry is dropped whenever Sync stores something.
-	cache map[string]map[string]Changes
+	// Changes results by repo, then by running→latest, with their analyses. The dashboard
+	// asks for every container on each poll; a repo's entry is dropped whenever Sync
+	// stores something.
+	cache map[string]map[string]*cached
+}
+
+type cached struct {
+	ch       Changes
+	analyses map[version.Class]analysis.Result // filled by Assess
 }
 
 type Option func(*Service)
@@ -91,7 +98,7 @@ func New(st *store.Store, githubToken string, log *slog.Logger, opts ...Option) 
 		githubRaw: "https://raw.githubusercontent.com",
 		gitlab:    "https://gitlab.com",
 		locks:     map[string]*sync.Mutex{},
-		cache:     map[string]map[string]Changes{},
+		cache:     map[string]map[string]*cached{},
 	}
 	for _, o := range opts {
 		o(s)
@@ -209,16 +216,16 @@ func (s *Service) covered(ctx context.Context, key string, st store.RepoState, n
 	if need == nil || st.Kind != KindReleases || !st.HasMore {
 		return true
 	}
-	rels, err := s.store.Releases(ctx, key)
+	tags, err := s.store.ReleaseTags(ctx, key)
 	if err != nil {
 		return false
 	}
-	for _, r := range rels {
-		if v, ok := parseTag(r.Tag); ok && version.Compare(v, *need) <= 0 {
+	for _, tag := range tags {
+		if v, ok := parseTag(tag); ok && version.Compare(v, *need) <= 0 {
 			return true
 		}
 	}
-	return len(rels) >= maxPages*perPage
+	return len(tags) >= maxPages*perPage
 }
 
 // hasLatest: the stored notes have the latest version or a newer one, or there's nothing
@@ -229,14 +236,14 @@ func (s *Service) hasLatest(ctx context.Context, key string, st store.RepoState,
 	if latest == nil || st.Kind == KindNone {
 		return true
 	}
-	rels, err := s.store.Releases(ctx, key)
+	tags, err := s.store.ReleaseTags(ctx, key)
 	if err != nil {
 		return false
 	}
 	want := *latest
 	want.Build, want.Suffix = 0, nil
-	for _, r := range rels {
-		if v, ok := parseTag(r.Tag); ok {
+	for _, tag := range tags {
+		if v, ok := parseTag(tag); ok {
 			v.Build, v.Suffix = 0, nil
 			if version.Compare(v, want) >= 0 {
 				return true
@@ -423,25 +430,65 @@ type Changes struct {
 // unknown running version, only the newest release up to latest is returned. Results are
 // cached until the repo's notes change; callers must not modify the returned slices.
 func (s *Service) Changes(ctx context.Context, repo source.Repo, running, latest *version.Version) (Changes, error) {
+	c, err := s.entry(ctx, repo, running, latest)
+	if err != nil {
+		return Changes{}, err
+	}
+	return c.ch, nil
+}
+
+// Assess returns Changes plus the breaking-change analysis of those notes for an update
+// of class, cached alongside them. Callers must not modify the result's slices; its
+// Reasons are clipped, so appending to them copies.
+func (s *Service) Assess(ctx context.Context, repo source.Repo, class version.Class, running, latest *version.Version) (Changes, analysis.Result, error) {
+	c, err := s.entry(ctx, repo, running, latest)
+	if err != nil {
+		return Changes{}, analysis.Result{}, err
+	}
+	s.mu.Lock()
+	res, ok := c.analyses[class]
+	s.mu.Unlock()
+	if ok {
+		return c.ch, res, nil
+	}
+	res = Analyze(class, running, latest, c.ch)
+	res.Reasons = slices.Clip(res.Reasons)
+	s.mu.Lock()
+	c.analyses[class] = res
+	s.mu.Unlock()
+	return c.ch, res, nil
+}
+
+// Analyze runs the breaking-change analysis over ch's notes, uncached (Assess caches it).
+func Analyze(class version.Class, running, latest *version.Version, ch Changes) analysis.Result {
+	in := analysis.Input{Class: class, Running: running, Latest: latest, RunningNotes: ch.FromBody}
+	for _, r := range ch.Releases {
+		in.Releases = append(in.Releases, analysis.Notes{Tag: r.Tag, Body: r.Body})
+	}
+	return analysis.Assess(in)
+}
+
+func (s *Service) entry(ctx context.Context, repo source.Repo, running, latest *version.Version) (*cached, error) {
 	key := repo.Key()
 	rangeKey := versionKey(running) + "→" + versionKey(latest)
 	s.mu.Lock()
-	ch, ok := s.cache[key][rangeKey]
+	c, ok := s.cache[key][rangeKey]
 	s.mu.Unlock()
 	if ok {
-		return ch, nil
+		return c, nil
 	}
 	ch, err := s.changes(ctx, key, running, latest)
 	if err != nil {
-		return ch, err
+		return nil, err
 	}
+	c = &cached{ch: ch, analyses: map[version.Class]analysis.Result{}}
 	s.mu.Lock()
 	if s.cache[key] == nil {
-		s.cache[key] = map[string]Changes{}
+		s.cache[key] = map[string]*cached{}
 	}
-	s.cache[key][rangeKey] = ch
+	s.cache[key][rangeKey] = c
 	s.mu.Unlock()
-	return ch, nil
+	return c, nil
 }
 
 func (s *Service) forget(repo string) {
