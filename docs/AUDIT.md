@@ -111,7 +111,7 @@ These aren't bugs. Most are already [parked in the roadmap](ROADMAP.md#ideas-par
 
 ## Suggested order
 
-Each step is one `fix-…` PR, smallest and most useful first.
+Each step is one `fix-…` PR, smallest and most useful first. Check each finding against the code before fixing it: some suggested fixes turned out wrong (image inspects do change on a pull; `notified` can't be pruned).
 
 1. **Check runs (A):** record a cancelled run as cancelled, and let Check now bypass the caches. Small, with clear tests.
 2. **Read path (B, first finding, and D, polling):** the image inspect cache, the shared list, one inventory per after-run hook, and pausing in hidden tabs. This is the biggest scaling win.

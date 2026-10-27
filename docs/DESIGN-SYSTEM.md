@@ -1,175 +1,162 @@
 # Design system
 
-The visual rules are in [BRAND.md](BRAND.md); this page covers how they're built in code. Every piece is live in both themes at **`/styleguide`**.
+How the visual rules of [BRAND.md](BRAND.md) are built in code. Every piece and state is live in both themes at **`/styleguide`**. This page says what each piece is for and what to watch out for; the inputs are in each component's `.ts` (typed `input()` declarations), the UI texts in its template.
+
+## Rules
+
+1. **Colour means risk:** only `attention` and `breaking` get colour; patch, minor and major are neutral. The only green in update info is the small "Up to date" check (`tm-badge`'s `accent` and `ok` tones aren't for update info).
+2. **Never colour alone:** every status has an icon **and** a word.
+3. **Versions, tags, digests and image refs are always mono.**
+4. **Build from the pieces.** Something new goes into the design system and onto `/styleguide` first, then into the page. Generic pieces get a folder in `ui/` (exported from `ui/index.ts`); domain composites live next to their page.
+5. **Accessibility:** native elements first (`button`, `a`, `table`), Angular Aria for composite widgets (tabs, menus, listboxes), an `aria-label` on every icon-only button, and never remove the focus ring (`:focus-visible`, 2 px `focus` colour).
+6. **Motion** stops or turns into a fade under `prefers-reduced-motion`, in every piece that moves.
 
 ## Where things live
 
-| What | File |
+| What | Where |
 |---|---|
-| Tokens (colour, type, radius, elevation) | [web/src/styles/tokens.css](../web/src/styles/tokens.css) |
-| Plain-HTML patterns: `.tm-table`, `.tm-table-stack`, `.tm-row-link`, `.tm-tabs`, `.tm-prose` (+ `.tm-flag-breaking` / `.tm-flag-attention`, and `.tm-flag-jumped`: a focus-coloured ring that fades after a jump to the line, static under reduced motion), `.tm-shimmer`, `.tm-tooltip`, `.tm-severity-frame` | [web/src/styles/components.css](../web/src/styles/components.css) |
-| Angular components | [web/src/app/ui/](../web/src/app/ui/), one folder per piece (`badge/badge.ts` + `.html`, `.css` when it has styles, `.spec.ts` when it has tests). Import from the `ui` barrel, except `ui/markdown/markdown` and the charts (`ui/charts`) |
-| Container pieces (take a `ContainerSummary`) | folders under [dashboard/](../web/src/app/dashboard/): `container-version/`, `container-update/`, `refresh-failed/`, `rule-problems/`, `container-table/`, `column-bar/`, `container-tile/`, `dashboard-skeleton/` (text helpers in `format.ts`); detail pieces in [detail/](../web/src/app/detail/): `review-actions/`, `ai-summary/`, `history/`, `detail-skeleton/`; the stats page's `stats-skeleton/` in [stats/](../web/src/app/stats/) |
+| Tokens | [web/src/styles/tokens.css](../web/src/styles/tokens.css) |
+| Plain-HTML patterns (`.tm-table`, `.tm-tabs`, `.tm-prose`, `.tm-tooltip`, `.tm-severity-frame`, `.tm-ai-sheen`, …) | [web/src/styles/components.css](../web/src/styles/components.css) |
+| Generic components | [web/src/app/ui/](../web/src/app/ui/), one folder per piece: `name.ts` + `name.html`, `.css` only with styles, `.spec.ts` only with tests. Import from the `ui` barrel, **except `ui/markdown/markdown` and `ui/charts`** (they'd land in the main bundle; lazy routes only) |
+| Domain pieces | [dashboard/](../web/src/app/dashboard/) (container pieces, text helpers in `format.ts`), [detail/](../web/src/app/detail/), [stats/](../web/src/app/stats/), [settings/](../web/src/app/settings/) |
 | Live reference | [web/src/app/styleguide/](../web/src/app/styleguide/) → `/styleguide` |
 
 ## Tokens
 
-The tokens are Tailwind v4 `@theme` variables, so each one is both a CSS variable (`var(--color-surface)`) and a set of utilities (`bg-surface`, `text-surface`, `border-surface`).
+Tailwind v4 `@theme` variables: each is a CSS variable (`var(--color-surface)`) and a set of utilities (`bg-surface`, `text-surface`, `border-surface`). **Use the semantic tokens, never the `deep-*` / `tide-*` primitives.**
 
-**Use semantic tokens in components and never primitives.** The `deep-*` and `tide-*` scales exist only to define the semantic tokens.
+| Group | Tokens |
+|---|---|
+| Surfaces | `canvas` (page), `surface` (cards), `raised` (toasts), `hover` |
+| Lines | `line`, `line-strong` |
+| Text | `fg`, `fg-muted`, `fg-subtle` |
+| Accent | `accent`, `accent-hover`, `on-accent`, `accent-text`, `accent-soft`, `focus` |
+| Water | `water`: translucent tide for the gauge and backdrop |
+| Status | `ok`, `attention(-soft/-line)`, `breaking(-soft/-line)` |
+| Fonts | `font-sans` Geist, `font-mono` Geist Mono |
+| Type | `text-xs` 12 · `sm` 13 · `base` 14 (body) · `lg` 16 · `xl` 20 · `2xl` 24 · `3xl` 32 · `4xl` 40 (dashboard headline, detail name) |
+| Radius | `sm` 4 · `md` 6 (controls) · `lg` 10 (cards) · `xl` 14 |
+| Elevation | `shadow-raised` (cards), `shadow-overlay` (toasts, popovers) |
+| Spacing | Tailwind's default 4 px scale |
 
-| Group | Tokens | Utilities, for example |
-|---|---|---|
-| Surfaces | `canvas` (page), `surface` (cards), `raised` (toasts), `hover` | `bg-canvas`, `bg-surface`, `hover:bg-hover` |
-| Lines | `line`, `line-strong` | `border-line` |
-| Text | `fg`, `fg-muted`, `fg-subtle` | `text-fg-muted` |
-| Accent | `accent`, `accent-hover`, `on-accent`, `accent-text`, `accent-soft`, `focus` | `bg-accent text-on-accent` |
-| Water | `water`: translucent tide for the hero gauge and the page backdrop (lighter in dark mode, where the accent is bright) | `fill: var(--color-water)` |
-| Status | `ok`, `attention(-soft/-line)`, `breaking(-soft/-line)` | `bg-attention-soft text-attention border-attention-line` |
-| Fonts | `--font-sans` Geist, `--font-mono` Geist Mono | `font-mono` for versions, tags, digests |
-| Type | `text-xs` 12 · `sm` 13 · `base` 14 · `lg` 16 · `xl` 20 · `2xl` 24 · `3xl` 32 · `4xl` 40 | `text-base` is body text; `4xl` for the dashboard headline and the detail name |
-| Radius | `sm` 4 · `md` 6 · `lg` 10 · `xl` 14 | `rounded-md` for controls, `rounded-lg` for cards |
-| Elevation | `shadow-raised` (cards), `shadow-overlay` (toasts, popovers) | |
-| Spacing | Tailwind's default 4 px scale | `gap-2`, `px-4` |
+**Light and dark:** every colour is written once as `light-dark(<light>, <dark>)`, and the theme switch only sets `<html data-theme="dark|light|system">` (→ `color-scheme`). So there's no `dark:` variant anywhere and new components get both themes for free. Default is dark. The choice is in `localStorage` (`tidemark.theme`), applied by an inline script in `index.html` before first paint. Scrollbars are styled once on `html`; don't restyle them per component.
 
-### Light and dark
-
-Every colour is written once as `light-dark(<light>, <dark>)`. The theme switch only sets `<html data-theme="dark|light|system">`, and that maps to `color-scheme`. So there's no `dark:` variant anywhere, and a new component gets both themes for free.
-
-- The default is **dark**. `system` follows the OS.
-- **Scrollbars** are thin, a `line-strong` thumb on a transparent track: `scrollbar-color` and `scrollbar-width` on `html` in `styles.css`, inherited by every scrolling area. Don't restyle them per component.
-- The choice is saved in `localStorage` (`tidemark.theme`) and applied by an inline script in `index.html` before first paint, so the page doesn't flash the wrong theme.
-- `<meta name="theme-color">` (the browser bar on phones) follows the resolved theme: it's the `canvas` colour, `#070d17` dark or `#efece6` light (`THEME_COLORS` in `ui/theme-switch/theme.ts`). The pre-paint script sets it first, then the `Theme` service keeps it in sync, also when `system` flips with the OS. Change `canvas` and you change those two copies too.
+- **Changing `canvas`?** Also change the two `THEME_COLORS` copies in `ui/theme-switch/theme.ts` (the phone browser bar's `theme-color`).
 
 ## Components
 
-| Component | Use |
+| Component | For / watch out |
 |---|---|
-| `button[tmButton]`, `a[tmButton]` | Inputs: `variant` (primary, secondary, ghost, danger), `size` (sm, md), `icon`, `square` (icon-only, needs `aria-label`), `loading`. It styles the native element, so `disabled`, `type`, `href` and `routerLink` all still work. |
-| `tm-badge` | Inputs: `tone` (neutral, accent, ok, attention, breaking, unknown), `icon`, `mono`. A generic label. `unknown` has a dashed border ("check failed", "rule skipped", "image missing"). |
-| `tm-ai-marker` | No inputs. A small neutral "AI" badge (screen readers: "AI generated") for text a model wrote: the summary card's header, and reasons in the detail verdict callout. Not a risk, so no colour. |
-| `tm-update-class` | `kind`: none, patch, minor, major or digest. `none` is a small green check + "Up to date" (no badge); the others a **neutral** badge with a tide dot: "patch", "minor", "major" or "new image" (digest). |
-| `tm-level` | `level`: none, attention, breaking or unknown. Renders **nothing** for `none`; `attention` is an amber "Attention" badge (triangle icon), `breaking` a coral "Breaking" badge (octagon icon), `unknown` a dashed "Unknown" badge. The API never sends `unknown`: a container that was never checked successfully shows a dashed `tm-badge tone="unknown"` "check failed" instead (see `tm-container-update`). |
-| `tm-version-diff` | `from`, optional `to`, shown as `1.4.2 → 1.6.0` in mono. Without `to` it shows just the running version. |
-| `tm-card` | `heading`, `flush`, and a `[tmCardActions]` slot for header buttons. When a grid stretches it to its row's height, the body fills the card, so content can centre in it (the charts' empty states do). |
-| `tm-empty-state` | `heading` (required), `description`, `icon` (default `box`). Buttons go in as content. |
-| `tm-skeleton` | `width` (default `100%`) and `height` (default `1rem`). A highlight sweeps across; with reduced motion it becomes a gentle fade instead. `aria-hidden`. |
-| `Toasts` + `<tm-toaster>` | `inject(Toasts).show(msg, tone, ms)` returns an id; `dismiss(id)` closes it. Tones: info (default), ok, attention, breaking, each with its own icon. `ms` defaults to 5000; `ms <= 0` stays until dismissed. Breaking toasts use `role="alert"` and the others `role="status"`. One `<tm-toaster />` lives in the app shell (bottom-right, `aria-live="polite"`). |
-| `tm-icon` | `name`, `size` (default 16). A small set of Lucide icons; add new ones in `icon.ts`. `ICON_NAMES` lists them all. `check` marks "Reviewed", `clock` marks snoozed (the "Snoozed" section, the snooze menu and status). |
-| `tm-callout` | `tone` (info by default, attention, breaking; `breaking` gets `role="alert"`), optional `heading`, content. Each tone has a fixed icon. Explains what's missing and what to do next, in context. |
-| `tm-clamp` | `max` (CSS length, default `40rem`). Caps tall content with a fade (a mask, so it works on any background, a callout's too) and "Show all" / "Show less"; content at most a third taller than the cap is shown whole. `marks` (CSS selector, optional) and `marksName` (default `flagged line`): the button counts the matching elements that start under the fade, "Show all · 2 flagged lines". Public `reveal(el)` opens it when `el` is inside (used before scrolling to a line). Used for all long release notes, with `marks=".tm-flag-breaking, .tm-flag-attention"`, and for the detail page's list of reasons. |
-| `tm-markdown` | `markdown`, `githubRepo`, `flags` (`{line, level, match?, section?}[]` from the API). Renders untrusted markdown (release notes) sanitised with DOMPurify, styled by `.tm-prose`; images become "Image: alt" links (`.tm-prose-image`) and never load. Flagged lines (heading, paragraph or list item) get `.tm-flag-breaking` / `.tm-flag-attention`, a native `title` saying why (`[tmTooltip]` can't attach to rendered HTML), a dotted underline on the first `match` (`.tm-flag-match`), and `data-flag` with their flag indexes (select with `[data-flag~="2"]`). Highlights are padded sideways only, so stacked items don't overlap. **Import it from `ui/markdown/markdown`, not the `ui` barrel**, and only in lazy routes: it pulls in marked + DOMPurify (~28 KB gz). |
-| `tm-app-icon` | `icon` (`{src, light?, dark?}`), `name`, `size` (default 24). An app's logo, with a letter avatar when there's no icon or it fails to load. Swaps to the light/dark variant when the logo would disappear on the current theme. Decorative (`aria-hidden`); always show the name next to it. |
-| `tm-dialog` | `heading` (required), two-way `[(open)]`, content. A modal on the native `<dialog>` (`showModal`): focus is trapped and returns to the opener, the page behind is inert, Escape / the close button / a backdrop click close it. Centred, up to 34rem wide and 44rem tall (body scrolls), short fade-in (none under reduced motion). `size="lg"`: 48rem wide and one fixed height (36rem), for pages that shouldn't make it jump; `flush`: no body padding or scrolling, for content that scrolls its own areas (side tabs). Content is always projected, so wrap anything that should load only while open in `@if`. Label/value rows inside use `<dl>` with `<div class="tm-setting"><dt/><dd/></div>`. The header's settings dialog is built from it. |
-| `tm-theme-switch` | System, light or dark, as an icon-only `tm-segmented`. Lives in the header. Backed by the exported `Theme` service: `preference` (signal) and `isDark()` (resolves `system` via `prefers-color-scheme`), which `tm-app-icon` and the `theme-color` meta use. |
-| `PageVisibility` | A service, nothing on screen: `inject(PageVisibility).visible()` is false while the tab is hidden or the window minimised (Page Visibility API). Polls pause on it and reload once when it turns true (the dashboard list, the AI summary). |
-| `tm-section` | `heading`, `icon`, `meta`, and a `[tmSectionActions]` slot. A titled group such as a Compose stack, announced as a named region. `collapsible` makes the heading a disclosure button (`aria-expanded`, two-way `[(open)]`, closed by default); `muted` tones the header down. Both are used for the dashboard's "Snoozed", "Ignored" and "Up to date" sections. `level` 3 (default 2) makes it a sub-section nested in another one: a smaller `h3` heading (`text-base`) and less space below it, as for each stack inside "Up to date". |
-| `tm-menu` | `label` (required, also the menu's `aria-label`), `items` (`MenuOption[]`: `{value, label, icon?, disabled?, hint?}`), `icon`, `variant` (default secondary), `size` (sm, md), `disabled`, `align` (`start`, `end`: which edge of the button the menu lines up with), output `(selected)` with the item's `value`. A button that opens a short list of actions, on Angular Aria (arrow keys, Home/End, typeahead, Escape; focus returns to the button). Disabled items stay focusable so their `hint` shows as a tooltip, but can't be chosen. Styled like the dialog (`border-line-strong`, `shadow-overlay`). It's absolutely positioned, so don't put it in a `tm-card` (clips overflow). Used for "Snooze". |
-| `tm-segmented` | `options` (`{value, label, icon, count}`), two-way `[(value)]`, `label` (required: the group's `aria-label` on `role="group"`), `iconOnly`, `size` (`sm` 32 px, default; `md` 36 px, the height of a md button, for toolbars). Mutually exclusive toggles such as list/tiles view, grouping, theme, or a filter (`count` shows muted after the label: "Updates 11"). Buttons use `aria-pressed`; with `iconOnly` each label becomes the button's `aria-label` and tooltip. |
-| `tm-search` | Two-way `[(value)]`, `label` (required: the input's `aria-label`), `placeholder`. A `type="search"` input, 36 px like a md toolbar control, with a leading search icon and a clear (x) button that shows only with text; Escape clears. Public `focus()` (the dashboard binds it to `/`). |
-| `tm-field` | `label` (required), `hint`, `error`, `locked`, `required`, `inline`. One form row around **one** control: label above, then the control, then one message: `error` (triangle-alert icon + text in the attention colour, "Error:" for screen readers) wins over `locked` (lock icon + e.g. "Set by `TIDEMARK_SCHEDULE`", env var in mono; the page disables the control itself), which wins over `hint` (muted). `required` adds a quiet `*` (and `aria-required` on the control). `inline`: label and message left, control right on one line (switches). Provides `TM_FIELD` (`controlId`, `labelId`, `describedBy`, `invalid`, `required`); the controls below inject it and put `id`, `aria-describedby`, `aria-invalid` and `aria-required` on their focusable element, so `<label for>` works (the select is named by `aria-labelledby`, and a click on the label focuses it). See [Forms](#forms). |
-| `input[tmInput]`, `textarea[tmInput]` | Directive on the native element, so `[formField]`, `disabled`, `readonly`, `type` and `placeholder` keep working. `size` (md 36 px like a md button and `tm-search`, sm 32 px), `mono` (cron specs, URLs, IDs, tokens), `invalid` + `touched`, `id` (outside a field). Attention border when `aria-invalid="true"`; disabled and readonly fields sit on `canvas` with muted text. |
-| `tm-password-input` | `FormValueControl<string>`: two-way `[(value)]`, `disabled`, `readonly`, `invalid`, `touched`, `name`, `label` (the `aria-label` outside a field), `placeholder`, `autocomplete` (default `off`), `mono` (default on), `size`, output `touch`, public `focus()`. A `tmInput` `type="password"` with an eye button (`aria-label="Show"`, `aria-pressed`) that shows the value as text. For write-only secrets (tokens). |
-| `tm-select` | `FormValueControl<T>`: two-way `[(value)]` (`''` = nothing chosen, shows `placeholder`, default "Choose…"), `options` (`SelectOption[]`: `{value, label, hint?}`), `label` (the `aria-label` outside a field), `size`, `disabled`, `invalid`, `touched`, output `touch`, public `focus()`. A trigger that looks like a `tmInput` (chevron-down) opening a listbox, on Angular Aria's combobox + listbox (select pattern): arrow keys, Home/End, typeahead, Enter/Space choose, Escape closes; focus stays on the trigger (`aria-activedescendant`). The popup is styled like `tm-menu`, ticks the chosen option and shows `hint` muted under a label. Absolutely positioned, so not in a `tm-card`. |
-| `tm-switch` | `FormCheckboxControl`: two-way `[(checked)]`, `disabled`, `invalid`, `touched`, `label` (the `aria-label` outside a field), `size` (md 20 px tall, sm 16 px), output `touch`, public `focus()`. A native `<button role="switch" aria-checked>`; on, the track is `accent` and the thumb slides right (no slide under reduced motion). |
-| `[tmTooltip]` | Directive taking `string \| null \| undefined` (empty: no tooltip). **Use it instead of `title` everywhere.** Opens on mouse hover (after 400 ms), keyboard focus, or a tap on touch; only one is open at a time. A tap on a host that isn't a link or control shows the tip instead of following the row's link. Rendered in the top layer (`popover="manual"`, `.tm-tooltip`, `role="tooltip"`, `aria-describedby`), keeps newlines. The host carries the text as `data-tooltip` (tests read that). Don't put one on a stretched link: it would cover the whole row. |
-| `tm-tide-gauge` | `level` (0 far behind … 1 at the mark, clamped), `size` (`compact`, default, 56×32; `hero` fills its parent), `label` (required: the accessible name on `role="img"`). The logo as a gauge: the line at the top is the latest version, the water below rises to `level`. Draws no text and never turns amber or red (colour means risk); motion stops under reduced motion. Dashboard: `hero`, level = up to date ÷ checked. Detail page: `compact`, level = `max(0.15, 1 - releases behind / 12)`. In `hero` size the line and the lowest water sit at `--tm-gauge-line` (24%) and `--tm-gauge-floor` (80%); the dashboard moves the line with `[--tm-gauge-line:56px]` (64 px from `sm`). |
-| `tm-tide-backdrop` | No inputs. The faint tide along the bottom of every page, mounted once in `app.html`: fixed, `z-index: -1`, no pointer events, `aria-hidden`, still under reduced motion. |
-| `.tm-severity-frame` | CSS class + `data-level="breaking"` or `"attention"` on a card: the level's `-line` border with two soft arcs of the level colour circling it every 12 s (static under reduced motion). Used on the detail header; the level badge stays, since colour is never the only signal. Add `before:hidden` to still the arcs (the border stays): the detail header does it while the update is reviewed or snoozed. Don't combine it with a `border-line` utility, which would win. |
-| `tr.tm-row-link` | A table row that opens a link: put `after:absolute after:inset-0` on one link inside (stretched link). Anything that must stay hoverable on its own (a tooltip host, in rows and in tiles) gets `relative z-10`. |
-| `table.tm-table` | A plain table, which keeps it accessible by default. For tables split across sections, see [Tables across sections](#tables-across-sections). Add `tm-table-stack` (and make any `min-w` `sm:` only) to stack rows below 640px: cells with `data-stack="full"` take the first line, `"hide"` drop out, `"indent"` grows and lines up under the name, the rest share the second line. |
-| `TM_TABS` + `.tm-tabs` | [Angular Aria](https://angular.dev/guide/aria/tabs) headless tabs (`ngTabs`, `ngTabList`, `ngTab`, `ngTabPanel`), styled by the class. Keyboard navigation and ARIA come from Aria. Add `tm-tabs-vertical` for pages in a `size="lg" flush` dialog: from 640px a column of tabs on the left (accent bar on the selected tab's left edge) and a panel that scrolls on its own; below that a tab row on top. Bind `ngTabList`'s `orientation` to the same breakpoint so the arrow keys follow (the settings dialog does). |
-
-### Charts
-
-For the stats page: own SVG pieces, no chart library. **Import them from `ui/charts`, not the `ui` barrel** (through the barrel they'd land in the main bundle; only lazy routes use them). Shared helpers (tones, axis steps, the bar path, the readout `tm-chart-tip`) are in `ui/chart-tip/`.
-
-- **Colour means risk here too:** marks are `accent` by default; `ChartTone` adds `attention` and `breaking` only for levels, and `muted` (`fg-subtle`) for "other". Identity never rests on colour: segment names show in the legend and the readout.
-- **Marks:** 2 px lines, bars with 4 px rounded data ends on a square baseline, a 2 px gap between stacked segments and between bars, 3–4 recessive gridlines (`line`) at 1/2/5 × 10ⁿ steps, axis text `text-xs` `fg-subtle` with tabular numerals. One y axis only.
-- **Readout:** on hover (the whole plot is the hit area; the time chart snaps to the nearest point, a bar highlights its slot), or keyboard: each chart is one Tab stop and arrow keys / Home / End move through points or bars (focus starts at the latest). Shown at once in the top layer with `.tm-tooltip` styling, so cards don't clip it; Escape, scrolling or a press outside closes it.
-- **Accessible:** the SVG is `role="img"` with `label` as its name, and each chart renders an `sr-only` table of its data. Charts redraw at their measured width (no stretching), so they work at 390 px.
-
-| Component | Use |
-|---|---|
-| `tm-stat` | `label`, `value` (number, shown with thousands separators, or a pre-formatted string), `unit`, `hint` (muted line below), `mono` (versions, one size smaller), `icon`. A headline number without a box of its own; pages put them in a grid. |
-| `tm-time-chart` | `label` (required), `points` (`TimePoint[]`: `{at, value, note?}`, oldest first), `min` (0), `max` (default: the data max, rounded up to a step), `format` (axis + readout value), `tone`, `height` (160, the whole SVG), `empty` ("Fills in after a few check runs", under 2 points). One series as a line with a soft area. Date labels "d MMM", "MMM yyyy" over 300 days or across a year, "HH:mm" under 2 days. |
-| `tm-bar-chart` | `label` (required), `bars` (`ChartBar[]`: `{label, segments: {value, tone?, name}[], note?, faded?}`; `faded` draws the bar at 40% for incomplete data, so say why in `note` and under the chart; segments stack bottom → top), `format`, `height` (160), `fill` (false: grow to the parent's height, at least `height`, for a card a taller neighbour stretches; the plot is drawn in an absolute layer so it can't push the card taller), `tickEvery` (default: as dense as the labels fit, counted back from the latest bar, which is always labelled), `legend` (true: a row above when there's more than one segment name), `empty` ("Nothing in this range", when every value is 0). The readout lists the segments top first, a Total with more than one, and `note`. |
-| `tm-calendar-chart` | `label` (required), `days` (`CalendarDay[]`: `{day: 'YYYY-MM-DD' (UTC), value?: 0..1, note?}`, contiguous, oldest first), `format` (legend, readout and table value; default percent), `empty` ("Nothing in this range", with no days or no value). A GitHub-style grid: a column per week, Monday-first rows, month labels above, Mon/Wed/Fri left, squares that grow with the width (11 to 20 px, 2 or 3 px gaps) and a 0%-to-100% legend below. Accent in four steps by value (under 50%, under 75%, under 100%, 100% strongest); a day without a value stays `hover`-grey and reads "No check". The readout is the date ("Mon 12 Oct"), the value and `note`; arrow keys move a week (left/right) or a day (up/down), Home/End jump. Still wider than its container at 11 px (a phone): scrolls inside the host, starting at the latest week. |
-| `tm-bar-list` | `label` (required: the list's name), `items` (`BarListItem[]`: `{label, value, display?, hint?, hintMono?, hintNote?, href?, tone?, mono?}`), `empty` ("Nothing yet", centred in the card even when it's stretched next to a taller one), `max` (optional: the value a full bar stands for, so lists side by side share one scale; default the largest value). Ranked rows: label (a `routerLink` for paths starting with `/`, otherwise an external link in a new tab), muted `hint` (mono with `hintMono`, for a version) and `hintNote` after it (never mono: "2.0.22 · latest"), `display ?? value` at the right, and a bar under it proportional to `max` (decoration: the numbers are text). |
+| `button[tmButton]`, `a[tmButton]` | Styles the native element, so `disabled`, `type`, `href`, `routerLink` keep working. `square` (icon-only) needs an `aria-label`. |
+| `tm-badge` | Generic label. Tone `unknown` (dashed) is for failures: "check failed", "rule skipped", "image missing". |
+| `tm-ai-marker` | Neutral "AI" badge on model-written text. Not a risk, so no colour. |
+| `tm-update-class` | The class as a neutral badge with a tide dot; `none` is the green check + "Up to date". |
+| `tm-level` | The risk badge; renders nothing for `none`. The API never sends `unknown`: a never-checked container shows `tm-badge tone="unknown"` "check failed" instead. |
+| `tm-version-diff` | `1.4.2 → 1.6.0` in mono, or just the running version. |
+| `tm-card` | `flush`, `[tmCardActions]`. **Clips overflow**, so no `tm-menu` or `tm-select` inside. A grid-stretched card's body fills it, so content can centre. |
+| `tm-empty-state` | Heading, description, icon; buttons as content. |
+| `tm-skeleton` | Loading bar, `aria-hidden`. |
+| `Toasts` + `<tm-toaster>` | `inject(Toasts).show(msg, tone, ms)` → id, `dismiss(id)`; `ms <= 0` stays. One toaster in the app shell. |
+| `tm-icon` | A Lucide subset; add icons in `icon.ts`. `check` = reviewed, `clock` = snoozed. |
+| `tm-callout` | Explains what's missing and what to do next, in context. `breaking` gets `role="alert"`. |
+| `tm-clamp` | Caps tall content with a fade and "Show all". `marks` counts matching elements under the fade ("Show all · 2 flagged lines"); call `reveal(el)` before scrolling to a line inside. |
+| `tm-markdown` | Untrusted markdown (release notes), sanitised, styled by `.tm-prose`. Images become links and never load. Flagged lines get `.tm-flag-breaking` / `.tm-flag-attention`, a native `title` (`tmTooltip` can't attach to rendered HTML) and `data-flag` indexes (`[data-flag~="2"]`). **Import from `ui/markdown/markdown`, lazy routes only** (~28 KB gz). |
+| `tm-app-icon` | An app's logo, or a letter avatar; swaps light/dark variants. Decorative: always show the name next to it. |
+| `tm-dialog` | Modal on native `<dialog>` (focus trap, Escape, backdrop). `size="lg"`: one fixed height for tabbed pages; `flush`: no body padding or scrolling. Content is always projected, so wrap what should load only while open in `@if`. Label/value rows: `<dl>` with `div.tm-setting`. |
+| `tm-theme-switch` + `Theme` | The header switch; `Theme.isDark()` resolves `system`. |
+| `PageVisibility` | Service: `visible()` is false while the tab is hidden. Polls pause on it and reload once when it turns true. |
+| `tm-section` | A titled region, such as a stack. `collapsible` + `[(open)]` (closed by default), `muted`, `level` 3 for a sub-section. |
+| `tm-menu` | A button with a short list of actions, on Angular Aria. Disabled items stay focusable so their `hint` shows. Absolutely positioned: **not inside a `tm-card`**. |
+| `tm-segmented` | Mutually exclusive toggles (view, grouping, theme, a filter with counts). `size="md"` in toolbars. With `iconOnly` the labels become `aria-label` + tooltip. |
+| `tm-search` | Search input; Escape clears, public `focus()` (the dashboard binds `/`). |
+| `[tmTooltip]` | **Use instead of `title` everywhere.** Hover, focus or tap; one open at a time. Not on a stretched link (it would cover the row). Tests read `data-tooltip`. |
+| `tm-tide-gauge` | The logo as a gauge (line = latest, water = `level`). Never amber or red. Dashboard: `hero`, up to date ÷ checked. Detail: `compact`, `max(0.15, 1 − releases behind / 12)`. |
+| `tm-tide-backdrop` | The faint tide behind every page, mounted once in `app.html`. |
+| `.tm-severity-frame` | `data-level="breaking"` or `"attention"` on a card: border plus two slow circling arcs (the level badge stays). `before:hidden` stills the arcs (reviewed or snoozed). Don't combine with `border-line`, which wins. |
+| `tr.tm-row-link` | Row that opens a link: `after:absolute after:inset-0` on one link inside. Things that must stay hoverable get `relative z-10`. |
+| `table.tm-table` (+ `tm-table-stack`) | Plain accessible table. `tm-table-stack` stacks rows below 640px via `data-stack` (`full`, `hide`, `indent`); make any `min-w` `sm:` only. |
+| `TM_TABS` + `.tm-tabs` | Angular Aria tabs, styled. `tm-tabs-vertical` in a `size="lg" flush` dialog; bind `ngTabList`'s `orientation` to the same breakpoint. |
 
 ### Forms
 
-Forms use **Signal Forms** (`form()` and the `[formField]` directive from `@angular/forms/signals`). Every control also works standalone with `[(value)]` / `[(checked)]`.
+Signal Forms (`form()` + `[formField]`); every control also works standalone with `[(value)]` / `[(checked)]`.
 
-- **`tm-field` wraps one control** and links them: label, description and error state reach the control through `TM_FIELD`, so pages don't wire ids by hand.
-- **Errors go through `tm-field`'s `error`.** Map server errors (the API's `fields: {name: message}`) onto it; it shows the message with an icon and marks the control invalid. A control's own `invalid` (from Signal Forms validators) only draws the attention border once the control is `touched`, and never shows text, so give the text to the field.
-- **Locked fields** (set by an env var): pass `locked="Set by TIDEMARK_X"` to the field and disable the control.
-- **AI usage** is a plain `tm-setting` row "This month" on the AI page (read-only and editable): "14 summaries (9 extended) · 182k tokens in · 9.1k out · 2 failed" ("extended" and "failed" only when > 0, "No summaries yet this month" at 0). Token counts are short (`640`, `9.1k`, `182k`, `1.2M`; helpers in `detail/ai-format.ts`).
-- **The dialog loads lazily:** `app.html` wraps `tm-settings-dialog` in `@defer (when settingsOpen())`, so its code is its own chunk, fetched on the gear's first click; it renders with `open` already true and then stays.
-- **Secrets** use `tm-password-input` and stay write-only: the page never fills it with the stored value. In the settings dialog they're a `tm-secret-setting` ([settings/secret-setting/](../web/src/app/settings/secret-setting/)): `label`, `hint`, `error`, `placeholder`, `field` (the API's `{secret, set, source, env}`) and two-way `value` (`undefined` untouched, a string being typed, `null` cleared on Save). It shows Set / Not set with Replace (or Set) and Clear, a password input with Cancel while typing, "Cleared on Save" with Undo, and only the state plus the locked note when an env var sets it.
+| Piece | For / watch out |
+|---|---|
+| `tm-field` | Wraps **one** control: label, then the control, then one message (`error` wins over `locked`, which wins over `hint`). Provides `TM_FIELD`, so ids and ARIA are wired without page code. `inline` for switches. |
+| `input[tmInput]`, `textarea[tmInput]` | Directive on the native element. `mono` for cron specs, URLs, IDs, tokens. |
+| `tm-password-input` | Eye button to show the value. For write-only secrets. |
+| `tm-select` | Listbox on Angular Aria (`''` = nothing chosen). Absolutely positioned: not inside a `tm-card`. |
+| `tm-switch` | `button role="switch"`. |
+| `tm-secret-setting` ([settings/secret-setting/](../web/src/app/settings/secret-setting/)) | A secret in the settings dialog: Set / Not set, Replace, Clear, Undo. Two-way `value`: `undefined` untouched, a string being typed, `null` cleared on Save. |
 
-### Tables across sections
+- **Errors go through `tm-field`'s `error`**: map the API's `fields: {name: message}` onto it. A control's own `invalid` only draws the border once `touched`, and never shows text.
+- **Locked fields** (set by an env var): `locked="Set by TIDEMARK_X"` on the field, and disable the control.
+- **Secrets are write-only:** never fill an input with a stored value.
+- **The settings dialog loads lazily** (`@defer (when settingsOpen())` in `app.html`).
 
-The dashboard's list view is one `tm-section` + `tm-container-table` (a `tm-card flush` + `table.tm-table`) per Compose stack or severity group ([dashboard.html](../web/src/app/dashboard/dashboard.html), pieces in [container-table/](../web/src/app/dashboard/container-table/) and [column-bar/](../web/src/app/dashboard/column-bar/)). To make them read as one table:
+### Charts
 
-- **Shared widths.** Every table is `table-fixed` with a `<colgroup>` built from one constant (`COLUMNS` in `dashboard/container-table/container-table.ts`), so columns line up across stacks.
-- **One column bar.** A single `tm-column-bar` (an `aria-hidden` header table) sits above all sections, `sticky top-16` (just under the app header) and hidden below `sm`.
-- **Headers stay for screen readers.** Each table keeps its own `<thead>` (`th scope="col"`), made `sm:sr-only`. Below 640px `tm-table-stack` hides it and stacks the rows.
-- **Rows are links.** Each row is `tr.tm-row-link` with a stretched link on the container name.
+Own SVG pieces from `ui/charts` (not the barrel), with shared helpers in `ui/chart-tip/`.
+
+- **Colour means risk here too:** marks are `accent`; `attention` / `breaking` only for levels, `muted` for "other". Segment names show in the legend and readout.
+- **Marks:** 2 px lines; bars with 4 px rounded data ends and 2 px gaps; 3–4 recessive gridlines at 1/2/5 × 10ⁿ; axis text `text-xs` `fg-subtle`, tabular numerals; one y axis.
+- **Readout:** hover, or keyboard (one Tab stop per chart, arrow keys / Home / End), in the top layer so cards don't clip it.
+- **Accessible:** `role="img"` with `label`, plus an `sr-only` data table. Charts redraw at their measured width, so they work at 390 px.
+
+| Piece | For / watch out |
+|---|---|
+| `tm-stat` | A headline number, no box; pages grid them. |
+| `tm-time-chart` | One series over time as a line with a soft area. |
+| `tm-bar-chart` | Stacked bars. `faded` for incomplete data (say why in `note` and under the chart); `fill` to grow to a stretched card's height. |
+| `tm-calendar-chart` | GitHub-style day grid, accent in four steps; scrolls inside its host on phones. |
+| `tm-bar-list` | Ranked rows with a bar; `max` shares one scale between lists side by side. |
 
 ## Container pieces
 
-Domain composites that take a `ContainerSummary`. They live next to the dashboard because they depend on its API types, not in `ui/`, but they're part of the design system: the list and tile views and the detail header use them, and `/styleguide` shows them. All take `container` (required); `tm-container-version`, `tm-container-update` and `tm-container-tile` also take `checking`, which shows a skeleton while there's no result yet.
+Domain composites in [dashboard/](../web/src/app/dashboard/) that take a `ContainerSummary` (`container`, required); version, update and tile also take `checking` (a skeleton until there's a result). The list, the tiles and the detail header are built from them.
 
-An `update` has three states. Its result fields always describe the **last successful** check (`checkedAt`); a failed attempt sets `error` + `failedAt` (+ `errorKind` when classified) but doesn't throw that result away. Use the helpers in `containers.ts` (`hasResult`, `refreshFailed`, `hasUpdate`, `checkFailed`) rather than testing `error` directly, and `errorKindLabel` / `errorKindHint` in `format.ts` for the reason texts. `tagsFrom` on a result isn't a failure: only the detail page mentions it.
+**An `update` has three states.** Use the helpers in `containers.ts` (`hasResult`, `refreshFailed`, `hasUpdate`, `checkFailed`) instead of testing `error`, and `errorKindLabel` / `errorKindHint` in `format.ts` for reasons.
 
 | State | Fields | Shown as |
 |---|---|---|
-| Result | `checkedAt` | Versions, class and level as usual |
-| Result, refresh failed | `checkedAt` + `error` + `failedAt` (+ `errorKind`) | The same, plus `tm-refresh-failed`. Still counts for the Updates / Breaking filters and counts |
-| No result | `error` + `failedAt` (+ `errorKind`), no `checkedAt` | Just the tag, and a dashed "check failed" badge |
+| Result | `checkedAt` | Versions, class and level |
+| Result, refresh failed | `checkedAt` + `error` + `failedAt` (+ `errorKind`) | The same plus `tm-refresh-failed`; still counts in filters and counts |
+| No result | `error` + `failedAt`, no `checkedAt` | Just the tag and a dashed "check failed" badge |
 
-| Component | Shows |
+| Piece | For / watch out |
 |---|---|
-| `tm-container-version` | Running → latest via `tm-version-diff` (latest only when there's an update; `? → latest` when the running version is unknown). Below it, in small subtle text: how the version was found when it wasn't the tag ("detected from image label", "detected by image digest", "detected from image metadata", "running version unknown"), "or `X` in your major", and the held line ("`1.5.0` held back by pin `1.4`" / "… held back, majors off"). A **channel build** shows the channel in mono with no arrow, then "new build available" / "latest build" and "newest stable `X`". Ignored or not checked yet: just the tag. |
-| `tm-container-update` | `tm-update-class` + `tm-level` (reasons on hover, one per line as "tag: text", each cut at 140 characters and at most three quotes, then "and N more flagged lines", since the tooltip is small; the detail page shows them all in full), plus `tm-refresh-failed` when the latest refresh failed. **Ignored:** subtle eye-off icon + "Ignored" (who ignored it on hover). **No result yet:** dashed `tm-badge tone="unknown"` "check failed", focusable, the error on hover/focus, followed by the short reason ("· not found or private") in muted text when `errorKind` is set. |
-| `tm-refresh-failed` | Quiet note that the result shown is kept from an earlier check: history icon + "refresh failed" in small muted text, plus "· rate limited" (the `errorKind` label from `errorKindLabel()` in `dashboard/format.ts`) when known; no badge and no colour (it's not a risk, and it must not hide the result). Focusable; on hover or focus: "Showing the result from 17 Oct, 23:00. The refresh at 07:02 failed:" and the error. Nothing when the last attempt worked or there's no result. Used inside `tm-container-update`, so the list, tiles and detail header all get it; the detail page also shows a callout with the time, the error in mono and a hint. |
-| `tm-rule-problems` | Dashed "rule skipped" / "N rules skipped" badge when rules were dropped for invalid values (the problems on hover). Nothing otherwise. Not a risk, so no colour. |
-| `tm-container-tile` | One container in tile view: app icon, name, state badge (when not running), rule-skipped badge, `image:tag` and status (after the stack name with `showStack`), then the footer: the version on its own line, the update badges below it. The whole tile is a stretched link to the detail page; keyboard focus outlines the tile. `link` overrides where it goes (the styleguide keeps it on the page); `dimQuiet` as on `tm-container-table`. |
-| `tm-container-table` | One group of containers (a stack, "Snoozed" or "Ignored") as `tm-card flush` + `table.tm-table tm-table-stack` with the `COLUMNS` widths and a `sm:sr-only` `<thead>`. Each row is a `tr.tm-row-link`: app icon, name (the stretched link), state and rule-skipped badges, status; image; `tm-container-version`; `tm-container-update`. Inputs: `containers` (required), `checking`, `ignored` (tones the names down and puts the stack before the status), `showStack` (the stack before the status, for the severity grouping), `dimQuiet` (see "Quiet when up to date" below), `link`. |
-| `tm-container-update` and `tm-container-version`, reviewed / snoozed | When `review` is set ([FEATURES §9](FEATURES.md#9-reviewed-snoozed-and-history)), the class and level badges fade (`opacity-50`), with no colour of their own. **Reviewed** adds a check icon + "Reviewed" in small muted text (what and when on hover). **Snoozed** adds "until 3 Nov" / "until newer than `v2.0.1`" under the versions, and the row is toned down like an up-to-date one. Against a build it says "until a new build" / "Reviewed this build", never the digest. `[showReview]="false"` drops both where the review is already stated (the detail header). |
-| `tm-column-bar` | The single sticky, `aria-hidden` column header above all the tables (see [Tables across sections](#tables-across-sections)). No inputs. |
-| `tm-dashboard-skeleton` | The dashboard's loading state below the hero: the toolbar (md-height placeholders) and two sections of three and two containers, as the loaded page lays them out. `view` (`list` default, `tiles`) picks the structure: list is `tm-column-bar` plus per-section `tm-card flush` tables with the `COLUMNS` widths and the `tm-table-stack` phone layout; tiles is the 1/2/3-column grid of tile-shaped cards. The hero's headline, summary and four figures have their own skeletons in the page. `role="status"` + `aria-label`; the bars are `aria-hidden`. Keep it in step with `tm-container-table` / `tm-container-tile` when their spacing changes. |
+| `tm-container-version` | Running → latest, plus how the version was found, the held-back line, or a channel build's state. |
+| `tm-container-update` | Class + level (reasons on hover, capped; the detail page shows them all), or "Ignored", or "check failed" with the short reason. |
+| `tm-refresh-failed` | Quiet note that the result is from an earlier check. No badge, no colour: it must not hide the result. |
+| `tm-rule-problems` | Dashed "N rules skipped" badge. No colour. |
+| `tm-container-tile` | One container as a tile; the whole tile is a stretched link (`link` overrides it). |
+| `tm-container-table` | One group as `tm-card flush` + `table.tm-table tm-table-stack`. `ignored`, `showStack` (severity grouping, Snoozed), `dimQuiet`. |
+| `tm-column-bar` | The single sticky column header above all tables. |
+| `tm-dashboard-skeleton` | Loading state for `list` or `tiles`. **Keep it in step** with the table and tile spacing. |
 
-**Snoozed section.** Snoozed containers leave the stacks for a collapsed, muted `tm-section` "Snoozed" (clock icon) above "Ignored", with the stack name before the status (`showStack`).
+**Reviewed / snoozed** (`review` set): class and level badges fade with no colour of their own; reviewed adds "Reviewed", snoozed adds "until …" and tones the row down. `[showReview]="false"` where the review is stated already (the detail header).
 
-**Quiet when up to date.**
+**Quiet when up to date:**
 
-- **Up to date** (a successful result, class `none`, not ignored): the row or tile carries `data-current` and is toned down: muted name, greyed icon (`opacity-50 grayscale`), a flat tile without surface or shadow. Containers with an update get a bold name; containers without a result yet aren't toned down.
-- **`dimQuiet`** (the dashboard sets it on every section): quiet rows and tiles (up to date, snoozed, ignored) also fade as a whole (`data-dimmed`, `opacity-60`) and lose their surface. In a table the card turns transparent and only the other rows paint `--color-surface` (`tm-table-dim`). Hover or keyboard focus brings back the opacity and the icon and name colours (`DIM_CLASS` / `DIM_ICON` / `DIM_NAME` in `container-table.ts`). Reviewed ones aren't dimmed, since their badges already fade.
-- **Settled stacks** (everything up to date or reviewed) go together, under "All", into one collapsed, muted `tm-section` "Up to date" (circle-check icon, "N stacks") after the stacks with work, each as a `level` 3 sub-section.
+- Up to date (a result, class `none`, not ignored): `data-current`, muted name, greyed icon, a flat tile. Containers with an update get a bold name.
+- `dimQuiet` (every dashboard section): quiet rows also fade (`data-dimmed`) until hover or focus (`DIM_CLASS` / `DIM_ICON` / `DIM_NAME` in `container-table.ts`). Reviewed ones aren't dimmed.
+- Settled stacks go into one collapsed, muted "Up to date" section, each as a `level` 3 sub-section. Snoozed containers go to a collapsed "Snoozed" section above "Ignored".
 
-### Detail pieces
+### Tables across sections
 
-Take what the detail page loads; shown on `/styleguide` under "Reviewed & snoozed" (`tm-ai-summary` under "AI summary", every state).
+The list view is one `tm-container-table` per stack or severity group, made to read as one table:
 
-| Component | Shows |
+- **Shared widths:** every table is `table-fixed` with a `<colgroup>` from `COLUMNS` (`container-table.ts`).
+- **One column bar:** `tm-column-bar` (`aria-hidden`) sits above all sections, `sticky top-16`, hidden below `sm`.
+- **Headers stay for screen readers:** each table keeps its `<thead>` (`th scope="col"`), `sm:sr-only`.
+- **Rows are links:** `tr.tm-row-link`, stretched link on the name.
+
+## Detail and stats pieces
+
+| Piece | For / watch out |
 |---|---|
-| `tm-review-actions` | `container` (required), output `changed`. On the detail page's tab row (right of the tabs; above them on phones, so the tabs stay on the line), only for a container with an update. No review: a small "Mark reviewed" button (check icon) and a `tm-menu` "Snooze" (1 day, 1 week, 1 month, Until a newer version). With one: a quiet status (check or clock icon + "Reviewed up to `v2.0.1` · 18 Oct" / "Snoozed until 3 Nov" / "Snoozed until a version newer than `v2.0.1`") and a ghost Undo / Unsnooze. Against a build (`update.reviewKey` is a digest: channel tag, unknown latest) the menu item is "Until a new build" and the status "Reviewed this build · 18 Oct" / "Snoozed until a new build". Without a version or build (no `reviewKey`), "Mark reviewed" and the last menu item are disabled with the reason as a tooltip. Calls the review endpoint and toasts the result. |
-| `tm-ai-summary` | `name` (required), `ai` (`AiState`, required), output `changed`. Below the verdict callout, only when the detail has `ai`. **Summary** (`tm-card` "Summary" + `tm-ai-marker`): "What changed" list, "What you need to do" (left out when empty), a "Verdict" block (`tm-level` + reasons with the tag in mono; "Nothing to flag" with a check for `none`), and a meta line with the model (mono), "N releases", "(N left out)" when the input cap dropped some, "· extended from 3.1.0" (version in mono) when only the newer releases were sent, the call's stats ("12.3k tokens in · 640 out · 4.2 s", parts left out when 0, all of it when unknown), the age and **Regenerate** (always a full summary, `{mode: "full"}`; tooltip "Summarise all N releases again"; Summarise sends `{}` so the server may extend, and Retry repeats the failed mode). The card wears the **`.tm-ai-sheen`** utility in every state (components.css, next to `.tm-severity-frame`): a static ring in brand teal fading to neutral round the inner edge, a faint teal glow from the top left behind the content, and a brighter teal arc travelling over the ring, 6 s a loop, 2.5 s while `data-generating` is set (a request or the server's run). Under `prefers-reduced-motion` only the ring and glow stay. Teal and neutral only (never a risk colour), a full ring and one quick arc, so it doesn't read as the severity frame's two slow red/amber arcs. **Stale**: the summary stays, with "· The notes changed since this summary". **Empty**: a compact card, "Sends the release notes to Anthropic (`claude-haiku-5-5`)." (+ "Updates with N+ releases are summarised after each check."), and "Summarise N releases" (disabled without releases). **Generating** (a click or the server's automatic run): skeleton lines "Summarising N releases…"; a kept summary stays, with a busy Regenerate. **Error**: an attention `tm-callout` "Couldn't summarise" with the message and Retry (a kept summary still shows). All model text is plain text (interpolation, never HTML or markdown). Posts `/api/containers/{name}/summary`, shows the answer at once and emits `changed` (the page reloads, since the verdict can raise the level); while the server says `generating` it emits `changed` every 4 s (not while the tab is hidden; once when it's shown again). |
-| `tm-history` | `entries` (`HistoryEntry[]`, newest first). A quiet timeline, a dot and a date per entry: a version change (`1.4.2 → 1.6.0`, mono), a new image with no version change ("New image", old → new image id in mono) or "Tracking started" (the first entry). "ran 1.4.2 for 12 days" under an entry when the older one is there. Empty state: `tm-empty-state` in a card. |
-| `tm-detail-skeleton` | The detail page's loading state below the back link: the header card (icon, name and image at the left; versions, badges and the gauge with its caption at the right), the links row, the tab row with its line and two release cards, with the same boxes as the loaded page. No inputs. `role="status"` + `aria-label`; bars are `aria-hidden`. |
-
-### Stats pieces
-
-| Component | Shows |
-|---|---|
-| `tm-stats-skeleton` | The stats page's loading state below the heading and range control: six stats in rows of three (two on phones) and two chart cards, as the loaded Behind & updates section starts. No inputs. `role="status"` + `aria-label="Loading stats"`. Shown on `/styleguide` under "Page skeletons". |
-
-## Rules
-
-1. **Colour means risk:** only `attention` and `breaking` get colour; patch, minor and major are neutral. Don't add coloured badges for anything else. (`tm-badge` has `accent` and `ok` tones, but update info doesn't use them; the only green there is the small "Up to date" check.)
-2. **Never colour alone.** Every status has an icon **and** a word.
-3. **Versions, tags, digests and image refs are always mono.**
-4. **Build from the pieces.** If a screen needs something new, add it to the design system and to `/styleguide` first, then use it. Generic pieces go in their own folder in `ui/` (exported from `ui/index.ts`). Domain composites that take a `ContainerSummary` live next to the dashboard ([Container pieces](#container-pieces)), but are documented here and shown on `/styleguide` all the same.
-5. **Accessibility:** use native elements first (`button`, `a`, `table`), use Angular Aria for composite widgets (tabs, menus, listboxes), give every icon-only button an `aria-label`, and never remove the visible focus ring (`:focus-visible`, 2 px `focus` colour).
+| `tm-review-actions` | Mark reviewed / Snooze, or the status with Undo. Only for a container with an update. Without a `reviewKey`, the version-based actions are disabled with the reason as a tooltip. |
+| `tm-ai-summary` | The summary card in every state: empty, generating, summary, stale, error. Wears `.tm-ai-sheen` (teal and neutral only, so it never reads as the severity frame). **All model text is plain-text interpolation, never HTML.** While the server says `generating` it emits `changed` every 4 s (paused while the tab is hidden). |
+| `tm-history` | Quiet timeline of version and image changes. |
+| `tm-detail-skeleton`, `tm-stats-skeleton` | Page loading states with the same boxes as the loaded page. `role="status"`. |

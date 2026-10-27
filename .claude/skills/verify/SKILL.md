@@ -31,7 +31,17 @@ Pages are names (`dashboard`, `styleguide`) or paths. It builds the SPA and the 
 3. The summary lists problems: `pageerror`/`console` (exit code 1, fix these), `http` (failed requests: icons the CDN refuses are expected occasionally; anything under `/api/` other than icons is a bug).
 4. For a single element, crop by writing a small Puppeteer snippet that reuses `--serve`, or read the full-page PNG.
 
+## Shoot only what changed
+
+Screenshots are the most expensive thing to read. Default: the changed pages at 1280 in both themes, plus 390 when the layout changes. Crop to the element when one component changed. Firefox and the full matrix only for CSS or layout-wide changes.
+
+- **States that need data** (rules, reviews, image changes, opened menus, other tabs): write a scenario (`--scenario`, format in [scripts/dev/scenarios/README.md](../../../scripts/dev/scenarios/README.md)). It patches a copy of the snapshot, seeds state through the API and takes named, optionally cropped shots. Commit scenarios worth keeping, on the demo host; keep one-off checks against the real snapshot in the scratchpad.
+- **GitHub quota:** a run with an empty data dir prefetches ~11 repos, so don't loop it. Reuse notes with `--data .verify/<earlier run>/data` (a run whose `repos` table has no rate-limit errors). Every run, `--serve` included, writes to a new `.verify/<timestamp>/`.
+- **README images** (`docs/brand/`) come from `node scripts/dev/readme-images.mjs` against `--serve --snapshot scripts/dev/demo-snapshot.json` (a made-up host, never the real snapshot). Re-render them in the same PR when the dashboard looks noticeably different, and look at them before committing.
+
 ## Notes
+
+- **Puppeteer + Firefox** sometimes dies on the first page with `DiscardedBrowsingContextError`: the driver, not the app; re-run.
 
 - Takes ~30 s with a build (the update check against real registries is ~10 s of that). Needs network for registry checks and icons.
 - In Git Bash, arguments starting with `/` get rewritten into Windows paths; the tool undoes that, but page names avoid the issue.
