@@ -1,6 +1,6 @@
 ---
 name: step
-description: How the owner and Claude build Tidemark: splitting a roadmap step over subagents (contracts, briefs, models), what every step and fix must end with (tests, docs, docs-sync check, README images) and the branch → PR flow. Use when starting a roadmap step or an audit fix, before delegating to subagents, and before committing or opening a PR.
+description: How the owner and Claude build Tidemark: splitting a roadmap step over subagents (contracts, briefs, models), what every step and fix must end with (tests, docs, docs-sync check, README images) and the branch → PR flow. Use before starting any change: a roadmap step, an audit fix, working through the owner's notes (docs/IDEAS.md) or a fix or feature they ask for; also before delegating to subagents and before committing or opening a PR.
 ---
 
 # Building a step
@@ -8,6 +8,8 @@ description: How the owner and Claude build Tidemark: splitting a roadmap step o
 ## Plan
 
 One roadmap step at a time. Read enough to split it, ask the owner only the product decisions (batched, up front), briefly state the plan, then build.
+
+**The owner's notes** (`docs/IDEAS.md`, git-ignored): a round of notes is worked like a step. Check each note against the code, ask the open decisions in one batch, group related notes into one PR, and clear the notes that are done from the file.
 
 **Audit fixes:** before fixing a finding from `docs/AUDIT.md`, check it against the code. When it's wrong, or its suggested fix is, report back first. One `fix-…` PR per step of its suggested order.
 

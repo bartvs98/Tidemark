@@ -37,7 +37,7 @@ cd web; npm start                                                              #
 
 ## How we work (agreed with the owner)
 
-- **The `step` skill** has the workflow: splitting a step over subagents, what every step and fix ends with, and the PR flow. Load it before a roadmap step, an audit fix, or a commit.
+- **The `step` skill** has the workflow: splitting work over subagents, what every change ends with, and the PR flow. Load it before any change (a roadmap step, an audit fix, a round of notes from `docs/IDEAS.md`) and before a commit.
 - **Never commit to `main`**: feature branch + PR, and the owner reviews and merges. Images come from release tags only. Repo: github.com/bartvs98/Tidemark.
 - **Docs stay in sync, every step and every fix.** They describe what's built; each fact lives in one doc.
 - **UI is built only from design-system pieces** ([DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md), including its rules), and each piece and state is on `/styleguide`.
