@@ -84,7 +84,7 @@ Check runs scale fine: they group containers by image, share registry requests a
 
 ## F. Shortcomings worth knowing
 
-These aren't bugs. Most are already [parked in the roadmap](ROADMAP.md#ideas-parked): private registries, several Docker hosts, more notifiers, rules in the UI and a login. Two aren't:
+These aren't bugs. Most are already [parked in the roadmap](ROADMAP.md#ideas-parked): private registries, several Docker hosts, more notifiers and rules in the UI (a login is [out of scope](FEATURES.md#out-of-scope-for-now)). Two weren't; the first is parked now too:
 
 - **Release notes only come from github.com and gitlab.com** (`source.ParseURL`). Images whose source is on Codeberg, another Forgejo or Gitea, or a self-hosted GitLab get version jumps but no notes, and so no breaking-change analysis. Forgejo and Gitea have a GitHub-like releases API (`/api/v1/repos/{owner}/{repo}/releases`), so they'd be a small addition to `changelog`, with a host allow-list in config.
 - **Arm hosts** can't run the image yet (E).
@@ -119,4 +119,4 @@ Each step is one `fix-…` PR, smallest and most useful first.
 4. **Store (C):** the reader pool, pruning and map eviction. The backup command can go here or stand alone.
 5. **CI (E):** `-race`, arm64 releases and Dependabot.
 6. **Frontend hardening (D):** a single DOMPurify pass and a script CSP.
-7. **Forgejo/Gitea notes (F):** a roadmap step of its own, if wanted.
+7. **Forgejo/Gitea notes (F):** [parked in the roadmap](ROADMAP.md#sources-and-notes).
