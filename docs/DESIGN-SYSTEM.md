@@ -18,7 +18,7 @@ How the visual rules of [BRAND.md](BRAND.md) are built in code. Every piece and 
 | Tokens | [web/src/styles/tokens.css](../web/src/styles/tokens.css) |
 | Plain-HTML patterns (`.tm-table`, `.tm-tabs`, `.tm-prose`, `.tm-tooltip`, `.tm-severity-frame`, `.tm-ai-sheen`, …) | [web/src/styles/components.css](../web/src/styles/components.css) |
 | Generic components | [web/src/app/ui/](../web/src/app/ui/), one folder per piece: `name.ts` + `name.html`, `.css` only with styles, `.spec.ts` only with tests. Import from the `ui` barrel, **except `ui/markdown/markdown` and `ui/charts`** (they'd land in the main bundle; lazy routes only) |
-| Domain pieces | [dashboard/](../web/src/app/dashboard/) (container pieces, text helpers in `format.ts`), [detail/](../web/src/app/detail/), [stats/](../web/src/app/stats/), [settings/](../web/src/app/settings/) |
+| Domain pieces | [dashboard/](../web/src/app/dashboard/) (container pieces, text helpers in `format.ts`), [detail/](../web/src/app/detail/) (token counts like `9.1k` via `ai-format.ts`), [stats/](../web/src/app/stats/), [settings/](../web/src/app/settings/) |
 | Live reference | [web/src/app/styleguide/](../web/src/app/styleguide/) → `/styleguide` |
 
 ## Tokens
@@ -38,6 +38,7 @@ Tailwind v4 `@theme` variables: each is a CSS variable (`var(--color-surface)`) 
 | Radius | `sm` 4 · `md` 6 (controls) · `lg` 10 (cards) · `xl` 14 |
 | Elevation | `shadow-raised` (cards), `shadow-overlay` (toasts, popovers) |
 | Spacing | Tailwind's default 4 px scale |
+| Control heights | `md` 36 px (`h-9`): md buttons, `tmInput`, `tm-search`, `tm-segmented size="md"`, so toolbar controls line up; `sm` 32 px |
 
 **Light and dark:** every colour is written once as `light-dark(<light>, <dark>)`, and the theme switch only sets `<html data-theme="dark|light|system">` (→ `color-scheme`). So there's no `dark:` variant anywhere and new components get both themes for free. Default is dark. The choice is in `localStorage` (`tidemark.theme`), applied by an inline script in `index.html` before first paint. Scrollbars are styled once on `html`; don't restyle them per component.
 

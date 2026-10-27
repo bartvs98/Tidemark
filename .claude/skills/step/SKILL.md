@@ -9,7 +9,7 @@ description: How the owner and Claude build Tidemark: splitting a roadmap step o
 
 One roadmap step at a time. Read enough to split it, ask the owner only the product decisions (batched, up front), briefly state the plan, then build.
 
-**The owner's notes** (`docs/IDEAS.md`, git-ignored): a round of notes is worked like a step. Check each note against the code, ask the open decisions in one batch, group related notes into one PR, and clear the notes that are done from the file.
+**The owner's notes** (`docs/IDEAS.md`, git-ignored): a round of notes is worked like a step. Check each note against the code, ask the open decisions in one batch, group related notes into one PR, and say in the summary which notes are done. The file is the owner's: don't edit it.
 
 **Audit fixes:** before fixing a finding from `docs/AUDIT.md`, check it against the code. When it's wrong, or its suggested fix is, report back first. One `fix-…` PR per step of its suggested order.
 

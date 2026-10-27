@@ -48,7 +48,7 @@ cd web; npm start                                                              #
 - **`ng test --include`** takes a spec path; a folder glob like `src/app/dashboard/**` also matches `.html` files and fails.
 - **`ng serve` must bind `127.0.0.1`** (set in `angular.json`); on `[::1]` Firefox on Windows waits ~2 s per connection.
 - **GitHub quota:** without `TIDEMARK_GITHUB_TOKEN`, 60 API requests/hour per IP, so don't loop verify runs (the `verify` skill says how to reuse notes). Without notes, levels only reflect version jumps.
-- **Migrations are append-only:** never edit an existing `internal/store/migrations/NNNN_*.sql`, even one only on an unmerged branch (the owner runs branches against their own data dir, so it's already applied); add the next number.
+- **Migrations are append-only:** never edit an existing `internal/store/migrations/NNNN_*.sql`, even one only on an unmerged branch (the owner runs branches against their own data dir, so it's already applied); add the next number. Test the upgrade with verify `--data` pointing at an older `.verify/<run>/data`.
 - **Bundles:** `ui/markdown/markdown` (marked + DOMPurify) is deliberately not in the `ui` barrel; import it directly, from lazy routes only.
 - **CSS build (lightningcss):** a declaration with `color-mix(... var())` gets an `@supports` copy of just that declaration; with a `background` shorthand that copy resets `background-size`/`-position`. Use longhands (`background-image`).
 - **Angular:** `httpResource.value()` throws in the error state, so go through `hasValue()`. Effects only re-run when a read signal _changes_: depend on objects that change per response, not on a boolean that stays `true` (there's a regression test).
