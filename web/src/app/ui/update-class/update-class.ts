@@ -3,7 +3,7 @@ import { TmBadge } from '../badge/badge';
 import { TmIcon } from '../icon/icon';
 
 /*
- * Tidemark's status language (docs/DESIGN-SYSTEM.md → Status):
+ * Tidemark's status language (docs/BRAND.md → Status):
  *   - Update class (how big the jump is) is always NEUTRAL.
  *   - Level (how risky it is) is the ONLY thing that gets colour.
  *   - Every status has an icon and a word, never colour alone.

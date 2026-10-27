@@ -87,8 +87,6 @@ Outside the palette on light: accent hover `#0B5F58`, and accent text and links 
 | Reviewed | — | — | Check icon + "Reviewed" in small muted text, class and level badges faded; no colour of its own (it isn't a risk) |
 | Snoozed | — | — | Clock icon on the "Snoozed" section, "until 3 Nov" / "until newer than 1.6.0" under the version, badges faded; no colour |
 
-Status is never shown with colour alone: every status also has an icon and a word.
-
 ## Typography
 
 | Role | Font | Notes |
