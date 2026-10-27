@@ -17,6 +17,11 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    # Angular pins TypeScript to a minor range (peer dep), so a TypeScript major only
+    # lands with the Angular release that supports it; bump it by hand then.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
