@@ -4,7 +4,7 @@
 # (CGO_ENABLED=0), so a multi-platform build needs no emulation.
 
 # 1. Frontend (platform-independent output)
-FROM --platform=$BUILDPLATFORM node:24-alpine AS web
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
