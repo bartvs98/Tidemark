@@ -28,7 +28,7 @@ mkdir -p data && sudo chown 65532:65532 data   # the image runs as a non-root us
 docker compose up -d
 ```
 
-Images are published to `ghcr.io/bartvs98/tidemark` (linux/amd64) for each release, listed on the [Releases](https://github.com/bartvs98/Tidemark/releases) page:
+Images are published to `ghcr.io/bartvs98/tidemark` (linux/amd64 and linux/arm64, so Raspberry Pis and ARM NAS boxes too) for each release, listed on the [Releases](https://github.com/bartvs98/Tidemark/releases) page:
 
 - `latest`: the newest release
 - `1`, `1.2`: the newest release in that line

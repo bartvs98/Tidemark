@@ -70,24 +70,24 @@ Check runs scale fine: they group containers by image, share registry requests a
 
 ## E. Build, CI and operations
 
-- [ ] **should: the image is amd64 only, and the README doesn't say so.** `image.yml` builds `linux/amd64` for releases too. Raspberry Pis and many ARM NAS boxes are typical homelab hosts, and there the image doesn't run at all.
+- [x] **should: the image is amd64 only, and the README doesn't say so.** `image.yml` builds `linux/amd64` for releases too. Raspberry Pis and many ARM NAS boxes are typical homelab hosts, and there the image doesn't run at all.
   - **Fix:** build `linux/amd64,linux/arm64` for release tags. Cross-compile instead of emulating: run the `node` and `golang` stages on `$BUILDPLATFORM` and set `GOARCH=$TARGETARCH` (the build is `CGO_ENABLED=0`). That keeps the build at about the same billed minutes. PR builds can stay amd64.
-- [ ] **should: CI doesn't run the race detector.** The code is concurrent in many places:
+- [x] **should: CI doesn't run the race detector.** The code is concurrent in many places:
   - the worker pool, plus the check service's shared maps and status;
   - singleflight fetches in the registry client;
   - settings appliers that swap services live (`atomic.Pointer` for icons; mutex-guarded setups for the notifier and the AI provider);
   - AI generation flags.
 
   `go test -race ./...` in the `test` job (Linux has CGO) would catch a regression in any of them. Locally on Windows it needs a C compiler, so CI is the place for it.
-- [ ] **nice: dependency updates are manual.** There's no Dependabot or Renovate for `go.mod`, `web/package.json`, the GitHub Actions and the Dockerfile's base images. That's ironic for an update checker, and govulncheck only runs when someone remembers to. A weekly, grouped Dependabot config (one PR per ecosystem) is about 30 lines.
-- [ ] **nice: the HTTP server has no idle timeout.** Only `ReadHeaderTimeout` is set. Add `IdleTimeout` (e.g. 2 min). A global `WriteTimeout` would cut off the 2-minute summary request, so leave that out or set it per handler with `http.ResponseController`.
+- [x] **nice: dependency updates are manual.** There's no Dependabot or Renovate for `go.mod`, `web/package.json`, the GitHub Actions and the Dockerfile's base images. That's ironic for an update checker, and govulncheck only runs when someone remembers to. A weekly, grouped Dependabot config (one PR per ecosystem) is about 30 lines.
+- [x] **nice: the HTTP server has no idle timeout.** Only `ReadHeaderTimeout` is set. Add `IdleTimeout` (e.g. 2 min). A global `WriteTimeout` would cut off the 2-minute summary request, so leave that out or set it per handler with `http.ResponseController`.
 
 ## F. Shortcomings worth knowing
 
 These aren't bugs. Most are already [parked in the roadmap](ROADMAP.md#ideas-parked): private registries, several Docker hosts, more notifiers and rules in the UI (a login is [out of scope](FEATURES.md#out-of-scope-for-now)). Two weren't; the first is parked now too:
 
 - **Release notes only come from github.com and gitlab.com** (`source.ParseURL`). Images whose source is on Codeberg, another Forgejo or Gitea, or a self-hosted GitLab get version jumps but no notes, and so no breaking-change analysis. Forgejo and Gitea have a GitHub-like releases API (`/api/v1/repos/{owner}/{repo}/releases`), so they'd be a small addition to `changelog`, with a host allow-list in config.
-- **Arm hosts** can't run the image yet (E).
+- **Arm hosts** couldn't run the image (E); releases are now built for arm64 too.
 
 ## Checked and found sound
 
