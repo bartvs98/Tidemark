@@ -12,7 +12,7 @@
   "license": "MIT",
   "packageManager": "npm@11.16.0",
   "dependencies": {
-    "@angular/aria": "^22.2.3",
+    "@angular/aria": "^22.2.4",
     "@angular/cdk": "^22.2.3",
     "@angular/common": "^22.2.0",
     "@angular/compiler": "^22.2.0",
@@ -28,12 +28,12 @@
     "tslib": "^2.3.0"
   },
   "devDependencies": {
-    "@angular/build": "^22.2.3",
-    "@angular/cli": "^22.2.3",
+    "@angular/build": "^22.2.4",
+    "@angular/cli": "^22.2.4",
     "@angular/compiler-cli": "^22.2.0",
     "@tailwindcss/postcss": "^4.3.3",
     "jsdom": "^30.0.0",
-    "postcss": "^8.5.30",
+    "postcss": "^8.5.31",
     "prettier": "^3.8.1",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
