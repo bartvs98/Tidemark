@@ -79,6 +79,13 @@ func waitDone(t *testing.T, s *Service) Status {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if st := s.Status(); !st.Running {
+			// The run goroutine still records the end and calls the after-run hook; wait
+			// for it, so the test doesn't race it (e.g. by installing a hook).
+			ctx, cancel := context.WithDeadline(context.Background(), deadline)
+			defer cancel()
+			if err := s.Wait(ctx); err != nil {
+				t.Fatal("check run did not end")
+			}
 			return st
 		}
 		time.Sleep(5 * time.Millisecond)
