@@ -4,7 +4,7 @@ Open steps, written out in full, and parked ideas. A step is removed when it mer
 
 ## Open steps
 
-None right now; open fixes are in [AUDIT.md](AUDIT.md). The last step was 13 (stats), so the next one is **14**.
+None right now. The last step was 13 (stats), so the next one is **14**.
 
 ## Ideas parked
 
@@ -22,7 +22,7 @@ Not planned. An idea becomes a step when the owner picks it.
 
 ### Sources and notes
 
-- **Forgejo, Gitea and self-hosted GitLab notes.** Only github.com and gitlab.com are supported now ([AUDIT F](AUDIT.md#f-shortcomings-worth-knowing)). Forgejo and Gitea have a GitHub-like API (`/api/v1/repos/{owner}/{repo}/releases`), behind a host allow-list in config.
+- **Forgejo, Gitea and self-hosted GitLab notes.** Only github.com and gitlab.com are supported now, so images whose source is elsewhere get version jumps but no notes or breaking-change analysis. Forgejo and Gitea have a GitHub-like API (`/api/v1/repos/{owner}/{repo}/releases`), behind a host allow-list in config.
 - **Notes links for official images** whose GitHub repo has no releases (postgres, mongo, mariadb, mysql, nginx): link to the project's own release notes.
 - **Private registries** (`TIDEMARK_REGISTRY_AUTH_FILE`: a docker `config.json`).
 

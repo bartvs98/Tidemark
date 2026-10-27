@@ -11,7 +11,6 @@ Each fact lives in one doc. Read the section you need, not the whole file.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): stack, package layout, check pipeline, data model, API shapes, frontend, security, CI and releasing. Read before changing a package, a table or an endpoint.
 - [README.md](README.md): for users: install, env vars, rules syntax. The only config reference.
 - [docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md) (components, tokens) + [docs/BRAND.md](docs/BRAND.md) (colour, type, voice): read before any UI work.
-- [docs/AUDIT.md](docs/AUDIT.md): the 26 Oct 2026 audit: open findings and a suggested fix order. Tick a finding when its fix merges.
 
 (`docs/IDEAS.md` may exist locally: the owner's git-ignored notes; everything decided from it is in the docs above.)
 
@@ -37,7 +36,7 @@ cd web; npm start                                                              #
 
 ## How we work (agreed with the owner)
 
-- **The `step` skill** has the workflow: splitting work over subagents, what every change ends with, and the PR flow. Load it before any change (a roadmap step, an audit fix, a round of notes from `docs/IDEAS.md`) and before a commit.
+- **The `step` skill** has the workflow: splitting work over subagents, what every change ends with, and the PR flow. Load it before any change (a roadmap step, a fix, a round of notes from `docs/IDEAS.md`) and before a commit.
 - **Never commit to `main`**: feature branch + PR, and the owner reviews and merges. Images come from release tags only. Repo: github.com/bartvs98/Tidemark.
 - **Docs stay in sync, every step and every fix.** They describe what's built; each fact lives in one doc.
 - **UI is built only from design-system pieces** ([DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md), including its rules), and each piece and state is on `/styleguide`.
