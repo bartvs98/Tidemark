@@ -283,12 +283,13 @@ How to run it: [README → Run it with Docker](../README.md#run-it-with-docker),
 
 CI is `.github/workflows/image.yml`:
 
-- **Pull requests:** vet, gofmt and all tests, then a linux/amd64 image build that isn't pushed.
+- **Pull requests:** vet, gofmt and all tests (Go with the race detector), then an image build for linux/amd64 and linux/arm64 that isn't pushed.
 - **Merges to `main`:** tests only. There's no image between releases.
 - **Docs-only changes** (`*.md`, `docs/`, `LICENSE`) skip the workflow, and a newer push to a PR cancels its running build.
 - **Release tags** (`v1.2.3`): tests, then an image pushed as `1.2.3`, `1.2`, `1`, `latest` and `sha-<short commit>`, built with `VERSION=1.2.3` (what the footer, the settings dialog and `/api/health` report). The GitHub Release normally exists already (see Releasing); for a bare tag push the run creates one with notes generated from the merged PRs. A pre-release tag (`v1.3.0-rc.1`) only gets its own version and the sha, and its GitHub Release is marked as a pre-release.
-- **Single-manifest images:** builds turn off provenance and SBOM, so each image is one manifest carrying its tags and untagged versions can be pruned safely.
-- **Cleanup after each release** (`.github/workflows/cleanup.yml`, the release run's last job, or by hand with a dry run as the default): deletes old image versions. Every version with a release tag is kept. Of the rest (sha-only or untagged), the newest 20 stay, and nothing younger than 14 days is deleted.
+- **Multi-platform images:** the Dockerfile's node and Go stages run on the build machine and cross-compile (`GOARCH=$TARGETARCH`, no CGO), so arm64 needs no emulation. Builds turn off provenance and SBOM, so a tag points at an index holding just the two platform images.
+- **Cleanup after each release** (`.github/workflows/cleanup.yml`, the release run's last job, or by hand with a dry run as the default): deletes old image versions. Every version with a release tag is kept, and so are the platform images of every tagged index (untagged versions on GHCR). Of the rest (sha-only or untagged), the newest 20 stay, and nothing younger than 14 days is deleted.
+- **Dependencies:** Dependabot (`.github/dependabot.yml`) opens one grouped PR per ecosystem each week: Go modules, npm (`web/`), GitHub Actions and the Dockerfile's base images.
 
 **Releasing:** SemVer. Major for changes that need action from whoever runs it (config, data, API), minor for features, patch for fixes. The owner decides when to release. Write the notes, then create the release on the merged `main`, which also creates the tag and so starts the release run (it sees the release exists and leaves it alone): `gh release create v1.2.3 --target <main sha> --title v1.2.3 --notes-file notes.md` (add `--prerelease` for `-rc` tags).
 

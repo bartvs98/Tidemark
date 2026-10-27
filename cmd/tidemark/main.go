@@ -247,6 +247,8 @@ func run(cfg config.Config, log *slog.Logger) error {
 		Addr:              cfg.Addr,
 		Handler:           apiSrv.Handler(web.SPA()),
 		ReadHeaderTimeout: 10 * time.Second,
+		// No WriteTimeout: it would cut off a summary request, which can take 2 minutes.
+		IdleTimeout: 2 * time.Minute,
 	}
 
 	errc := make(chan error, 1)

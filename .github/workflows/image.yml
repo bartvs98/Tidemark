@@ -45,8 +45,8 @@ jobs:
         run: |
           go vet ./...
           test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
-      - name: Go tests
-        run: go test ./...
+      - name: Go tests (race detector)
+        run: go test -race ./...
       - name: Frontend tests
         working-directory: web
         run: |
@@ -84,14 +84,16 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64
+          # Cross-compiled (see the Dockerfile), so arm64 costs little; PRs build both too,
+          # so a release is never the first arm64 build.
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # 1.2.3 on a release (shown in the footer, settings and /api/health), pr-<n> on a PR.
           build-args: VERSION=${{ steps.meta.outputs.version }}
-          # One manifest per image instead of an index plus untagged attestation manifests,
-          # so cleanup.yml can delete untagged versions without breaking tagged images.
+          # No attestation manifests: the index only holds the two platform images, which
+          # cleanup.yml keeps as long as their tagged index is kept.
           provenance: false
           sbom: false
           cache-from: type=gha
