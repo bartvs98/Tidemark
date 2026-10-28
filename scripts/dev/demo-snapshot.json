@@ -42,7 +42,7 @@
       "Names": [
         "/uptime-kuma"
       ],
-      "Image": "louislam/uptime-kuma:1.23.16",
+      "Image": "louislam/uptime-kuma:2.5.6",
       "ImageID": "sha256:089895471a4f7d9dbcdeba99fbaf5362735d652b26d37e1bdbbc0ab9619300eb",
       "Created": 1789000002,
       "State": "running",
@@ -87,7 +87,7 @@
       "Names": [
         "/prometheus"
       ],
-      "Image": "prom/prometheus:v3.15.0",
+      "Image": "prom/prometheus:v3.15.1",
       "ImageID": "sha256:9fce4217c9b46d8b48f83f29739f0b2f000b2628b639fb046f62f6c8c2d3fc3e",
       "Created": 1789000010,
       "State": "running",
@@ -132,7 +132,7 @@
       "Names": [
         "/audiobookshelf"
       ],
-      "Image": "ghcr.io/advplyr/audiobookshelf:2.37.1",
+      "Image": "ghcr.io/advplyr/audiobookshelf:2.37.2",
       "ImageID": "sha256:16ccc3802da71e7e18201176e69e329bfc9d382cffe70b2b2afaaff6c5e925bb",
       "Created": 1789000014,
       "State": "running",
@@ -185,7 +185,7 @@
     {
       "Id": "sha256:089895471a4f7d9dbcdeba99fbaf5362735d652b26d37e1bdbbc0ab9619300eb",
       "RepoTags": [
-        "louislam/uptime-kuma:1.23.16"
+        "louislam/uptime-kuma:2.5.6"
       ],
       "RepoDigests": [
         "louislam/uptime-kuma@sha256:2642dc11302271fc5a52b87a640fd9742291e9e96794c3be2ade4910d68f63f0"
@@ -242,7 +242,7 @@
     {
       "Id": "sha256:9fce4217c9b46d8b48f83f29739f0b2f000b2628b639fb046f62f6c8c2d3fc3e",
       "RepoTags": [
-        "prom/prometheus:v3.15.0"
+        "prom/prometheus:v3.15.1"
       ],
       "RepoDigests": [
         "prom/prometheus@sha256:f90d1b61da5f72346722f360c2f0d04c0acc468391d5935dfdece564e80091f4"
@@ -299,7 +299,7 @@
     {
       "Id": "sha256:16ccc3802da71e7e18201176e69e329bfc9d382cffe70b2b2afaaff6c5e925bb",
       "RepoTags": [
-        "ghcr.io/advplyr/audiobookshelf:2.37.1"
+        "ghcr.io/advplyr/audiobookshelf:2.37.2"
       ],
       "RepoDigests": [
         "ghcr.io/advplyr/audiobookshelf@sha256:a46348c629f9f6685be7e70644136f7764cbed684cd4b3f6983ae280a1c24229"

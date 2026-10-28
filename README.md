@@ -16,7 +16,7 @@
 - **Per-container rules** via labels or a config file: ignore, pin to `1.4.x`, no majors, include pre-releases, custom tag pattern, source repo override.
 - **Read-only and private.** Tidemark never changes your containers. It talks to Docker through a read-only socket proxy and never reads container environment variables.
 
-![The Tidemark dashboard in dark mode](docs/brand/screenshot.png)
+![The Tidemark dashboard grouped by severity, split between dark and light mode](docs/brand/screenshot.png)
 
 Status: **in daily use on a home server.** Checking, changelogs, breaking-change highlighting, rules, reviewing and snoozing, update history, Telegram notifications, AI summaries and stats are done. More ideas are on the [roadmap](docs/ROADMAP.md). Only public images are supported.
 
