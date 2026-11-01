@@ -115,7 +115,9 @@
       <span class="font-mono text-sm">tm-container-update</span>
       for every state a container can be in. When a refresh fails, the last good result stays and
       <span class="font-mono text-sm">tm-refresh-failed</span> says so quietly (not a risk, so no
-      colour), with a short reason when the failure could be classified ("rate limited"); only a
+      colour), with a short reason when the failure could be classified ("rate limited"). A check that
+      succeeded on an older tag list, because the registry rate-limited it, says "older tag list"; when the
+      tag moved too, the version line says the new version isn't known yet. Only a
       container that was never checked successfully gets the dashed "check failed" badge. Hover or
       focus them for the full error.
     </p>
@@ -470,7 +472,7 @@
 
     <div class="grid gap-4 lg:grid-cols-2">
       <tm-card heading="Up to date" data-testid="chart-time">
-        <tm-time-chart label="Up to date" [points]="tidePoints" [max]="1" [format]="percent" />
+        <tm-time-chart label="Up to date" [points]="tidePoints" [max]="1" [format]="percent" [fill]="true" />
       </tm-card>
       <tm-card heading="Releases per month" data-testid="chart-stacked">
         <tm-bar-chart label="Releases per month" [bars]="releaseMonths" />
@@ -509,7 +511,7 @@
       </tm-card>
     </div>
     <p class="mt-1 font-mono text-xs text-fg-muted">
-      tm-time-chart · tm-bar-chart (stacked by segment tone; fill grows it with a stretched card) · tm-bar-list (optional max) · tm-calendar-chart (days, format, empty)
+      tm-time-chart · tm-bar-chart (stacked by segment tone) · fill grows either with a stretched card · tm-bar-list (optional max) · tm-calendar-chart (days, format, empty)
     </p>
   </section>
 

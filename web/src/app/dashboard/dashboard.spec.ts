@@ -23,6 +23,7 @@ import {
   splitIgnored,
   splitSnoozed,
   UpdateInfo,
+  versionUnknown,
 } from './containers';
 
 function container(name: string, stack?: string, extra: Partial<ContainerSummary> = {}): ContainerSummary {
@@ -550,6 +551,25 @@ describe('Dashboard', () => {
       expect(note.getAttribute('data-tooltip')).toContain(failed.error);
       expect(text(rows[2].querySelector('[data-testid="failure-reason"]'))).toBe(`· ${label}`);
       expect(rows[2].querySelector('[data-testid="check-failed"]')!.getAttribute('tabindex')).toBe('0');
+    });
+
+    it('says "older tag list" for a check on a rate-limited tag list, and when that hides the new version', async () => {
+      const l = list();
+      const tagsFrom = '2026-10-15T15:00:00Z';
+      l.containers[0].update = result({ class: 'minor', level: 'none', reasons: undefined, tagsFrom });
+      l.containers[1].update = result({ running: '2.17.1', latest: '2.17.1', class: 'digest', floating: true, newImage: true, tagsFrom });
+      const el = await render((req) => req.flush(l));
+      const rows = [...el.querySelectorAll('tbody tr')];
+
+      const note = rows[0].querySelector('[data-testid="refresh-failed"]')!;
+      expect(text(note)).toBe('older tag list');
+      expect(note.getAttribute('data-tooltip')).toContain('A newer version can be missing');
+      expect(rows[0].querySelector('[data-testid="version-unknown"]')).toBeNull();
+
+      expect(text(rows[1].querySelector('[data-testid="version-unknown"]'))).toBe('new version not known yet');
+      expect(rows[1].querySelector('[data-testid="refresh-failed"]')!.getAttribute('data-tooltip')).toContain("doesn't have its version yet");
+      expect(versionUnknown(l.containers[1].update)).toBe(true);
+      expect(versionUnknown({ ...l.containers[1].update!, tagsFrom: undefined })).toBe(false);
     });
 
     it('shows no reason without a kind', async () => {

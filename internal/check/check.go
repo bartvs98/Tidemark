@@ -35,6 +35,10 @@ const (
 	errCancelled = "cancelled at shutdown"
 )
 
+// staleRetryDelay is how long a run waits, once every image is checked, before asking again
+// for the tag lists the registry rate-limited (a variable so tests can skip the wait).
+var staleRetryDelay = 30 * time.Second
+
 // Triggers say what started a run.
 const (
 	TriggerStartup  = "startup"
@@ -417,31 +421,45 @@ func (s *Service) run(ctx context.Context, trigger string, started time.Time) {
 
 	jobs := make(chan *group)
 	var followUps []func(context.Context) // guarded by s.mu
+	var stale []staleCheck                // checked from an older tag list; guarded by s.mu
+	// after runs the after-check hook for a group's successful result.
+	after := func(g *group, entry Entry) {
+		if entry.Err == "" && s.after != nil {
+			actx, cancel := context.WithTimeout(ctx, afterCheckTimeout)
+			if f := s.after(actx, g.containers[0], g.rules, entry.Result); f != nil {
+				s.mu.Lock()
+				followUps = append(followUps, f)
+				s.status.FollowUps = len(followUps)
+				s.mu.Unlock()
+			}
+			cancel()
+		}
+	}
+	save := func(g *group, entry Entry) {
+		for _, c := range g.containers {
+			s.save(ctx, c.Name, entry, runID)
+		}
+	}
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for g := range jobs {
-				first := g.containers[0]
-				entry := s.checkOne(ctx, first, g.rules)
+				entry := s.checkOne(ctx, g.containers[0], g.rules)
 				if ctx.Err() != nil {
 					continue // cut short at shutdown: not a failure of this image
 				}
-				if entry.Err == "" && s.after != nil {
-					actx, cancel := context.WithTimeout(ctx, afterCheckTimeout)
-					if f := s.after(actx, first, g.rules, entry.Result); f != nil {
-						s.mu.Lock()
-						followUps = append(followUps, f)
-						s.status.FollowUps = len(followUps)
-						s.mu.Unlock()
-					}
-					cancel()
+				// The hook waits for the retry of a stale result, so it runs once, on the result kept.
+				isStale := entry.Err == "" && !entry.Result.TagsFrom.IsZero()
+				if !isStale {
+					after(g, entry)
 				}
-				for _, c := range g.containers {
-					s.save(ctx, c.Name, entry, runID)
-				}
+				save(g, entry)
 				s.mu.Lock()
+				if isStale {
+					stale = append(stale, staleCheck{g, entry})
+				}
 				s.status.Done++
 				s.mu.Unlock()
 			}
@@ -457,6 +475,7 @@ dispatch:
 	}
 	close(jobs)
 	wg.Wait()
+	s.retryStale(ctx, stale, save, after)
 	s.runFollowUps(ctx, followUps)
 
 	// Recorded as failed, so the next start checks again and stats don't count it as a
@@ -492,6 +511,42 @@ dispatch:
 	if s.ran != nil {
 		s.ran(ctx, Finished{ID: runID, Trigger: trigger, StartedAt: started, FinishedAt: finished, Images: len(order)})
 	}
+}
+
+// staleCheck is a group checked from an older tag list, with that result.
+type staleCheck struct {
+	g     *group
+	entry Entry
+}
+
+// retryStale checks the groups whose tag list the registry rate-limited once more, after
+// staleRetryDelay, asking the registry again rather than reusing the refusal. Only a result
+// from a fresh list replaces the one already saved; another refusal keeps it. Either way the
+// after-check hook then runs on the result kept.
+func (s *Service) retryStale(ctx context.Context, checks []staleCheck, save, after func(*group, Entry)) {
+	if len(checks) == 0 {
+		return
+	}
+	select {
+	case <-time.After(staleRetryDelay):
+	case <-ctx.Done():
+		return
+	}
+	fresh := 0
+	for _, sc := range checks {
+		entry := s.checkOne(registry.FreshSince(ctx, time.Now()), sc.g.containers[0], sc.g.rules)
+		if ctx.Err() != nil {
+			return
+		}
+		if entry.Err == "" && entry.Result.TagsFrom.IsZero() {
+			save(sc.g, entry)
+			fresh++
+		} else {
+			entry = sc.entry
+		}
+		after(sc.g, entry)
+	}
+	s.log.Info("check: retried rate-limited tag lists", "images", len(checks), "fresh", fresh)
 }
 
 // runFollowUps runs the follow-ups AfterCheck queued, followUpWorkers at a time, until

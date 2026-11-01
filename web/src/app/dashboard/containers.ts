@@ -224,6 +224,14 @@ export function refreshFailed(u: UpdateInfo | undefined): boolean {
   return hasResult(u) && !!u.error;
 }
 
+/**
+ * The floating tag moved, but the check used an older tag list (the registry rate-limited it), so the
+ * new version can't be named yet: it shows as a new image only.
+ */
+export function versionUnknown(u: UpdateInfo | undefined): boolean {
+  return hasResult(u) && !!u.tagsFrom && u.newImage && u.class === 'digest';
+}
+
 /** The last successful check found a newer version or image (a kept result counts too). */
 export function hasUpdate(c: ContainerSummary): boolean {
   return !isIgnored(c) && hasResult(c.update) && c.update.class !== 'none';

@@ -35,15 +35,24 @@ type countingRegistry struct {
 	block chan struct{} // if set, Tags waits for it
 	down  bool          // every lookup fails, like before the network is up
 	stale time.Time     // if set, tag lists are rate-limited and come from the cache of then
+	// staleFor: with stale set, only this many tag list calls per repo are rate-limited
+	// (0: all of them); later calls are fresh.
+	staleFor int
+	fresh    []time.Time // FreshSince of each Tags call (zero without)
 }
 
-func (r *countingRegistry) Tags(_ context.Context, ref imageref.Ref) ([]string, error) {
+func (r *countingRegistry) Tags(ctx context.Context, ref imageref.Ref) ([]string, error) {
 	if r.block != nil {
 		<-r.block
 	}
 	r.mu.Lock()
 	r.calls[ref.Repository]++
 	down, stale := r.down, r.stale
+	if r.staleFor > 0 && r.calls[ref.Repository] > r.staleFor {
+		stale = time.Time{}
+	}
+	since, _ := registry.FreshSinceOf(ctx)
+	r.fresh = append(r.fresh, since)
 	r.mu.Unlock()
 	if down {
 		return nil, &registry.Error{Kind: registry.KindNetwork, Msg: "index.docker.io/" + ref.Repository + ": can't resolve index.docker.io"}
@@ -63,6 +72,8 @@ func (r *countingRegistry) Digest(context.Context, imageref.Ref, string) (string
 }
 
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+func init() { staleRetryDelay = 0 }
 
 func openStore(t *testing.T, path string) *store.Store {
 	t.Helper()
@@ -561,6 +572,46 @@ func TestStaleTagsAreRecorded(t *testing.T) {
 	}
 	if e, ok := again.Result(app); !ok || !e.Result.TagsFrom.Equal(at) {
 		t.Errorf("after restart = %+v ok=%v", e, ok)
+	}
+}
+
+// A rate-limited tag list is asked for again at the end of the run, past the remembered
+// refusal; a fresh list replaces the stale result, and the after-check hook runs once, on
+// the result kept.
+func TestStaleTagsAreRetried(t *testing.T) {
+	at := time.Date(2026, 10, 18, 6, 0, 0, 0, time.UTC)
+	app := ctr("app", "team/app:1.0.0", "sha256:1")
+	for _, tc := range []struct {
+		name     string
+		staleFor int
+		wantFrom time.Time
+	}{
+		{"fresh on retry", 1, time.Time{}},
+		{"still limited", 0, at},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := &countingRegistry{calls: map[string]int{}, stale: at, staleFor: tc.staleFor}
+			s := New(listSource{list: []docker.Container{app}}, reg, openStore(t, filepath.Join(t.TempDir(), "t.db")), quiet)
+			var hooked []resolve.Result
+			s.SetAfterCheck(func(_ context.Context, _ docker.Container, _ rules.Rules, r resolve.Result) func(context.Context) {
+				hooked = append(hooked, r) // workers are done before the retry, so no race
+				return nil
+			})
+			s.Start(context.Background(), TriggerSchedule) // no FreshSince of its own
+			waitDone(t, s)
+			if reg.calls["team/app"] != 2 {
+				t.Errorf("tag list asked %d times, want 2", reg.calls["team/app"])
+			}
+			if !reg.fresh[0].IsZero() || reg.fresh[1].IsZero() {
+				t.Errorf("FreshSince per call = %v, want only on the retry", reg.fresh)
+			}
+			if e, ok := s.Result(app); !ok || !e.Result.TagsFrom.Equal(tc.wantFrom) || e.Result.Latest != "1.1.0" {
+				t.Errorf("result = %+v ok=%v, want TagsFrom %v", e, ok, tc.wantFrom)
+			}
+			if len(hooked) != 1 || !hooked[0].TagsFrom.Equal(tc.wantFrom) {
+				t.Errorf("after-check hook got %+v, want one call with TagsFrom %v", hooked, tc.wantFrom)
+			}
+		})
 	}
 }
 

@@ -87,7 +87,8 @@ type freshKey struct{}
 
 // FreshSince returns a ctx under which Tags and Digest ignore cached tag lists and digests
 // from before t (memory and the tag cache), e.g. for a run the user started to look again.
-// Whatever is fetched after t is reused as usual, and rate-limited outcomes still are.
+// Whatever is fetched after t is reused as usual, and so are rate-limited outcomes from
+// after t; one from before is asked again (the end-of-run retry of a refused tag list).
 func FreshSince(ctx context.Context, t time.Time) context.Context {
 	return context.WithValue(ctx, freshKey{}, t)
 }
@@ -198,7 +199,8 @@ type tagsResult struct {
 	err  error
 }
 
-// cachedTags returns a fresh tag list (fetched after since), or a recent rate-limited outcome.
+// cachedTags returns a fresh tag list (fetched after since), or a recent rate-limited outcome
+// (also not from before since, so a retry under FreshSince asks the registry again).
 func (c *Client) cachedTags(key string, since time.Time) (tagsResult, bool) {
 	if v, ok := lookup(c, c.tags, key, since); ok {
 		return tagsResult{tags: v}, true
@@ -206,7 +208,7 @@ func (c *Client) cachedTags(key string, since time.Time) (tagsResult, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	l, ok := c.limited[key]
-	if !ok || time.Since(l.at) >= staleTTL {
+	if !ok || time.Since(l.at) >= staleTTL || l.at.Before(since) {
 		return tagsResult{}, false
 	}
 	if l.haveTags {

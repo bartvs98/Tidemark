@@ -161,6 +161,20 @@ describe('Stats', () => {
   const text = (el: Element, id: string) => el.querySelector(`[data-testid="${id}"]`)?.textContent ?? '';
   const flat = (t: string) => t.replace(/\s+/g, ' ');
 
+  it('labels checks on an older tag list in failures by reason, with a note', async () => {
+    let el = (await render()).nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="stale-tags-note"]')).toBeNull();
+    http.verify();
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting(), provideRouter([])] });
+    http = TestBed.inject(HttpTestingController);
+    const base = fixture();
+    const data = { ...base, health: { ...base.health, failuresByKind: [{ kind: 'stale-tags', count: 3 }] } };
+    el = (await render(data)).nativeElement as HTMLElement;
+    expect(el.querySelector('tm-bar-list[label="Failures by reason"]')?.textContent).toContain('Older tag list used');
+    expect(el.querySelector('[data-testid="stale-tags-note"]')).not.toBeNull();
+  });
+
   it('takes "Up to date now" from behind.now, not the tide', async () => {
     const component = await render();
     expect(flat(text(component.nativeElement, 'behind-tiles'))).toContain('88%7 of 8 containers');
