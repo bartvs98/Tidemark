@@ -167,6 +167,38 @@ func TestStaleTagsOnRateLimit(t *testing.T) {
 	}
 }
 
+// Under FreshSince, a rate-limited outcome from before its time is asked again (the
+// end-of-run retry); one from after it is still reused.
+func TestFreshSinceRetriesRateLimit(t *testing.T) {
+	var lists atomic.Int32
+	var allow atomic.Bool
+	host, _, _ := hookedRegistry(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if strings.HasSuffix(r.URL.Path, "/tags/list") {
+			lists.Add(1)
+			if !allow.Load() {
+				http.Error(w, `{"errors":[{"code":"TOOMANYREQUESTS"}]}`, http.StatusTooManyRequests)
+				return true
+			}
+		}
+		return false
+	})
+	ref, _ := imageref.Parse(host + "/team/app:1.0.0")
+	ctx := context.Background()
+	c := New("t")
+	before := time.Now()
+	if _, err := c.Tags(ctx, ref); KindOf(err) != KindRateLimit {
+		t.Fatalf("err = %v, want a rate limit", err)
+	}
+	if _, err := c.Tags(FreshSince(ctx, before), ref); KindOf(err) != KindRateLimit || lists.Load() != 1 {
+		t.Errorf("refusal from after FreshSince: err=%v, %d requests; want it reused", err, lists.Load())
+	}
+	allow.Store(true)
+	tags, err := c.Tags(FreshSince(ctx, time.Now().Add(time.Millisecond)), ref)
+	if err != nil || len(tags) != 3 || lists.Load() != 2 {
+		t.Errorf("refusal from before FreshSince: tags=%v err=%v, %d requests; want asked again", tags, err, lists.Load())
+	}
+}
+
 // gatedRegistry holds every request whose path ends in suffix until the returned
 // release is called, counting them.
 func gatedRegistry(t *testing.T, suffix string) (host string, digests map[string]string, count *atomic.Int32, release func()) {

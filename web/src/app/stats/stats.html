@@ -226,7 +226,7 @@
 
       <div class="mt-6 grid gap-4 sm:grid-cols-2 sm:gap-5">
         <tm-card heading="Check duration">
-          <tm-time-chart label="Check duration" [points]="durationPoints()" [format]="formatDuration" />
+          <tm-time-chart label="Check duration" [points]="durationPoints()" [format]="formatDuration" [fill]="true" />
         </tm-card>
         <tm-card [heading]="requestsTitle()">
           <tm-bar-chart [label]="requestsTitle()" [bars]="requestBars()" empty="No requests recorded in this range" />
@@ -246,6 +246,11 @@
       <div class="mt-4 sm:mt-5">
         <tm-card heading="Failures by reason">
           <tm-bar-list label="Failures by reason" [items]="failureItems()" empty="No failed checks in this range" />
+          @if (staleTagsCounted()) {
+            <p class="mt-3 text-xs text-fg-muted" data-testid="stale-tags-note">
+              Older tag list used: the check succeeded, but the registry rate-limited the tag list, so a new version can be missing. Each run asks once more at its end.
+            </p>
+          }
         </tm-card>
       </div>
 

@@ -1,8 +1,9 @@
+<div #box [class]="fill() ? 'absolute inset-0' : ''">
 @if (chart(); as c) {
   <svg
     #svg
     class="tm-chart-svg"
-    [attr.height]="height()"
+    [attr.height]="drawHeight()"
     role="img"
     [attr.aria-label]="label()"
     [attr.aria-describedby]="tip() ? tipId : null"
@@ -34,10 +35,11 @@
     <tm-chart-tip [id]="tipId" [heading]="t.heading" [rows]="t.rows" [note]="t.note" [anchor]="t.anchor" />
   }
 } @else {
-  <div class="flex items-center justify-center rounded-md text-sm text-fg-muted" [style.height.px]="height()">
+  <div class="flex items-center justify-center rounded-md text-sm text-fg-muted" [class.h-full]="fill()" [style.height.px]="fill() ? null : height()">
     {{ empty() }}
   </div>
 }
+</div>
 @if (points().length) {
   <!-- A table ignores .sr-only's 1 px height and would still make the page taller, so wrap it. -->
   <div class="sr-only">

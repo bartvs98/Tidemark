@@ -1,4 +1,4 @@
-import { Component, computed, ElementRef, inject, input, LOCALE_ID, signal, viewChild } from '@angular/core';
+import { Component, computed, effect, ElementRef, inject, input, LOCALE_ID, signal, viewChild } from '@angular/core';
 import { formatDate } from '@angular/common';
 import { ChartTone, closeTipOn, focusVisible, labelWidth, observeWidth, stepIndex, TONE_COLOR, yScale } from '../chart-tip/chart';
 import { TmChartTip } from '../chart-tip/chart-tip';
@@ -23,7 +23,8 @@ const FALLBACK_WIDTH = 600;
 /**
  * One series over time: a 2 px line over a soft area, with a crosshair and tooltip that snap
  * to the nearest point. Fills its container's width; `height` is the whole chart, x labels
- * included.
+ * included. With `fill` it grows to its parent's height (at least `height`), for a card
+ * stretched by a taller neighbour.
  *
  *   <tm-time-chart label="Up to date" [points]="tide" [max]="1" [format]="percent" />
  *
@@ -36,7 +37,12 @@ const FALLBACK_WIDTH = 600;
   imports: [TmChartTip],
   templateUrl: './time-chart.html',
   styleUrl: './time-chart.css',
-  host: { class: 'block min-w-0' },
+  host: {
+    class: 'block min-w-0',
+    '[class.relative]': 'fill()',
+    '[class.h-full]': 'fill()',
+    '[style.min-height.px]': 'fill() ? height() : null',
+  },
 })
 export class TmTimeChart {
   /** Accessible name of the chart and caption of its table. */
@@ -51,6 +57,8 @@ export class TmTimeChart {
   readonly tone = input<ChartTone>('accent');
   /** Whole chart height in px, x labels included. */
   readonly height = input(160);
+  /** Grow to the parent's height (at least `height`): for a card stretched by a taller neighbour. */
+  readonly fill = input(false);
   readonly empty = input('Fills in after a few check runs');
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
@@ -60,14 +68,26 @@ export class TmTimeChart {
   protected readonly active = signal<number | null>(null);
   protected readonly tipId = `tm-time-chart-tip-${nextId++}`;
   private readonly svg = viewChild<ElementRef<SVGSVGElement>>('svg');
+  private readonly box = viewChild<ElementRef<HTMLElement>>('box');
+  private readonly boxHeight = signal(0);
 
   constructor() {
     closeTipOn(this.host, () => this.active.set(null));
+    // With fill, the plot is drawn in an absolute layer and takes the height that layer gets,
+    // so a taller chart can't make its card taller.
+    effect((onCleanup) => {
+      const el = this.box()?.nativeElement;
+      if (!el || !this.fill() || typeof ResizeObserver === 'undefined') return;
+      const ro = new ResizeObserver((entries) => this.boxHeight.set(Math.floor(entries[0].contentRect.height)));
+      ro.observe(el);
+      onCleanup(() => ro.disconnect());
+    });
   }
 
   protected readonly hasNotes = computed(() => this.points().some((p) => p.note));
   protected readonly color = computed(() => TONE_COLOR[this.tone()]);
   protected readonly width = computed(() => this.measured() || FALLBACK_WIDTH);
+  protected readonly drawHeight = computed(() => (this.fill() && this.boxHeight()) || this.height());
 
   /** Time stamps, and whether to show times (points closer than 2 days). */
   private readonly times = computed(() => this.points().map((p) => Date.parse(p.at)));
@@ -96,7 +116,7 @@ export class TmTimeChart {
     const yLabels = y.ticks.map((v) => format(v));
     const left = Math.ceil(Math.max(...yLabels.map(labelWidth))) + 10;
     const w = this.width();
-    const h = this.height();
+    const h = this.drawHeight();
     const plotW = Math.max(1, w - left - RIGHT);
     const plotH = Math.max(1, h - TOP - AXIS_H);
     const times = this.times();

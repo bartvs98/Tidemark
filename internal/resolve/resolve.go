@@ -108,7 +108,26 @@ func Resolve(ctx context.Context, reg Registry, c docker.Container, opts Options
 	if err != nil {
 		return r, err
 	}
-	rawTags, err := reg.Tags(ctx, ref)
+	tagV, tagIsVersion := version.Parse(ref.Tag)
+	r.Floating = ref.Tag != "" && (!tagIsVersion || len(tagV.Nums) < 3)
+	local := localDigests(c.Image.RepoDigests, ref)
+
+	// A floating tag can move to a new image without any version change we can see. When it
+	// moved, a release likely came out, so the tag list must be from after this digest: a
+	// cached list from before it would leave out the new version.
+	tagsCtx := ctx
+	if r.Floating && len(local) > 0 {
+		started := time.Now()
+		if d, err := reg.Digest(ctx, ref, ref.Tag); err == nil {
+			r.TagDigest = d
+			if !slices.Contains(local, d) {
+				r.NewImage = true
+				tagsCtx = registry.FreshSince(ctx, started)
+			}
+		}
+	}
+
+	rawTags, err := reg.Tags(tagsCtx, ref)
 	var stale *registry.StaleError
 	if errors.As(err, &stale) {
 		r.TagsFrom = stale.At
@@ -124,10 +143,6 @@ func Resolve(ctx context.Context, reg Registry, c docker.Container, opts Options
 			tags = append(tags, v)
 		}
 	}
-
-	tagV, tagIsVersion := version.Parse(ref.Tag)
-	r.Floating = ref.Tag != "" && (!tagIsVersion || len(tagV.Nums) < 3)
-	local := localDigests(c.Image.RepoDigests, ref)
 
 	// What the running image should look like, for tags that aren't versions:
 	// "alpine" means the alpine family, "latest" the plain one.
@@ -217,18 +232,8 @@ func Resolve(ctx context.Context, reg Registry, c docker.Container, opts Options
 	if r.Class == "" {
 		r.Class = version.None
 	}
-
-	// A floating tag can move to a new image without any version change we can see.
-	if r.Floating && len(local) > 0 {
-		if d, err := reg.Digest(ctx, ref, ref.Tag); err == nil {
-			r.TagDigest = d
-			if !slices.Contains(local, d) {
-				r.NewImage = true
-				if r.Class == version.None {
-					r.Class = version.Digest
-				}
-			}
-		}
+	if r.NewImage && r.Class == version.None {
+		r.Class = version.Digest
 	}
 	return r, nil
 }

@@ -8,7 +8,7 @@ describe('TmTimeChart', () => {
 
   @Component({
     imports: [TmTimeChart],
-    template: `<tm-time-chart label="Up to date" [points]="points()" [max]="1" [format]="percent" [tone]="tone()" />`,
+    template: `<tm-time-chart label="Up to date" [points]="points()" [max]="1" [format]="percent" [tone]="tone()" [fill]="fill()" />`,
   })
   class Host {
     points = signal<TimePoint[]>([
@@ -17,6 +17,7 @@ describe('TmTimeChart', () => {
       { at: '2026-10-15T06:00:00Z', value: 1 },
     ]);
     tone = signal<ChartTone>('accent');
+    fill = signal(false);
     percent = percent;
   }
 
@@ -27,6 +28,21 @@ describe('TmTimeChart', () => {
     return { fixture, host: fixture.componentInstance, el, svg: () => el.querySelector('svg')! };
   }
   const tip = () => document.body.querySelector<HTMLElement>('tm-chart-tip');
+
+  it('fills its parent with fill, keeping height as the minimum', async () => {
+    const { fixture, host, el, svg } = await render();
+    const chart = el.querySelector<HTMLElement>('tm-time-chart')!;
+    expect(chart.classList.contains('h-full')).toBe(false);
+    expect(chart.style.minHeight).toBe('');
+    expect(svg().getAttribute('height')).toBe('160');
+    host.fill.set(true);
+    await fixture.whenStable();
+    expect(chart.classList.contains('h-full')).toBe(true);
+    expect(chart.style.minHeight).toBe('160px');
+    // No layout in the test DOM: until the plot area is measured it draws at height.
+    expect(svg().getAttribute('height')).toBe('160');
+    expect(svg().closest('.absolute.inset-0')).not.toBeNull();
+  });
 
   it('is a named, focusable image with a data table', async () => {
     const { svg, el } = await render();

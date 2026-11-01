@@ -248,6 +248,9 @@ type failingJSON struct {
 	Since time.Time `json:"since"` // the failed attempt
 }
 
+// staleTagsKind is the failures-by-kind entry for results checked from an older tag list.
+const staleTagsKind = "stale-tags"
+
 type kindCountJSON struct {
 	Kind  string `json:"kind"`
 	Count int    `json:"count"`
@@ -378,6 +381,9 @@ func countSnapshot(list []containerJSON) store.RunStats {
 			continue
 		}
 		rs.Checked++
+		if u.Error == "" && u.TagsFrom != nil {
+			rs.StaleTags++
+		}
 		if u.Class == string(version.None) {
 			rs.UpToDate++
 			continue
@@ -1216,6 +1222,8 @@ func (s *Server) healthStats(d *statsData) healthJSON {
 		for k, n := range r.Failures {
 			kinds[k] += n
 		}
+		// Not failed, but the refresh was: the result is from an older tag list.
+		kinds[staleTagsKind] += r.StaleTags
 		key := bucket(r.At).Format(time.DateOnly)
 		day := days[key]
 		if day == nil {

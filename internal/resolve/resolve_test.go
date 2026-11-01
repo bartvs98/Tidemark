@@ -3,10 +3,18 @@ package resolve
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-containerregistry/pkg/name"
+	ggcrregistry "github.com/google/go-containerregistry/pkg/registry"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	"github.com/bartvs98/tidemark/internal/docker"
 	"github.com/bartvs98/tidemark/internal/imageref"
@@ -21,9 +29,12 @@ type fakeRegistry struct {
 	heads   []string         // tags whose digest was requested
 	tagsErr error            // returned with the tags
 	headErr map[string]error // Digest error per tag (default: an unclassified "not found")
+	fresh   []time.Time      // FreshSince of each Tags call (zero without)
 }
 
-func (f *fakeRegistry) Tags(context.Context, imageref.Ref) ([]string, error) {
+func (f *fakeRegistry) Tags(ctx context.Context, _ imageref.Ref) ([]string, error) {
+	since, _ := registry.FreshSinceOf(ctx)
+	f.fresh = append(f.fresh, since)
 	return f.tags, f.tagsErr
 }
 
@@ -158,7 +169,7 @@ func TestResolve(t *testing.T) {
 				digests: map[string]string{"18.0": "sha256:180", "18": "sha256:180", "latest": "sha256:180"},
 			},
 			want:      Result{Running: "18.0", Source: SourceDigest, Latest: "18.0", Class: version.None, Floating: true, TagDigest: "sha256:180"},
-			wantHeads: []string{"18.0", "latest"},
+			wantHeads: []string{"latest", "18.0"},
 		},
 		{
 			name: "suffix tag: digest match on the same suffix line, latest stays on it",
@@ -168,7 +179,7 @@ func TestResolve(t *testing.T) {
 				digests: map[string]string{"16.4-3.4": "sha256:a", "16-3.4": "sha256:a"},
 			},
 			want:      Result{Running: "16.4-3.4", Source: SourceDigest, Latest: "16.4-3.5", Class: version.Patch, Floating: true, TagDigest: "sha256:a"},
-			wantHeads: []string{"16.4-3.4", "16-3.4"},
+			wantHeads: []string{"16-3.4", "16.4-3.4"},
 		},
 		{
 			name: "word tag: a label of another variant is ignored",
@@ -196,7 +207,7 @@ func TestResolve(t *testing.T) {
 				digests: map[string]string{"2025-06-01": "sha256:d", "latest": "sha256:d"},
 			},
 			want:      Result{Source: SourceUnknown, Latest: "1.2.4", Class: version.None, Floating: true, TagDigest: "sha256:d"},
-			wantHeads: []string{"1.2.4", "1.2.3", "latest"},
+			wantHeads: []string{"latest", "1.2.4", "1.2.3"},
 		},
 	}
 	for _, tt := range tests {
@@ -478,6 +489,75 @@ func TestResolveStaleTags(t *testing.T) {
 	}
 }
 
+// A floating tag that moved asks for a tag list from after that digest; one that didn't
+// may use a cached list.
+func TestResolveMovedTagWantsFreshTags(t *testing.T) {
+	c := container("team/app:latest", "team/app@sha256:old", map[string]string{"org.opencontainers.image.version": "1.0.0"})
+	for _, tc := range []struct {
+		digest    string
+		wantFresh bool
+	}{{"sha256:new", true}, {"sha256:old", false}} {
+		reg := &fakeRegistry{tags: []string{"1.0.0", "1.1.0", "latest"}, digests: map[string]string{"latest": tc.digest}}
+		before := time.Now()
+		got, err := Resolve(context.Background(), reg, c, Options{})
+		if err != nil || len(reg.fresh) != 1 {
+			t.Fatalf("%s: %+v, %v, %d tag calls", tc.digest, got, err, len(reg.fresh))
+		}
+		if fresh := !reg.fresh[0].IsZero(); fresh != tc.wantFresh || (fresh && reg.fresh[0].Before(before)) {
+			t.Errorf("%s: FreshSince = %v, want fresh=%v (not before %v)", tc.digest, reg.fresh[0], tc.wantFresh, before)
+		}
+		if got.NewImage != tc.wantFresh || got.Latest != "1.1.0" {
+			t.Errorf("%s: got %+v", tc.digest, got)
+		}
+	}
+}
+
+// memTagCache is a persisted tag list (the store's tag_cache).
+type memTagCache struct {
+	tags []string
+	at   time.Time
+}
+
+func (m *memTagCache) LoadTags(context.Context, string) ([]string, time.Time, bool) {
+	return m.tags, m.at, m.tags != nil
+}
+
+func (m *memTagCache) SaveTags(_ context.Context, _ string, tags []string, at time.Time) error {
+	m.tags, m.at = tags, at
+	return nil
+}
+
+// The bug this guards: a tag list cached from before a release (here persisted, as after a
+// restart) together with a fresh digest showed "new image" without the new version.
+func TestResolveMovedTagAgainstRegistry(t *testing.T) {
+	srv := httptest.NewServer(ggcrregistry.New())
+	t.Cleanup(srv.Close)
+	host := strings.TrimPrefix(srv.URL, "http://")
+	push := func(tag string, img v1.Image) string {
+		t.Helper()
+		ref, _ := name.NewTag(host+"/team/app:"+tag, name.Insecure)
+		if err := remote.Write(ref, img); err != nil {
+			t.Fatal(err)
+		}
+		d, _ := img.Digest()
+		return d.String()
+	}
+	old, _ := random.Image(64, 1)
+	push("1.0.0", old)
+	oldDigest := push("latest", old)
+	c := container(host+"/team/app:latest", host+"/team/app@"+oldDigest, map[string]string{"org.opencontainers.image.version": "1.0.0"})
+
+	cache := &memTagCache{tags: []string{"1.0.0", "latest"}, at: time.Now().Add(-20 * time.Minute)}
+	newer, _ := random.Image(64, 1)
+	push("1.1.0", newer)
+	push("latest", newer)
+
+	got, err := Resolve(context.Background(), registry.New("t", registry.WithTagCache(cache)), c, Options{})
+	if err != nil || !got.NewImage || got.Latest != "1.1.0" || got.Class != version.Minor {
+		t.Errorf("got %+v, %v; want 1.0.0 → 1.1.0 (minor) with a new image", got, err)
+	}
+}
+
 // Digest probing stops at the first classified failure (it would hit every probe), but
 // a missing tag only skips that tag. Later steps still run.
 func TestDigestProbingStopsOnFailure(t *testing.T) {
@@ -491,7 +571,7 @@ func TestDigestProbingStopsOnFailure(t *testing.T) {
 		if err != nil || got.Running != "" || got.TagDigest != "sha256:d" {
 			t.Errorf("%s: got %+v, %v", k, got, err)
 		}
-		if want := []string{"1.2.4", "latest"}; !slices.Equal(reg.heads, want) {
+		if want := []string{"latest", "1.2.4"}; !slices.Equal(reg.heads, want) {
 			t.Errorf("%s: heads = %v, want %v", k, reg.heads, want)
 		}
 	}
@@ -501,7 +581,7 @@ func TestDigestProbingStopsOnFailure(t *testing.T) {
 	if err != nil || got.Running != "1.2.3" || got.Source != SourceDigest {
 		t.Errorf("not found: got %+v, %v", got, err)
 	}
-	if want := []string{"1.2.4", "1.2.3", "latest"}; !slices.Equal(reg.heads, want) {
+	if want := []string{"latest", "1.2.4", "1.2.3"}; !slices.Equal(reg.heads, want) {
 		t.Errorf("not found: heads = %v, want %v", reg.heads, want)
 	}
 }

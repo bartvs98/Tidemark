@@ -108,7 +108,7 @@ Own SVG pieces from `ui/charts` (not the barrel), with shared helpers in `ui/cha
 | Piece | For / watch out |
 |---|---|
 | `tm-stat` | A headline number, no box; pages grid them. |
-| `tm-time-chart` | One series over time as a line with a soft area. |
+| `tm-time-chart` | One series over time as a line with a soft area. `fill` to grow to a stretched card's height. |
 | `tm-bar-chart` | Stacked bars. `faded` for incomplete data (say why in `note` and under the chart); `fill` to grow to a stretched card's height. |
 | `tm-calendar-chart` | GitHub-style day grid, accent in four steps; scrolls inside its host on phones. |
 | `tm-bar-list` | Ranked rows with a bar; `max` shares one scale between lists side by side. |
@@ -117,19 +117,20 @@ Own SVG pieces from `ui/charts` (not the barrel), with shared helpers in `ui/cha
 
 Domain composites in [dashboard/](../web/src/app/dashboard/) that take a `ContainerSummary` (`container`, required); version, update and tile also take `checking` (a skeleton until there's a result). The list, the tiles and the detail header are built from them.
 
-**An `update` has three states.** Use the helpers in `containers.ts` (`hasResult`, `refreshFailed`, `hasUpdate`, `checkFailed`) instead of testing `error`, and `errorKindLabel` / `errorKindHint` in `format.ts` for reasons.
+**An `update` has three states**, plus a result from an older tag list. Use the helpers in `containers.ts` (`hasResult`, `refreshFailed`, `versionUnknown`, `hasUpdate`, `checkFailed`) instead of testing `error`, and `errorKindLabel` / `errorKindHint` in `format.ts` for reasons.
 
 | State | Fields | Shown as |
 |---|---|---|
 | Result | `checkedAt` | Versions, class and level |
 | Result, refresh failed | `checkedAt` + `error` + `failedAt` (+ `errorKind`) | The same plus `tm-refresh-failed`; still counts in filters and counts |
+| Result, older tag list | `checkedAt` + `tagsFrom` | The same plus `tm-refresh-failed` saying "older tag list"; with a moved floating tag (`versionUnknown`), `tm-container-version` adds "new version not known yet" |
 | No result | `error` + `failedAt`, no `checkedAt` | Just the tag and a dashed "check failed" badge |
 
 | Piece | For / watch out |
 |---|---|
-| `tm-container-version` | Running → latest, plus how the version was found, the held-back line, or a channel build's state. |
+| `tm-container-version` | Running → latest, plus how the version was found, the held-back line, a channel build's state, or "new version not known yet" (`versionUnknown`). |
 | `tm-container-update` | Class + level (reasons on hover, capped; the detail page shows them all), or "Ignored", or "check failed" with the short reason. |
-| `tm-refresh-failed` | Quiet note that the result is from an earlier check. No badge, no colour: it must not hide the result. |
+| `tm-refresh-failed` | Quiet note that the result is from an earlier check, or from an older tag list (`tagsFrom`). No badge, no colour: it must not hide the result. |
 | `tm-rule-problems` | Dashed "N rules skipped" badge. No colour. |
 | `tm-container-tile` | One container as a tile; the whole tile is a stretched link (`link` overrides it). |
 | `tm-container-table` | One group as `tm-card flush` + `table.tm-table tm-table-stack`. `ignored`, `showStack` (severity grouping, Snoozed), `dimQuiet`. |

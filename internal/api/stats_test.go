@@ -259,6 +259,7 @@ func TestStatsFromHistory(t *testing.T) {
 		if i%50 == 0 {
 			r.Requests["github"] = stats.Count{Requests: 1, Limited: 1}
 			r.Failures = map[string]int{"rate-limit": 2, "network": 1}
+			r.StaleTags = 1
 		}
 		if i%100 == 0 {
 			r.Requests["registry"] = stats.Count{Requests: 2, Limited: 1}
@@ -288,7 +289,7 @@ func TestStatsFromHistory(t *testing.T) {
 	if tot := out.Health.RequestTotals; tot != (requestTotalsJSON{Registry: 400, GitHub: 200, limitedJSON: limitedJSON{LimitedRegistry: 2, LimitedNotes: 4}}) {
 		t.Errorf("request totals = %+v", tot)
 	}
-	if k := out.Health.FailuresByKind; !reflect.DeepEqual(k, []kindCountJSON{{"rate-limit", 8}, {"network", 4}}) {
+	if k := out.Health.FailuresByKind; !reflect.DeepEqual(k, []kindCountJSON{{"rate-limit", 8}, {"network", 4}, {"stale-tags", 4}}) {
 		t.Errorf("failures by kind = %+v", k)
 	}
 
@@ -884,5 +885,19 @@ func TestTideCalendar(t *testing.T) {
 	long := append([]store.RunStats{{At: at("2024-01-01 00:00"), Checked: 1}}, rows...)
 	if got := tideCalendar(&statsData{now: now, runStats: long}); len(got) != maxCalendarDays+1 || got[0].Day != "2025-10-26" || got[len(got)-1].Day != "2026-10-26" {
 		t.Errorf("capped = %d days, %v … %v", len(got), got[0], got[len(got)-1])
+	}
+}
+
+// A result checked from an older tag list counts as stale, not as failed; a failed refresh of
+// such a result counts as failed only.
+func TestRunStatsCountStaleTags(t *testing.T) {
+	at := time.Date(2026, 10, 31, 16, 0, 0, 0, time.UTC)
+	got := countSnapshot([]containerJSON{
+		{Update: &updateJSON{CheckedAt: &at, TagsFrom: &at, Class: "digest"}},
+		{Update: &updateJSON{CheckedAt: &at, TagsFrom: &at, Class: "none", Error: "boom", ErrorKind: "network"}},
+		{Update: &updateJSON{CheckedAt: &at, Class: "none"}},
+	})
+	if got.StaleTags != 1 || got.Failed != 1 || got.Checked != 3 {
+		t.Errorf("stale %d, failed %d, checked %d; want 1, 1, 3", got.StaleTags, got.Failed, got.Checked)
 	}
 }

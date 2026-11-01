@@ -123,6 +123,7 @@ export interface HealthStats {
   /** Containers whose latest attempt failed, right now. */
   failing: { name: string; kind?: FailureKind; error: string; since: string }[];
   /** Container-checks that failed over the range, per kind, most first. */
+  /** Per error kind, plus `stale-tags`: checked from an older tag list (the registry rate-limited the refresh). */
   failuresByKind: { kind: string; count: number }[];
   /** Requests per UTC day over the range (zeros included). */
   /** Per day, or per week (`day` is then the Monday) when the span is over 92 days: see `requestsPer`. */

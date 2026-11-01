@@ -19,6 +19,9 @@
   @if (hint() && !u.channel) {
     <div class="truncate text-xs text-fg-subtle">{{ hint() }}</div>
   }
+  @if (versionUnknown()) {
+    <div class="truncate text-xs text-fg-subtle" data-testid="version-unknown">new version not known yet</div>
+  }
   @if (u.latestInMajor) {
     <div class="truncate text-xs text-fg-subtle">
       or <span class="font-mono">{{ u.latestInMajor }}</span> in your major

@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, LOCALE_ID } from '@angular/core';
 import { TmSkeleton, TmTooltip, TmVersionDiff } from '../../ui';
-import { ContainerSummary, hasResult, isIgnored, isSnoozed, UpdateSource } from '../containers';
+import { ContainerSummary, hasResult, isIgnored, isSnoozed, UpdateSource, versionUnknown } from '../containers';
 import { heldText, snoozedText } from '../format';
 
 const SOURCE_HINT: Record<UpdateSource, string> = {
@@ -46,6 +46,8 @@ export class ContainerVersion {
     const u = this.update();
     return !!u?.latest && u.latest !== u.running && u.class !== 'none';
   });
+  /** A new image whose version the (older) tag list can't name; tm-refresh-failed says why. */
+  protected readonly versionUnknown = computed(() => versionUnknown(this.update()));
   protected readonly hint = computed(() => {
     const u = this.update();
     return u ? SOURCE_HINT[u.source] : '';

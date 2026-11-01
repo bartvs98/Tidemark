@@ -630,6 +630,27 @@ export class Styleguide {
       }),
     },
     {
+      label: 'Older tag list (rate limited)',
+      container: sample('paperless', 'ghcr.io/paperless-ngx/paperless-ngx:2.18.4', {
+        update: { ...UPDATE, running: '2.18.4', latest: '2.18.4', class: 'none', tagsFrom: '2026-10-17T15:00:00Z' },
+      }),
+    },
+    {
+      label: 'New image, version not known yet (older tag list)',
+      container: sample('arcane', 'ghcr.io/getarcaneapp/arcane:latest', {
+        update: {
+          ...UPDATE,
+          source: 'label',
+          running: 'v2.17.1',
+          latest: 'v2.17.1',
+          class: 'digest',
+          floating: true,
+          newImage: true,
+          tagsFrom: '2026-10-17T15:00:00Z',
+        },
+      }),
+    },
+    {
       label: 'Check failed, no result yet',
       container: sample('private-app', 'ghcr.io/me/private-app:2.1', { update: NO_RESULT }),
     },

@@ -291,6 +291,7 @@ export class Stats {
     this.data()?.health.requestsPer === 'week' ? 'Requests per week' : 'Requests per day',
   );
   protected readonly failureLabel = failureLabel;
+  protected readonly staleTagsCounted = computed(() => !!this.data()?.health.failuresByKind.some((f) => f.kind === 'stale-tags'));
   protected readonly failureItems = computed(
     () =>
       this.data()?.health.failuresByKind.map((f) => ({
@@ -393,8 +394,12 @@ export function limitedText({ limitedRegistry: registry, limitedNotes: notes }: 
   return `${registry + notes} rate limited (${split})`;
 }
 
-/** A failure kind as a label: "Rate limited", "Not found"; unknown kinds ("other") capitalised as they are. */
+/**
+ * A failure kind as a label: "Rate limited", "Not found"; unknown kinds ("other") capitalised as they are.
+ * `stale-tags` isn't a failed check but a failed refresh: the result came from an older tag list.
+ */
 function failureLabel(kind: string): string {
+  if (kind === 'stale-tags') return 'Older tag list used';
   return capitalize(errorKindLabel(kind as ErrorKind) || kind.replace('-', ' '));
 }
 
