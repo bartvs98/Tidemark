@@ -37,7 +37,8 @@ cd web; npm start                                                              #
 ## How we work (agreed with the owner)
 
 - **The `step` skill** has the workflow: splitting work over subagents, what every change ends with, and the PR flow. Load it before any change (a roadmap step, a fix, a round of notes from `docs/IDEAS.md`) and before a commit.
-- **Never commit to `main`**: feature branch + PR, and the owner reviews and merges. Images come from release tags only. Repo: github.com/bartvs98/Tidemark.
+- **Never commit to `main`**: feature branch + PR, and the owner reviews and merges. Repo: github.com/bartvs98/Tidemark.
+- **Release only when the owner asks**, with hand-written notes. Only release tags push the image ([ARCHITECTURE → Deployment and CI](docs/ARCHITECTURE.md#deployment-and-ci)); check runs with `gh run list`.
 - **Docs stay in sync, every step and every fix.** They describe what's built; each fact lives in one doc.
 - **UI is built only from design-system pieces** ([DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md), including its rules), and each piece and state is on `/styleguide`.
 - **Look before you report a UI change:** the **`verify` skill** builds, runs against the snapshot and screenshots. Shoot only what changed.
@@ -52,6 +53,5 @@ cd web; npm start                                                              #
 - **CSS build (lightningcss):** a declaration with `color-mix(... var())` gets an `@supports` copy of just that declaration; with a `background` shorthand that copy resets `background-size`/`-position`. Use longhands (`background-image`).
 - **Angular:** `httpResource.value()` throws in the error state, so go through `hasValue()`. Effects only re-run when a read signal _changes_: depend on objects that change per response, not on a boolean that stays `true` (there's a regression test).
 - **Privacy rules (don't break):** never call Docker's `GET /containers/{id}/json` (it exposes env vars; a test enforces this). From image env only `*_VERSION` variables are read. `snapshots/` is git-ignored and must never be committed; don't print non-essential labels from it.
-- **Versions:** image labels can be inherited from base images (`mongo:8.3` says `24.04`), so a label only counts if the registry has that exact tag. Official images are rebuilt under the same tags, so old digests stop matching (hence the `*_VERSION` fallback).
-- **Images:** GitHub Actions builds the image and pushes it to `ghcr.io/bartvs98/tidemark` only for releases. Release only when the owner asks, with hand-written notes ([ARCHITECTURE → Deployment and CI](docs/ARCHITECTURE.md#deployment-and-ci)); check runs with `gh run list`.
+- **Versions:** the label and `*_VERSION` checks in version resolution guard against inherited labels and rebuilt tags; read [FEATURES → Running version resolution](docs/FEATURES.md#2-running-version-resolution) before simplifying them.
 - **Snapshot:** may be stale. The owner re-runs the repo's current `scripts/snapshot.sh` on the host and copies it to `snapshots/home.json`. `/api/containers` on the live instance shows what the server decided.
