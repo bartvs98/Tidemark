@@ -1,6 +1,6 @@
 # Tidemark: notes for Claude sessions
 
-Self-hosted dashboard that shows, for every container on a Docker host (running or stopped), the running version, the latest version, the changelog in between and whether it's breaking. Built step by step with the owner.
+Self-hosted dashboard that shows, for every container on a Docker host (running or stopped), the running version, the latest version, the changelog in between and whether it's breaking.
 
 ## Doc map
 
@@ -34,10 +34,9 @@ $env:TIDEMARK_DOCKER_SNAPSHOT = "snapshots/home.json"; go run ./cmd/tidemark   #
 cd web; npm start                                                              # :4200, proxies /api
 ```
 
-## How we work (agreed with the owner)
+## How we work
 
 - **Complex tasks go through the `orchestrator` skill** (planning, contracts, subagents, integration). Simple tasks run inline.
-- **The owner's notes** (`docs/IDEAS.md`): check each note against the code, ask the open decisions in one batch, group related notes into one PR, and say in the summary which notes are done. The file is the owner's: don't edit it.
 - **UI is built only from design-system pieces** ([DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md), including its rules), and each piece and state is on `/styleguide`.
 - **Look before you report a UI change:** the **`verify` skill** builds, runs against the snapshot and screenshots. Shoot only what changed.
 - **Release only when the owner asks**, with hand-written notes. Only release tags push the image ([ARCHITECTURE → Deployment and CI](docs/ARCHITECTURE.md#deployment-and-ci)); check runs with `gh run list`.
@@ -48,13 +47,13 @@ Every change, inline or orchestrated:
 
 - All tests green; `go vet` and `gofmt -l .` clean.
 - **Docs updated:** remove a finished step from ROADMAP; update FEATURES / ARCHITECTURE / README / DESIGN-SYSTEM as relevant. Docs describe what's built; each fact lives in one doc (link, don't repeat). Plans live in the ROADMAP step (ARCHITECTURE may sketch tables and endpoints, marked "later").
-- **Docs-sync check** (roadmap steps, and fixes that change behaviour, config or the API): a read-only Sonnet agent gets the diff, the doc sections touched and the facts changed, checks just those sections plus what they link to (and `/styleguide` for UI) and lists what's wrong or missing. Fix it in the same commit. For small fixes and docs-only PRs, check inline.
+- **Docs-sync check** (roadmap steps, and fixes that change behaviour, config or the API): run the **`docs-sync` skill** with the facts that changed, and fix what it reports in the same commit. For small fixes and docs-only PRs, check inline.
 - **README images** when the dashboard looks noticeably different (header, hero, list/tile layout, colours): see the `verify` skill.
 
 ## Branch → PR
 
 - **Never commit to `main`.** Branch off an up-to-date `main`: `step-14-…`, `fix-…`, `docs-…`. Repo: github.com/bartvs98/Tidemark.
-- Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Commit messages end with the commit attribution line the session is given.
 - Push, then `gh pr create`: title like the commit subject; body only what changed, ending with the PR attribution line. How it was verified and what the owner should look at go in the chat summary.
 - CI tests and builds the image on the PR without publishing it (`gh pr checks`; docs-only PRs have no checks).
 - **The owner reviews and squash-merges; don't merge yourself.** Afterwards: `git switch main && git pull`, delete the local branch.
