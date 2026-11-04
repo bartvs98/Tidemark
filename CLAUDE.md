@@ -12,8 +12,6 @@ Each fact lives in one doc. Read the section you need, not the whole file.
 - [README.md](README.md): for users: install, env vars, rules syntax. The only config reference.
 - [docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md) (components, tokens) + [docs/BRAND.md](docs/BRAND.md) (colour, type, voice): read before any UI work.
 
-(`docs/IDEAS.md` may exist locally: the owner's git-ignored notes; everything decided from it is in the docs above.)
-
 ## Stack in one breath
 
 Go 1.26 single binary (`cmd/tidemark`, `internal/*`) embedding an Angular 22 SPA (`web/`, zoneless, signals, `httpResource`, Tailwind v4, Angular Aria). SQLite via `modernc.org/sqlite` (no CGO). Registry access via go-containerregistry. Own read-only Docker Engine API client.
