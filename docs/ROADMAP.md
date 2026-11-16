@@ -35,6 +35,7 @@ Not planned. An idea becomes a step when the owner picks it.
 
 - **Rules in the UI**: per-container rules on the detail page, or editing `config.yaml` in the settings dialog.
 - **Cost per reasoning effort**: record each AI call's effort (new migration), count Gemini's thinking tokens (its `completion_tokens` leaves them out, so usage is undercounted today), and show the average tokens per summary for each level under the effort select, with an approximate price for the two default models.
+- **Topics the AI verdict ignores**: keywords for things you don't use (`jellyfin` for AIOStreams and AIOMetadata, which add a lot of Jellyfin features), sent with the prompt so changes only about them don't raise the verdict. Probably a rule, so it can be global or per container. Summaries are shared per repo and range, so per-container keywords would split them, and changing the keywords should mark a summary as out of date, like notes that changed.
 
 ### Registry requests
 
