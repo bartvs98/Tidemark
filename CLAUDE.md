@@ -1,6 +1,6 @@
 # Tidemark: notes for Claude sessions
 
-Self-hosted dashboard that shows, for every container on a Docker host (running or stopped), the running version, the latest version, the changelog in between and whether it's breaking. Built step by step with the owner.
+Self-hosted dashboard that shows, for every container on a Docker host (running or stopped), the running version, the latest version, the changelog in between and whether it's breaking.
 
 ## Doc map
 
@@ -11,8 +11,6 @@ Each fact lives in one doc. Read the section you need, not the whole file.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): stack, package layout, check pipeline, data model, API shapes, frontend, security, CI and releasing. Read before changing a package, a table or an endpoint.
 - [README.md](README.md): for users: install, env vars, rules syntax. The only config reference.
 - [docs/DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md) (components, tokens) + [docs/BRAND.md](docs/BRAND.md) (colour, type, voice): read before any UI work.
-
-(`docs/IDEAS.md` may exist locally: the owner's git-ignored notes; everything decided from it is in the docs above.)
 
 ## Stack in one breath
 
@@ -34,13 +32,29 @@ $env:TIDEMARK_DOCKER_SNAPSHOT = "snapshots/home.json"; go run ./cmd/tidemark   #
 cd web; npm start                                                              # :4200, proxies /api
 ```
 
-## How we work (agreed with the owner)
+## How we work
 
-- **The `step` skill** has the workflow: splitting work over subagents, what every change ends with, and the PR flow. Load it before any change (a roadmap step, a fix, a round of notes from `docs/IDEAS.md`) and before a commit.
-- **Never commit to `main`**: feature branch + PR, and the owner reviews and merges. Images come from release tags only. Repo: github.com/bartvs98/Tidemark.
-- **Docs stay in sync, every step and every fix.** They describe what's built; each fact lives in one doc.
+- **Complex tasks go through the `orchestrator` skill** (planning, contracts, subagents, integration). Simple tasks run inline.
 - **UI is built only from design-system pieces** ([DESIGN-SYSTEM.md](docs/DESIGN-SYSTEM.md), including its rules), and each piece and state is on `/styleguide`.
 - **Look before you report a UI change:** the **`verify` skill** builds, runs against the snapshot and screenshots. Shoot only what changed.
+- **Release only when the owner asks**, with hand-written notes. Only release tags push the image ([ARCHITECTURE → Deployment and CI](docs/ARCHITECTURE.md#deployment-and-ci)); check runs with `gh run list`.
+
+## Done means
+
+Every change, inline or orchestrated:
+
+- All tests green; `go vet` and `gofmt -l .` clean.
+- **Docs updated:** remove a finished step from ROADMAP; update FEATURES / ARCHITECTURE / README / DESIGN-SYSTEM as relevant. Docs describe what's built; each fact lives in one doc (link, don't repeat). Plans live in the ROADMAP step (ARCHITECTURE may sketch tables and endpoints, marked "later").
+- **Docs-sync check** (roadmap steps, and fixes that change behaviour, config or the API): run the **`docs-sync` skill** with the facts that changed, and fix what it reports in the same commit. For small fixes and docs-only PRs, check inline.
+- **README images** when the dashboard looks noticeably different (header, hero, list/tile layout, colours): see the `verify` skill.
+
+## Branch → PR
+
+- **Never commit to `main`.** Branch off an up-to-date `main`: `step-14-…`, `fix-…`, `docs-…`. Repo: github.com/bartvs98/Tidemark.
+- Commit messages end with the commit attribution line the session is given.
+- Push, then `gh pr create`: title like the commit subject; body only what changed, ending with the PR attribution line. How it was verified and what the owner should look at go in the chat summary.
+- CI tests and builds the image on the PR without publishing it (`gh pr checks`; docs-only PRs have no checks).
+- **The owner reviews and squash-merges; don't merge yourself.** Afterwards: `git switch main && git pull`, delete the local branch.
 
 ## Gotchas
 
@@ -52,6 +66,5 @@ cd web; npm start                                                              #
 - **CSS build (lightningcss):** a declaration with `color-mix(... var())` gets an `@supports` copy of just that declaration; with a `background` shorthand that copy resets `background-size`/`-position`. Use longhands (`background-image`).
 - **Angular:** `httpResource.value()` throws in the error state, so go through `hasValue()`. Effects only re-run when a read signal _changes_: depend on objects that change per response, not on a boolean that stays `true` (there's a regression test).
 - **Privacy rules (don't break):** never call Docker's `GET /containers/{id}/json` (it exposes env vars; a test enforces this). From image env only `*_VERSION` variables are read. `snapshots/` is git-ignored and must never be committed; don't print non-essential labels from it.
-- **Versions:** image labels can be inherited from base images (`mongo:8.3` says `24.04`), so a label only counts if the registry has that exact tag. Official images are rebuilt under the same tags, so old digests stop matching (hence the `*_VERSION` fallback).
-- **Images:** GitHub Actions builds the image and pushes it to `ghcr.io/bartvs98/tidemark` only for releases. Release only when the owner asks, with hand-written notes ([ARCHITECTURE → Deployment and CI](docs/ARCHITECTURE.md#deployment-and-ci)); check runs with `gh run list`.
+- **Versions:** the label and `*_VERSION` checks in version resolution guard against inherited labels and rebuilt tags; read [FEATURES → Running version resolution](docs/FEATURES.md#2-running-version-resolution) before simplifying them.
 - **Snapshot:** may be stale. The owner re-runs the repo's current `scripts/snapshot.sh` on the host and copies it to `snapshots/home.json`. `/api/containers` on the live instance shows what the server decided.
