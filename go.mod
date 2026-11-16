@@ -6,9 +6,9 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.84.0
 	github.com/google/go-containerregistry v0.22.1
 	github.com/robfig/cron/v3 v3.0.1
-	go.yaml.in/yaml/v3 v3.0.5
-	golang.org/x/sync v0.24.0
-	modernc.org/sqlite v1.61.0
+	go.yaml.in/yaml/v3 v3.0.6
+	golang.org/x/sync v0.25.0
+	modernc.org/sqlite v1.61.1
 )
 
 require (
